@@ -1,0 +1,78 @@
+name: Release adapter package
+
+on:
+  push:
+    tags:
+      - "kie-v*"
+      - "toapis-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.1
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Resolve package from tag
+        id: package
+        shell: bash
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            kie-v*)
+              echo "name=@hk01/pi-ai-extra-kie" >> "$GITHUB_OUTPUT"
+              echo "directory=packages/kie" >> "$GITHUB_OUTPUT"
+              echo "version=${GITHUB_REF_NAME#kie-v}" >> "$GITHUB_OUTPUT"
+              ;;
+            toapis-v*)
+              echo "name=@hk01/pi-ai-extra-toapis" >> "$GITHUB_OUTPUT"
+              echo "directory=packages/toapis" >> "$GITHUB_OUTPUT"
+              echo "version=${GITHUB_REF_NAME#toapis-v}" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unsupported release tag: ${GITHUB_REF_NAME}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Verify manifest version
+        env:
+          PACKAGE_DIRECTORY: ${{ steps.package.outputs.directory }}
+          RELEASE_VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          node --input-type=module -e 'import { readFile } from "node:fs/promises"; const manifest = JSON.parse(await readFile(`${process.env.PACKAGE_DIRECTORY}/package.json`, "utf8")); if (manifest.version !== process.env.RELEASE_VERSION) { throw new Error(`Tag version ${process.env.RELEASE_VERSION} does not match ${manifest.name}@${manifest.version}`); }'
+
+      - name: Check and build release package
+        env:
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+        run: |
+          pnpm --filter "$PACKAGE_NAME"... run check
+          pnpm --filter "$PACKAGE_NAME"... run build
+
+      - name: Pack release artifact
+        env:
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+        run: |
+          mkdir release-artifacts
+          pnpm --filter "$PACKAGE_NAME" pack --pack-destination ../../release-artifacts
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" release-artifacts/*.tgz --title "$RELEASE_TAG" --generate-notes

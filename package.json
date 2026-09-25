@@ -1,0 +1,22 @@
+{
+  "name": "pi-ai-extra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Registry-free pnpm workspace for KIE and ToAPIs pi-ai provider adapters",
+  "packageManager": "pnpm@11.23.0",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "pnpm --recursive --workspace-concurrency=1 run build",
+    "check": "pnpm --recursive --workspace-concurrency=1 run check",
+    "clean": "pnpm --recursive run clean",
+    "pack:kie": "pnpm --filter @hk01/pi-ai-extra-kie pack --pack-destination ../../release-artifacts",
+    "pack:toapis": "pnpm --filter @hk01/pi-ai-extra-toapis pack --pack-destination ../../release-artifacts"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.2",
+    "tsup": "8.5.1",
+    "typescript": "7.0.2"
+  }
+}
