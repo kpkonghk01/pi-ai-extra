@@ -13,6 +13,7 @@ import { isPiAiExtraError } from "../errors.ts";
 import { toDataUrl } from "../image-data.ts";
 import type { ImageGenerationResult } from "../result.ts";
 import { explicitApiKeyAuth } from "./auth.ts";
+import { toPiAiUsage } from "./usage.ts";
 
 /** Keys a pi-ai caller may not set through `options.metadata`; they come from the request itself. */
 const RESERVED_METADATA_KEYS = ["apiKey", "signal", "fetch", "onProgress", "model", "prompt", "referenceImages"] as const;
@@ -89,6 +90,8 @@ async function generateThroughHelper(
     }));
     const images: AssistantImages = { ...base, output, stopReason: "stop", timestamp: Date.now() };
     if (result.taskId !== undefined) images.responseId = result.taskId;
+    const usage = toPiAiUsage(model, result.usage?.tokens);
+    if (usage) images.usage = usage;
     return images;
   } catch (error) {
     const aborted = options?.signal?.aborted === true || (isPiAiExtraError(error) && error.code === "aborted");

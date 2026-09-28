@@ -1,5 +1,6 @@
 import { elapsedMs, emitProgress, type FetchLike, type ImageProgressListener, type OperationContext } from "./context.ts";
 import { encodeBase64, toDataUrl, type ImageBytes, type ImageMimeType } from "./image-data.ts";
+import type { ImageUsage } from "./usage.ts";
 
 /** Options shared by every high-level image helper. */
 export interface ImageHelperOptions {
@@ -31,6 +32,12 @@ export interface ImageGenerationResult {
   taskId: string | undefined;
   images: GeneratedImage[];
   elapsedMs: number;
+  /**
+   * Usage/billing the provider reported for this task or request, Zod-validated and
+   * never estimated. Undefined when the provider reported nothing. For ToAPIs the
+   * billing may still be `pending`; re-query by task id before recording spend.
+   */
+  usage: ImageUsage | undefined;
 }
 
 export const DEFAULT_MAX_OUTPUT_BYTES: number = 50 * 1024 * 1024;
@@ -48,6 +55,7 @@ export function completeResult(
   ctx: OperationContext,
   taskId: string | undefined,
   images: readonly (ImageBytes & { sourceUrl?: string | undefined })[],
+  usage: ImageUsage | undefined,
 ): ImageGenerationResult {
   const result: ImageGenerationResult = {
     provider: ctx.provider,
@@ -55,6 +63,7 @@ export function completeResult(
     taskId,
     images: images.map(toGeneratedImage),
     elapsedMs: elapsedMs(ctx),
+    usage,
   };
   emitProgress(ctx, { type: "completed", imageCount: result.images.length, elapsedMs: result.elapsedMs });
   return result;
