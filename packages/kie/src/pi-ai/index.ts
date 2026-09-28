@@ -15,6 +15,7 @@ import {
 } from "../constants.ts";
 import { generateKieImage, type KieImageRequest, type KieImageSettings } from "../generate.ts";
 import { KIE_IMAGE_MODELS } from "../models.ts";
+import { kieEnvelopeStreams } from "./envelope-fetch.ts";
 
 export type { ChatModelDefinition, ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
 
@@ -64,6 +65,7 @@ export function createKieProvider(options: KieProviderOptions): Provider<ChatPro
     },
     models: options.models ?? KIE_CHAT_MODELS,
     anthropicAuth: "bearer",
+    wrapStreams: kieEnvelopeStreams,
   });
 }
 

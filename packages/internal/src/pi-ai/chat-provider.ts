@@ -28,6 +28,8 @@ export interface ChatProviderInput {
   models: readonly ChatModelDefinition[];
   /** How the Anthropic Messages endpoint authenticates. KIE requires `Authorization: Bearer`. */
   anthropicAuth: "x-api-key" | "bearer";
+  /** Optional provider quirk adapter applied to both protocol stream implementations. */
+  wrapStreams?: ((streams: ProviderStreams) => ProviderStreams) | undefined;
 }
 
 const ZERO_COST: ModelCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
@@ -38,14 +40,15 @@ const DEFAULTS: Record<ChatProtocol, { contextWindow: number; maxTokens: number 
 };
 
 export function createChatProvider(input: ChatProviderInput): Provider<ChatProtocol> {
-  const anthropic = anthropicMessagesApi();
+  const wrap = input.wrapStreams ?? ((streams: ProviderStreams) => streams);
+  const anthropic = wrap(anthropicMessagesApi());
   return createProvider<ChatProtocol>({
     id: input.id,
     name: input.name,
     auth: explicitApiKeyAuth(input.name, input.apiKey),
     models: input.models.map((definition) => buildChatModel(input.id, input.baseUrls[definition.protocol], definition)),
     api: {
-      "openai-responses": openAIResponsesApi(),
+      "openai-responses": wrap(openAIResponsesApi()),
       "anthropic-messages": input.anthropicAuth === "bearer" ? bearerAuthStreams(anthropic) : anthropic,
     },
   });

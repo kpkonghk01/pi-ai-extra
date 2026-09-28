@@ -17,7 +17,8 @@ export function envelopeData<T>(
 ): T {
   if (response.code === 200 && response.data) return response.data;
   const code = response.code === 200 ? "invalid_response" : codeForStatus(response.code);
-  throw contextError(ctx, `${label} failed with KIE code ${response.code}: ${response.msg?.trim() || "no message"}.`, {
+  const message = response.msg?.trim().replace(/[.。]+$/, "") || "no message";
+  throw contextError(ctx, `${label} failed with KIE code ${response.code}: ${message}.`, {
     code: operation === "upload" && code === "http" ? "upload_failed" : code,
     operation,
     taskId,
