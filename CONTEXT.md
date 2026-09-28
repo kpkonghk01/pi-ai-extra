@@ -33,3 +33,15 @@ Automatically changing provider, model, or file-storage provider after a request
 ## Release artifact
 
 A versioned `.tgz` package attached to a GitHub Release. It is the consumer-installable delivery unit while no npm registry is used.
+
+## Usage record
+
+The usage and billing a provider reported for one task or request: credits, USD cost, billing status, token counts and provider duration. It contains only provider-reported, validated values; absent values are omitted, never estimated or set to zero.
+
+## Billing status
+
+A provider's settlement state for a task's charge (`pending`, `settled`, `refunded`). A `pending` amount may still change, so spend is recorded once per task id and replaced by later lookups rather than summed.
+
+## Client business id
+
+A caller-chosen identifier (for example `open-graph-single:req-123`) sent with a ToAPIs task so provider records can be attributed to an app or request, and used to look the task up later.

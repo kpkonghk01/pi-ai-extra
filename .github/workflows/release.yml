@@ -5,6 +5,7 @@ on:
     tags:
       - "kie-v*"
       - "toapis-v*"
+      - "google-v*"
 
 permissions:
   contents: write
@@ -21,10 +22,9 @@ jobs:
         with:
           node-version: 24.14.1
 
+      # No `version:` input: the action reads the exact pnpm version from package.json `packageManager`.
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 11.23.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -44,6 +44,11 @@ jobs:
               echo "directory=packages/toapis" >> "$GITHUB_OUTPUT"
               echo "version=${GITHUB_REF_NAME#toapis-v}" >> "$GITHUB_OUTPUT"
               ;;
+            google-v*)
+              echo "name=@hk01/pi-ai-extra-google" >> "$GITHUB_OUTPUT"
+              echo "directory=packages/google" >> "$GITHUB_OUTPUT"
+              echo "version=${GITHUB_REF_NAME#google-v}" >> "$GITHUB_OUTPUT"
+              ;;
             *)
               echo "Unsupported release tag: ${GITHUB_REF_NAME}" >&2
               exit 1
@@ -57,19 +62,22 @@ jobs:
         run: |
           node --input-type=module -e 'import { readFile } from "node:fs/promises"; const manifest = JSON.parse(await readFile(`${process.env.PACKAGE_DIRECTORY}/package.json`, "utf8")); if (manifest.version !== process.env.RELEASE_VERSION) { throw new Error(`Tag version ${process.env.RELEASE_VERSION} does not match ${manifest.name}@${manifest.version}`); }'
 
-      - name: Check and build release package
+      - name: Check, test and build release package
         env:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
         run: |
           pnpm --filter "$PACKAGE_NAME"... run check
+          pnpm --filter "$PACKAGE_NAME"... run test
           pnpm --filter "$PACKAGE_NAME"... run build
 
+      # With --filter, pnpm resolves --pack-destination from the workspace root (verified with pnpm 12).
       - name: Pack release artifact
         env:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
         run: |
-          mkdir release-artifacts
-          pnpm --filter "$PACKAGE_NAME" pack --pack-destination ../../release-artifacts
+          mkdir -p release-artifacts
+          pnpm --filter "$PACKAGE_NAME" pack --pack-destination ./release-artifacts
+          ls -l release-artifacts
 
       - name: Create GitHub Release
         env:
