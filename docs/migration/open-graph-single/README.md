@@ -8,11 +8,13 @@
   - 完全禁止 fallback；
   - 錯誤連同 provider、model、code、task id 持續顯示在 UI，並提供「複製錯誤資訊」；
   - 移除前端自動重試。
-- **手動：** `files/` 內是改好的 server 端完整檔案，整份貼上即可。`changes.diff` 是對原檔的完整差異，供 review。UI 端的錯誤顯示修改不在 `files/` 內，請按 `gemini-prompt.md` 第 7 步自行修改。
+- **手動：** `files/` 內是改好的 server 端完整檔案，`changes.diff` 是差異，供 review 或比對 Gemini 的改動。使用前注意：
+  - 這些檔案是根據 2026-09-28 從 AI Studio 取得的版本修改的。你之後在 AI Studio 做過的改動（例如改用 ESM build），整份貼上時會被覆蓋。
+  - UI 端的錯誤顯示修改不在 `files/` 內，請按 `gemini-prompt.md` 第 7 步自行修改。
 
-這些檔案都已在原 app 的副本上驗證過：
+這些檔案都已在原 app 的副本上驗證過（套件從 release URL 安裝）：
 - `tsc --noEmit` 通過。
-- `npm run build`（Vite + esbuild CommonJS server bundle）成功。
+- `npm run build` 成功，ESM（`dist/server.mjs`）和 CommonJS（`dist/server.cjs`）兩種 server build 都已測試。
 - 用 `node dist/server.cjs` 實際呼叫 `/api/gemini/generate` 和 `/api/gemini/edit`：KIE、ToAPIs、Gemini 都能完成驗證、上傳，並到達真正的 provider。測試用的是無效金鑰，所以最後都停在 provider 的 401 / 400。
 
 ## 前置條件
@@ -27,7 +29,7 @@
    - `KIE_API_KEY`
    - `TOAPIS_API_KEY`
    - `GEMINI_API_KEY`（AI Studio 會自動注入）
-2. **package.json**：用 `files/package.json` 整份取代。唯一改動是 `dependencies` 加了三個 `@hk01/pi-ai-extra-*`，指向 release `.tgz`。build 仍然是 CommonJS，不用改。
+2. **package.json**：只在 `dependencies` 加入三個 `@hk01/pi-ai-extra-*`，指向 release `.tgz`（見 `files/package.json`）。不要整份取代，以免覆蓋你的 `build` / `start` 設定。現在的 ESM build（`dist/server.mjs`）不用改；CommonJS build 也可以使用。
 3. **新增** `server/providers/imageClient.ts`，貼上 `files/server/providers/imageClient.ts`。這是 app 唯一直接呼叫 packages 的地方，負責：
    - model 對應
    - 比例轉換

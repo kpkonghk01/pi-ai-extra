@@ -22,7 +22,7 @@ You are editing this Google AI Studio app (React + Vite client, Express `server.
 
    The error must stay on screen until the user closes it and must have a "複製錯誤資訊" (copy error details) button. Do not replace errors with generic text, and do not swallow them. The only exception is user cancellation (`USER_CANCELLED`), which stays silent as today.
 3. **API keys stay on the server.** Read `KIE_API_KEY`, `TOAPIS_API_KEY` and `GEMINI_API_KEY` from `process.env` in server code only, and pass them explicitly to the packages. Never send them to the browser.
-4. **Keep the CommonJS server build** (`esbuild --format=cjs --packages=external`). Import only the packages' main entries (`@hk01/pi-ai-extra-kie`, `@hk01/pi-ai-extra-toapis`, `@hk01/pi-ai-extra-google`). Never import any `/pi-ai` subpath: it is ESM-only and would work in the preview but crash in production.
+4. **Do not change the `build` or `start` scripts.** The server is built as ESM (`esbuild --format=esm … --outfile=dist/server.mjs`, `"start": "node dist/server.mjs"`). For image generation, import only the packages' main entries (`@hk01/pi-ai-extra-kie`, `@hk01/pi-ai-extra-toapis`, `@hk01/pi-ai-extra-google`); the `/pi-ai` subpaths are not needed for this task.
 5. Do not invent package APIs. Use only what `server/providers/imageClient.ts` (below) uses.
 
 ## Step 1: dependencies
@@ -363,7 +363,7 @@ In `src/models.config.ts`, set `enabled: false` on `wokey-gpt-image-2.5` and `wo
 
 ## Step 8: verify before finishing
 
-1. `npm run lint` (tsc) and `npm run build` both pass. `dist/server.cjs` must still be CommonJS.
+1. `npm run lint` (tsc) and `npm run build` both pass, `npm start` (`node dist/server.mjs`) starts the server, and the `build` / `start` scripts are unchanged.
 2. With a wrong `KIE_API_KEY`, generating with "Grok Imagine 2.0" shows a persistent banner containing `kie / grok-imagine-image-2-0/...` and code `auth`, and the copy button copies the full report.
 3. "Grok Imagine 2.0" with a template, 5 source images and a logo (7 images) shows a `reference_limit` error. Do not silently drop images.
 4. Cancelling a running generation shows no error banner.
