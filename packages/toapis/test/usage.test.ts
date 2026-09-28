@@ -93,7 +93,11 @@ describe("ToAPIs usage", () => {
     assert.equal("client_business_id" in (JSON.parse(String(none.calls[0]?.body)) as object), false);
 
     const untouched = createFakeFetch([]);
-    for (const clientBusinessId of ["", "has space", "x".repeat(129), "中文"]) {
+    const unicode = createFakeFetch(routes(completed(SETTLED)));
+    await generateToapisImage({ ...request, clientBusinessId: "訂單/2026#1", fetch: unicode.fetch });
+    assert.equal((JSON.parse(String(unicode.calls[0]?.body)) as Record<string, unknown>).client_business_id, "訂單/2026#1");
+
+    for (const clientBusinessId of ["", " padded ", "x".repeat(129), "line\nbreak"]) {
       await assert.rejects(generateToapisImage({ ...request, clientBusinessId, fetch: untouched.fetch }), (error: unknown) => {
         return isPiAiExtraError(error) && error.code === "invalid_request" && /clientBusinessId/.test(error.message);
       });
@@ -128,6 +132,20 @@ describe("getToapisTask", () => {
     assert.deepEqual(second.resultUrls, [RESULT_URL]);
     assert.equal(second.usage?.billingStatus, "settled");
     assert.equal(second.usage?.costUsd, "0.015");
+  });
+
+  it("still returns billing when a completed task's result URLs are gone (lookup is lenient, polling is strict)", async () => {
+    const events: ImageProgressEvent[] = [];
+    const expired = () => jsonResponse({ id: "tsk_1", status: "completed", result: { type: "image", data: [] }, ...SETTLED });
+    const fake = createFakeFetch(routes(expired));
+    const task = await getToapisTask({ apiKey: "toapis-key", taskId: "tsk_1", fetch: fake.fetch, onProgress: (event) => events.push(event) });
+    assert.equal(task.resultUrls, undefined);
+    assert.equal(task.usage?.billingStatus, "settled");
+    assert.ok(events.some((event) => event.type === "warning"));
+
+    await assert.rejects(generateToapisImage({ ...request, fetch: createFakeFetch(routes(expired)).fetch }), (error: unknown) => {
+      return isPiAiExtraError(error) && error.code === "invalid_response";
+    });
   });
 
   it("returns failed tasks with refunded billing instead of throwing", async () => {

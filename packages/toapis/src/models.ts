@@ -1,8 +1,8 @@
 import { z } from "zod";
 import {
+  baseRequestShape,
+  omitUndefined,
   option,
-  promptSchema,
-  referenceImagesSchema,
   type ImageMimeType,
   type ImageModelInfo,
   type ReferenceImageSpec,
@@ -27,7 +27,7 @@ export type ToapisSeedreamResolution = "1K" | "2K";
 
 /** Validated, provider-neutral view of a ToAPIs request before it becomes the generation body. */
 export interface NormalizedToapisRequest {
-  model: ToapisImageModelId;
+  model: string;
   prompt: string;
   referenceImages: string[];
   aspectRatio?: string | undefined;
@@ -58,44 +58,38 @@ function references(max: number | null, acceptedMimeTypes: readonly ImageMimeTyp
   return { min: 0, max, acceptedMimeTypes, maxInlineBytes: INLINE_LIMIT_BYTES };
 }
 
-function compact(input: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined));
+function info(fields: Omit<ImageModelInfo, "provider" | "kind" | "background" | "outputFormat" | "watermark"> & Partial<ImageModelInfo>): ImageModelInfo {
+  return { provider: TOAPIS_PROVIDER_ID, kind: "text-and-image-to-image", background: null, outputFormat: null, watermark: false, ...fields };
 }
 
 function nonEmpty(values: readonly string[]): string[] | undefined {
   return values.length > 0 ? [...values] : undefined;
 }
 
-function gptImage25Definition(id: "gpt-image-2.5-flare" | "gpt-image-2.5-sunburst"): ToapisModelDefinition {
-  const refs = references(null);
+function gptImage25(id: "gpt-image-2.5-flare" | "gpt-image-2.5-sunburst"): ToapisModelDefinition {
+  const model = info({
+    id,
+    name: id === "gpt-image-2.5-flare" ? "GPT Image 2.5 Flare" : "GPT Image 2.5 Sunburst",
+    promptMaxLength: null,
+    referenceImages: references(null),
+    aspectRatio: option(GPT_IMAGE_25_RATIOS, "1:1"),
+    resolution: option(RESOLUTIONS, "1K"),
+    background: option(TRANSPARENT, null),
+    notes: [
+      "ToAPIs documents no reference-image limit for this model; the provider validates the count.",
+      "Quality is fixed to high by ToAPIs.",
+    ],
+  });
   return {
-    info: {
-      id,
-      name: id === "gpt-image-2.5-flare" ? "GPT Image 2.5 Flare" : "GPT Image 2.5 Sunburst",
-      provider: TOAPIS_PROVIDER_ID,
-      kind: "text-and-image-to-image",
-      promptMaxLength: null,
-      referenceImages: refs,
-      aspectRatio: option(GPT_IMAGE_25_RATIOS, "1:1"),
-      resolution: option(RESOLUTIONS, "1K"),
-      background: option(TRANSPARENT, null),
-      outputFormat: null,
-      watermark: false,
-      notes: [
-        "ToAPIs documents no reference-image limit for this model; the provider validates the count.",
-        "Quality is fixed to high by ToAPIs.",
-      ],
-    },
+    info: model,
     schema: z.strictObject({
-      model: z.literal(id),
-      prompt: promptSchema(null),
-      referenceImages: referenceImagesSchema(id, refs),
+      ...baseRequestShape(model),
       aspectRatio: z.enum(GPT_IMAGE_25_RATIOS).optional(),
       resolution: z.enum(RESOLUTIONS).optional(),
       background: z.enum(TRANSPARENT).optional(),
     }),
     buildBody: (request, imageUrls) =>
-      compact({
+      omitUndefined({
         model: request.model,
         prompt: request.prompt,
         n: 1,
@@ -107,31 +101,51 @@ function gptImage25Definition(id: "gpt-image-2.5-flare" | "gpt-image-2.5-sunburs
   };
 }
 
+const GEMINI_FLASH = info({
+  id: "gemini-3.1-flash-image-preview",
+  name: "Gemini 3.1 Flash Image (Nano Banana 2)",
+  promptMaxLength: null,
+  referenceImages: references(6),
+  aspectRatio: option(GEMINI_RATIOS, null),
+  resolution: option(RESOLUTIONS, "1K"),
+  notes: ["Standard tier: up to 6 reference images."],
+});
+
+const GPT_IMAGE_2 = info({
+  id: "gpt-image-2",
+  name: "GPT Image 2",
+  promptMaxLength: 32_000,
+  referenceImages: references(6),
+  aspectRatio: option(GPT_IMAGE_2_RATIOS, "1:1"),
+  resolution: option(RESOLUTIONS, "1K"),
+  background: option(TRANSPARENT, null),
+  notes: ["Omit background for a normal (opaque) image."],
+});
+
+const SEEDREAM = info({
+  id: "doubao-seedream-5-0-pro",
+  name: "Seedream 5.0 Pro",
+  promptMaxLength: null,
+  referenceImages: references(10, ["image/png", "image/jpeg"]),
+  aspectRatio: option(SEEDREAM_RATIOS, "1:1"),
+  resolution: option(SEEDREAM_RESOLUTIONS, "2K"),
+  watermark: true,
+  notes: [
+    "Reference images: JPEG or PNG, aspect ratio between 1/3 and 3, at most 6000x6000 px.",
+    "The first reference image is free; later ones are billed.",
+  ],
+});
+
 const DEFINITIONS: Record<ToapisImageModelId, ToapisModelDefinition> = {
   "gemini-3.1-flash-image-preview": {
-    info: {
-      id: "gemini-3.1-flash-image-preview",
-      name: "Gemini 3.1 Flash Image (Nano Banana 2)",
-      provider: TOAPIS_PROVIDER_ID,
-      kind: "text-and-image-to-image",
-      promptMaxLength: null,
-      referenceImages: references(6),
-      aspectRatio: option(GEMINI_RATIOS, null),
-      resolution: option(RESOLUTIONS, "1K"),
-      background: null,
-      outputFormat: null,
-      watermark: false,
-      notes: ["Standard tier: up to 6 reference images."],
-    },
+    info: GEMINI_FLASH,
     schema: z.strictObject({
-      model: z.literal("gemini-3.1-flash-image-preview"),
-      prompt: promptSchema(null),
-      referenceImages: referenceImagesSchema("gemini-3.1-flash-image-preview", references(6)),
+      ...baseRequestShape(GEMINI_FLASH),
       aspectRatio: z.enum(GEMINI_RATIOS).optional(),
       resolution: z.enum(RESOLUTIONS).optional(),
     }),
     buildBody: (request, imageUrls) =>
-      compact({
+      omitUndefined({
         model: request.model,
         prompt: request.prompt,
         n: 1,
@@ -141,30 +155,15 @@ const DEFINITIONS: Record<ToapisImageModelId, ToapisModelDefinition> = {
       }),
   },
   "gpt-image-2": {
-    info: {
-      id: "gpt-image-2",
-      name: "GPT Image 2",
-      provider: TOAPIS_PROVIDER_ID,
-      kind: "text-and-image-to-image",
-      promptMaxLength: 32_000,
-      referenceImages: references(6),
-      aspectRatio: option(GPT_IMAGE_2_RATIOS, "1:1"),
-      resolution: option(RESOLUTIONS, "1K"),
-      background: option(TRANSPARENT, null),
-      outputFormat: null,
-      watermark: false,
-      notes: ["Omit background for a normal (opaque) image."],
-    },
+    info: GPT_IMAGE_2,
     schema: z.strictObject({
-      model: z.literal("gpt-image-2"),
-      prompt: promptSchema(32_000),
-      referenceImages: referenceImagesSchema("gpt-image-2", references(6)),
+      ...baseRequestShape(GPT_IMAGE_2),
       aspectRatio: z.enum(GPT_IMAGE_2_RATIOS).optional(),
       resolution: z.enum(RESOLUTIONS).optional(),
       background: z.enum(TRANSPARENT).optional(),
     }),
     buildBody: (request, imageUrls) =>
-      compact({
+      omitUndefined({
         model: request.model,
         prompt: request.prompt,
         n: 1,
@@ -176,37 +175,19 @@ const DEFINITIONS: Record<ToapisImageModelId, ToapisModelDefinition> = {
         reference_images: nonEmpty(imageUrls),
       }),
   },
-  "gpt-image-2.5-flare": gptImage25Definition("gpt-image-2.5-flare"),
-  "gpt-image-2.5-sunburst": gptImage25Definition("gpt-image-2.5-sunburst"),
+  "gpt-image-2.5-flare": gptImage25("gpt-image-2.5-flare"),
+  "gpt-image-2.5-sunburst": gptImage25("gpt-image-2.5-sunburst"),
   "doubao-seedream-5-0-pro": {
-    info: {
-      id: "doubao-seedream-5-0-pro",
-      name: "Seedream 5.0 Pro",
-      provider: TOAPIS_PROVIDER_ID,
-      kind: "text-and-image-to-image",
-      promptMaxLength: null,
-      referenceImages: references(10, ["image/png", "image/jpeg"]),
-      aspectRatio: option(SEEDREAM_RATIOS, "1:1"),
-      resolution: option(SEEDREAM_RESOLUTIONS, "2K"),
-      background: null,
-      outputFormat: null,
-      watermark: true,
-      notes: [
-        "Reference images: JPEG or PNG, aspect ratio between 1/3 and 3, at most 6000x6000 px.",
-        "The first reference image is free; later ones are billed.",
-      ],
-    },
+    info: SEEDREAM,
     schema: z.strictObject({
-      model: z.literal("doubao-seedream-5-0-pro"),
-      prompt: promptSchema(null),
-      referenceImages: referenceImagesSchema("doubao-seedream-5-0-pro", references(10)),
+      ...baseRequestShape(SEEDREAM),
       aspectRatio: z.enum(SEEDREAM_RATIOS).optional(),
       resolution: z.enum(SEEDREAM_RESOLUTIONS).optional(),
       watermark: z.boolean().optional(),
     }),
     buildBody: (request, imageUrls) => {
-      const metadata = compact({ resolution: request.resolution, watermark: request.watermark });
-      return compact({
+      const metadata = omitUndefined({ resolution: request.resolution, watermark: request.watermark });
+      return omitUndefined({
         model: request.model,
         prompt: request.prompt,
         n: 1,

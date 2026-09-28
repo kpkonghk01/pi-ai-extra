@@ -2,8 +2,11 @@ import { z } from "zod";
 import {
   assertApiKey,
   createOperationContext,
+  httpUrlSchema,
   parseRequest,
+  withoutTrailingSlash,
   type FetchLike,
+  type ImageProgressListener,
   type ImageUsage,
 } from "@hk01/pi-ai-extra-internal";
 import { KIE_API_BASE_URL, KIE_PROVIDER_ID } from "./constants.ts";
@@ -19,6 +22,8 @@ export interface GetKieTaskOptions {
   signal?: AbortSignal | undefined;
   /** Request timeout in milliseconds. Default 30 s. */
   timeoutMs?: number | undefined;
+  /** Receives `warning` events, e.g. when a result or usage field is malformed and omitted. */
+  onProgress?: ImageProgressListener | undefined;
   fetch?: FetchLike | undefined;
 }
 
@@ -37,7 +42,7 @@ export interface KieTaskInfo {
 
 const optionsSchema = z.strictObject({
   taskId: z.string().trim().min(1, "taskId is required"),
-  apiBaseUrl: z.url({ protocol: /^https?$/ }).optional(),
+  apiBaseUrl: httpUrlSchema.optional(),
   timeoutMs: z.number().int().positive().optional(),
 });
 
@@ -52,6 +57,7 @@ export async function getKieTask(options: GetKieTaskOptions): Promise<KieTaskInf
     model: options.model ?? `task:${options.taskId}`,
     signal: options.signal,
     fetch: options.fetch,
+    onProgress: options.onProgress,
   });
   assertApiKey(ctx, options.apiKey);
   const parsed = parseRequest(ctx, optionsSchema, {
@@ -59,7 +65,7 @@ export async function getKieTask(options: GetKieTaskOptions): Promise<KieTaskInf
     apiBaseUrl: options.apiBaseUrl,
     timeoutMs: options.timeoutMs,
   });
-  const apiBaseUrl = (parsed.apiBaseUrl ?? KIE_API_BASE_URL).replace(/\/+$/, "");
-  const record = await fetchKieTaskRecord(ctx, options.apiKey, apiBaseUrl, parsed.taskId, true, parsed.timeoutMs);
+  const apiBaseUrl = withoutTrailingSlash(parsed.apiBaseUrl ?? KIE_API_BASE_URL);
+  const record = await fetchKieTaskRecord(ctx, options.apiKey, apiBaseUrl, parsed.taskId, "lookup", parsed.timeoutMs);
   return { provider: KIE_PROVIDER_ID, ...record };
 }

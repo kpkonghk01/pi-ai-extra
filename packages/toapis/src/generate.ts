@@ -2,18 +2,19 @@ import { z } from "zod";
 import {
   assertApiKey,
   assertSupportedModel,
-  completeResult,
   createOperationContext,
-  DEFAULT_MAX_OUTPUT_BYTES,
-  downloadResultImages,
   emitProgress,
+  httpUrlSchema,
   parseRequest,
+  pollSchedule,
   resolveReferenceImages,
+  runAsyncImageTask,
   splitHelperOptions,
-  throwIfAborted,
-  uploadInlineReferences,
+  taskSettingsShape,
+  withoutTrailingSlash,
   type ImageGenerationResult,
   type ImageHelperOptions,
+  type PollDefaults,
 } from "@hk01/pi-ai-extra-internal";
 import { createToapisTask, uploadToToapis } from "./client.ts";
 import { TOAPIS_BASE_URL, TOAPIS_PROVIDER_ID } from "./constants.ts";
@@ -39,7 +40,8 @@ export interface ToapisImageSettings {
   /**
    * Caller-side business id sent as top-level `client_business_id` (for example
    * `open-graph-single:req-123`), so ToAPIs records can be attributed to an app or request.
-   * The task can also be looked up by it. 1-128 characters of `A-Z a-z 0-9 . _ : -`.
+   * The task can also be looked up by it. Non-empty, at most 128 characters, no control
+   * characters or surrounding whitespace. Use a unique value per request.
    */
   clientBusinessId?: string | undefined;
 }
@@ -84,22 +86,22 @@ export interface ToapisSeedreamRequest extends ToapisRequestBase {
 
 export type ToapisImageRequest = ToapisGeminiFlashImageRequest | ToapisGptImage2Request | ToapisGptImage25Request | ToapisSeedreamRequest;
 
-const DEFAULT_TIMEOUT_MS = 6 * 60_000;
-const DOWNLOAD_TIMEOUT_MS = 60_000;
+/** ToAPIs recommends waiting at least 5-10 s with jitter between status queries. */
+const POLL_DEFAULTS: PollDefaults = { initialDelayMs: 5_000, maxDelayMs: 10_000, factor: 1.5, jitterRatio: 0.2, timeoutMs: 6 * 60_000 };
 
-export const CLIENT_BUSINESS_ID_PATTERN: RegExp = /^[A-Za-z0-9._:-]{1,128}$/;
+export const CLIENT_BUSINESS_ID_MAX_LENGTH = 128;
+
+const clientBusinessIdSchema = z
+  .string()
+  .min(1, "clientBusinessId must not be empty")
+  .max(CLIENT_BUSINESS_ID_MAX_LENGTH, `clientBusinessId must be at most ${CLIENT_BUSINESS_ID_MAX_LENGTH} characters`)
+  .refine((value) => value === value.trim(), "clientBusinessId must not start or end with whitespace")
+  .refine((value) => !/[\u0000-\u001f\u007f]/.test(value), "clientBusinessId must not contain control characters");
 
 const settingsSchema = z.strictObject({
-  baseUrl: z.url({ protocol: /^https?$/ }).optional(),
-  clientBusinessId: z
-    .string()
-    .regex(CLIENT_BUSINESS_ID_PATTERN, "clientBusinessId must be 1-128 characters of A-Z a-z 0-9 . _ : -")
-    .optional(),
-  poll: z
-    .strictObject({ initialDelayMs: z.number().int().positive().optional(), maxDelayMs: z.number().int().positive().optional() })
-    .optional(),
-  timeoutMs: z.number().int().positive().optional(),
-  maxOutputBytes: z.number().int().positive().optional(),
+  ...taskSettingsShape,
+  baseUrl: httpUrlSchema.optional(),
+  clientBusinessId: clientBusinessIdSchema.optional(),
 });
 
 /**
@@ -120,44 +122,20 @@ export async function generateToapisImage(request: ToapisImageRequest): Promise<
 
   const { settings, payload } = splitHelperOptions(request);
   const { baseUrl, poll, clientBusinessId, ...modelPayload } = payload;
-  const options = parseRequest(ctx, settingsSchema, {
-    baseUrl,
-    poll,
-    clientBusinessId,
-    timeoutMs: settings.timeoutMs,
-    maxOutputBytes: settings.maxOutputBytes,
-  });
+  const options = parseRequest(ctx, settingsSchema, { baseUrl, poll, clientBusinessId, timeoutMs: settings.timeoutMs, maxOutputBytes: settings.maxOutputBytes });
   const definition = toapisModelDefinition(request.model as ToapisImageModelId);
   const parsed = parseRequest(ctx, definition.schema, modelPayload);
   const references = resolveReferenceImages(ctx, parsed.referenceImages, definition.info.referenceImages);
   emitProgress(ctx, { type: "validated", referenceImageCount: references.length });
 
-  const host = (options.baseUrl ?? TOAPIS_BASE_URL).replace(/\/+$/, "");
   const apiKey = request.apiKey;
-  const imageUrls = await uploadInlineReferences(ctx, references, (reference) => uploadToToapis(ctx, apiKey, host, reference));
-
-  throwIfAborted(ctx, "submit");
-  const body = {
-    ...definition.buildBody(parsed, imageUrls),
-    ...(options.clientBusinessId === undefined ? {} : { client_business_id: options.clientBusinessId }),
-  };
-  const taskId = await createToapisTask(ctx, apiKey, host, body);
-  emitProgress(ctx, { type: "task_submitted", taskId });
-
-  const initialDelayMs = options.poll?.initialDelayMs ?? 5_000;
-  const { resultUrls, usage } = await waitForToapisTask(ctx, apiKey, host, taskId, {
-    initialDelayMs,
-    maxDelayMs: Math.max(initialDelayMs, options.poll?.maxDelayMs ?? 10_000),
-    factor: 1.5,
-    jitterRatio: 0.2,
-    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  const host = withoutTrailingSlash(options.baseUrl ?? TOAPIS_BASE_URL);
+  const attribution = options.clientBusinessId === undefined ? {} : { client_business_id: options.clientBusinessId };
+  return runAsyncImageTask(ctx, {
+    references,
+    upload: (reference) => uploadToToapis(ctx, apiKey, host, reference),
+    submit: (imageUrls) => createToapisTask(ctx, apiKey, host, { ...definition.buildBody(parsed, imageUrls), ...attribution }),
+    wait: (taskId) => waitForToapisTask(ctx, apiKey, host, taskId, pollSchedule(POLL_DEFAULTS, options)),
+    maxOutputBytes: options.maxOutputBytes,
   });
-
-  const images = await downloadResultImages(ctx, resultUrls, {
-    timeoutMs: DOWNLOAD_TIMEOUT_MS,
-    maxBytes: options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
-    retry: { attempts: 3, baseDelayMs: 1_000, maxDelayMs: 5_000 },
-    taskId,
-  });
-  return completeResult(ctx, taskId, images, usage);
 }

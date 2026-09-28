@@ -75,3 +75,16 @@ export function assertSupportedModel(ctx: OperationContext, model: unknown, supp
     operation: "validate",
   });
 }
+
+/** The `model`, `prompt` and `referenceImages` fields every image operation validates, derived from its catalogue entry. */
+export function baseRequestShape(info: {
+  id: string;
+  promptMaxLength: number | null;
+  referenceImages: ReferenceImageLimit;
+}): { model: z.ZodLiteral<string>; prompt: z.ZodString; referenceImages: z.ZodType<string[]> } {
+  return {
+    model: z.literal(info.id),
+    prompt: promptSchema(info.promptMaxLength),
+    referenceImages: referenceImagesSchema(info.id, info.referenceImages),
+  };
+}

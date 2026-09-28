@@ -1,5 +1,14 @@
 import { z } from "zod";
-import { assertApiKey, createOperationContext, parseRequest, type FetchLike, type ImageUsage } from "@hk01/pi-ai-extra-internal";
+import {
+  assertApiKey,
+  createOperationContext,
+  httpUrlSchema,
+  parseRequest,
+  withoutTrailingSlash,
+  type FetchLike,
+  type ImageProgressListener,
+  type ImageUsage,
+} from "@hk01/pi-ai-extra-internal";
 import { TOAPIS_BASE_URL, TOAPIS_PROVIDER_ID } from "./constants.ts";
 import { fetchToapisTaskRecord, type ToapisTaskStatus } from "./task.ts";
 
@@ -14,6 +23,8 @@ export interface GetToapisTaskOptions {
   signal?: AbortSignal | undefined;
   /** Request timeout in milliseconds. Default 30 s. */
   timeoutMs?: number | undefined;
+  /** Receives `warning` events, e.g. when a result or billing field is malformed and omitted. */
+  onProgress?: ImageProgressListener | undefined;
   fetch?: FetchLike | undefined;
 }
 
@@ -37,7 +48,7 @@ export interface ToapisTaskInfo {
 
 const optionsSchema = z.strictObject({
   taskId: z.string().trim().min(1, "taskId is required").max(256),
-  baseUrl: z.url({ protocol: /^https?$/ }).optional(),
+  baseUrl: httpUrlSchema.optional(),
   timeoutMs: z.number().int().positive().optional(),
 });
 
@@ -52,10 +63,11 @@ export async function getToapisTask(options: GetToapisTaskOptions): Promise<Toap
     model: options.model ?? `task:${options.taskId}`,
     signal: options.signal,
     fetch: options.fetch,
+    onProgress: options.onProgress,
   });
   assertApiKey(ctx, options.apiKey);
   const parsed = parseRequest(ctx, optionsSchema, { taskId: options.taskId, baseUrl: options.baseUrl, timeoutMs: options.timeoutMs });
-  const baseUrl = (parsed.baseUrl ?? TOAPIS_BASE_URL).replace(/\/+$/, "");
-  const record = await fetchToapisTaskRecord(ctx, options.apiKey, baseUrl, parsed.taskId, true, parsed.timeoutMs);
+  const baseUrl = withoutTrailingSlash(parsed.baseUrl ?? TOAPIS_BASE_URL);
+  const record = await fetchToapisTaskRecord(ctx, options.apiKey, baseUrl, parsed.taskId, "lookup", parsed.timeoutMs);
   return { provider: TOAPIS_PROVIDER_ID, ...record };
 }

@@ -1,7 +1,7 @@
-import { sleep } from "./abort.ts";
 import { contextError, emitProgress, type OperationContext } from "./context.ts";
 import { isPiAiExtraError } from "./errors.ts";
-import { httpStatusError, openRequest, type HttpRequest, type RetryPolicy } from "./http.ts";
+import { httpStatusError, openRequest, type HttpRequest } from "./http.ts";
+import { withRetry, type RetryPolicy } from "./retry.ts";
 import { formatBytes, sniffImageMimeType, type ImageBytes } from "./image-data.ts";
 
 export interface DownloadOptions {
@@ -32,15 +32,7 @@ export async function downloadResultImages(
 /** Downloads one image with a size cap. Retries only this same URL on transient failures. */
 export async function downloadImage(ctx: OperationContext, url: string, options: DownloadOptions): Promise<DownloadedImage> {
   const request: HttpRequest = { url, method: "GET", operation: "download", taskId: options.taskId, timeoutMs: options.timeoutMs };
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      return await downloadOnce(ctx, request, options.maxBytes);
-    } catch (error) {
-      if (!isPiAiExtraError(error) || !error.retryable || attempt >= options.retry.attempts) throw error;
-      const delay = Math.min(options.retry.maxDelayMs, options.retry.baseDelayMs * 2 ** (attempt - 1));
-      await sleep(ctx, delay, "download", options.taskId);
-    }
-  }
+  return withRetry(ctx, options.retry, "download", options.taskId, () => downloadOnce(ctx, request, options.maxBytes));
 }
 
 async function downloadOnce(ctx: OperationContext, request: HttpRequest, maxBytes: number): Promise<DownloadedImage> {

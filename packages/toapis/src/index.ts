@@ -1,5 +1,5 @@
 export {
-  CLIENT_BUSINESS_ID_PATTERN,
+  CLIENT_BUSINESS_ID_MAX_LENGTH,
   generateToapisImage,
   type ToapisGeminiFlashImageRequest,
   type ToapisGptImage25Request,

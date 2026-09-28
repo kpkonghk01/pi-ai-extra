@@ -7,5 +7,5 @@ export {
   type ChatProtocol,
   type ChatProviderInput,
 } from "./chat-provider.ts";
-export { createHelperImagesProvider, type HelperImageRequest, type HelperImagesProviderInput } from "./images-provider.ts";
+export { createHelperImagesProvider, type HelperImagesProviderInput } from "./images-provider.ts";
 export { toPiAiUsage } from "./usage.ts";

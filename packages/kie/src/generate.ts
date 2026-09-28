@@ -2,22 +2,22 @@ import { z } from "zod";
 import {
   assertApiKey,
   assertSupportedModel,
-  completeResult,
   createOperationContext,
-  DEFAULT_MAX_OUTPUT_BYTES,
-  downloadResultImages,
   emitProgress,
+  httpUrlSchema,
   parseRequest,
+  pollSchedule,
   resolveReferenceImages,
+  runAsyncImageTask,
   splitHelperOptions,
-  throwIfAborted,
-  uploadInlineReferences,
+  taskSettingsShape,
+  withoutTrailingSlash,
   type ImageGenerationResult,
   type ImageHelperOptions,
+  type PollDefaults,
 } from "@hk01/pi-ai-extra-internal";
 import { createKieTask, uploadToKie, type KieEndpoints } from "./client.ts";
 import { KIE_API_BASE_URL, KIE_PROVIDER_ID, KIE_UPLOAD_BASE_URL } from "./constants.ts";
-import { waitForKieTask } from "./task.ts";
 import {
   KIE_IMAGE_MODEL_IDS,
   kieModelDefinition,
@@ -30,6 +30,7 @@ import {
   type KieNanoBanana2OutputFormat,
   type KieResolution,
 } from "./models.ts";
+import { waitForKieTask } from "./task.ts";
 
 /** Advanced transport settings. Defaults follow KIE's documentation. */
 export interface KieImageSettings {
@@ -76,17 +77,13 @@ export interface KieNanoBanana2Request extends KieRequestBase {
 
 export type KieImageRequest = KieGrokTextToImageRequest | KieGrokImageEditRequest | KieGptImage2Request | KieNanoBanana2Request;
 
-const DEFAULT_TIMEOUT_MS = 10 * 60_000;
-const DOWNLOAD_TIMEOUT_MS = 60_000;
+/** KIE recommends starting at 2-3 s, backing off gradually and stopping after 10-15 minutes. */
+const POLL_DEFAULTS: PollDefaults = { initialDelayMs: 2_500, maxDelayMs: 10_000, factor: 1.5, jitterRatio: 0.1, timeoutMs: 10 * 60_000 };
 
 const settingsSchema = z.strictObject({
-  apiBaseUrl: z.url({ protocol: /^https?$/ }).optional(),
-  uploadBaseUrl: z.url({ protocol: /^https?$/ }).optional(),
-  poll: z
-    .strictObject({ initialDelayMs: z.number().int().positive().optional(), maxDelayMs: z.number().int().positive().optional() })
-    .optional(),
-  timeoutMs: z.number().int().positive().optional(),
-  maxOutputBytes: z.number().int().positive().optional(),
+  ...taskSettingsShape,
+  apiBaseUrl: httpUrlSchema.optional(),
+  uploadBaseUrl: httpUrlSchema.optional(),
 });
 
 /**
@@ -107,47 +104,22 @@ export async function generateKieImage(request: KieImageRequest): Promise<ImageG
 
   const { settings, payload } = splitHelperOptions(request);
   const { apiBaseUrl, uploadBaseUrl, poll, ...modelPayload } = payload;
-  const options = parseRequest(ctx, settingsSchema, {
-    apiBaseUrl,
-    uploadBaseUrl,
-    poll,
-    timeoutMs: settings.timeoutMs,
-    maxOutputBytes: settings.maxOutputBytes,
-  });
+  const options = parseRequest(ctx, settingsSchema, { apiBaseUrl, uploadBaseUrl, poll, timeoutMs: settings.timeoutMs, maxOutputBytes: settings.maxOutputBytes });
   const definition = kieModelDefinition(request.model as KieImageModelId);
   const parsed = parseRequest(ctx, definition.schema, modelPayload);
   const references = resolveReferenceImages(ctx, parsed.referenceImages, definition.info.referenceImages);
   emitProgress(ctx, { type: "validated", referenceImageCount: references.length });
 
+  const apiKey = request.apiKey;
   const endpoints: KieEndpoints = {
     apiBaseUrl: withoutTrailingSlash(options.apiBaseUrl ?? KIE_API_BASE_URL),
     uploadBaseUrl: withoutTrailingSlash(options.uploadBaseUrl ?? KIE_UPLOAD_BASE_URL),
   };
-  const apiKey = request.apiKey;
-  const imageUrls = await uploadInlineReferences(ctx, references, (reference) => uploadToKie(ctx, apiKey, endpoints, reference));
-
-  throwIfAborted(ctx, "submit");
-  const taskId = await createKieTask(ctx, apiKey, endpoints, parsed.model, definition.buildInput(parsed, imageUrls));
-  emitProgress(ctx, { type: "task_submitted", taskId });
-
-  const initialDelayMs = options.poll?.initialDelayMs ?? 2_500;
-  const { resultUrls, usage } = await waitForKieTask(ctx, apiKey, endpoints.apiBaseUrl, taskId, {
-    initialDelayMs,
-    maxDelayMs: Math.max(initialDelayMs, options.poll?.maxDelayMs ?? 10_000),
-    factor: 1.5,
-    jitterRatio: 0.1,
-    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  return runAsyncImageTask(ctx, {
+    references,
+    upload: (reference) => uploadToKie(ctx, apiKey, endpoints, reference),
+    submit: (imageUrls) => createKieTask(ctx, apiKey, endpoints, parsed.model, definition.buildInput(parsed, imageUrls)),
+    wait: (taskId) => waitForKieTask(ctx, apiKey, endpoints.apiBaseUrl, taskId, pollSchedule(POLL_DEFAULTS, options)),
+    maxOutputBytes: options.maxOutputBytes,
   });
-
-  const images = await downloadResultImages(ctx, resultUrls, {
-    timeoutMs: DOWNLOAD_TIMEOUT_MS,
-    maxBytes: options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
-    retry: { attempts: 3, baseDelayMs: 1_000, maxDelayMs: 5_000 },
-    taskId,
-  });
-  return completeResult(ctx, taskId, images, usage);
-}
-
-function withoutTrailingSlash(url: string): string {
-  return url.replace(/\/+$/, "");
 }

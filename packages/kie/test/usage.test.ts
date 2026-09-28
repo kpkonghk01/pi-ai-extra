@@ -90,6 +90,19 @@ describe("getKieTask", () => {
     assert.equal(queued.usage, undefined);
   });
 
+  it("still returns usage when resultJson is malformed (lookup is lenient, polling is strict)", async () => {
+    const events: ImageProgressEvent[] = [];
+    const broken = record({ state: "success", resultJson: "{not json", creditsConsumed: 6 });
+    const task = await getKieTask({ apiKey: "kie-key", taskId: "task_1", fetch: createFakeFetch(routes(broken)).fetch, onProgress: (event) => events.push(event) });
+    assert.equal(task.resultUrls, undefined);
+    assert.deepEqual(task.usage, { credits: 6 });
+    assert.ok(events.some((event) => event.type === "warning"));
+
+    await assert.rejects(generateKieImage({ ...request, fetch: createFakeFetch(routes(broken)).fetch }), (error: unknown) => {
+      return isPiAiExtraError(error) && error.code === "invalid_response";
+    });
+  });
+
   it("validates input before any request", async () => {
     const fake = createFakeFetch([]);
     await assert.rejects(getKieTask({ apiKey: "kie-key", taskId: " ", fetch: fake.fetch }), (error: unknown) => {

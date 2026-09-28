@@ -1,4 +1,5 @@
 import type { ImagesProvider, Provider } from "@earendil-works/pi-ai";
+import { withoutTrailingSlash } from "@hk01/pi-ai-extra-internal";
 import {
   createChatProvider,
   createHelperImagesProvider,
@@ -35,7 +36,7 @@ export interface ToapisProviderOptions {
  * (`<host>/v1/responses`); Claude models use its Anthropic Messages adapter (`<host>/v1/messages`).
  */
 export function createToapisProvider(options: ToapisProviderOptions): Provider<ChatProtocol> {
-  const host = (options.baseUrl ?? TOAPIS_BASE_URL).replace(/\/+$/, "");
+  const host = withoutTrailingSlash(options.baseUrl ?? TOAPIS_BASE_URL);
   return createChatProvider({
     id: TOAPIS_PROVIDER_ID,
     name: TOAPIS_PROVIDER_NAME,
@@ -63,16 +64,7 @@ export function createToapisImagesProvider(options: ToapisImagesProviderOptions)
     baseUrl: options.settings?.baseUrl ?? TOAPIS_BASE_URL,
     apiKey: options.apiKey,
     models: TOAPIS_IMAGE_MODELS,
-    generate: (request) =>
-      generateToapisImage({
-        ...request.params,
-        ...options.settings,
-        model: request.model,
-        prompt: request.prompt,
-        referenceImages: request.referenceImages,
-        apiKey: request.apiKey,
-        signal: request.signal,
-        fetch: request.fetch,
-      } as ToapisImageRequest),
+    settings: options.settings,
+    generate: (request) => generateToapisImage(request as unknown as ToapisImageRequest),
   });
 }

@@ -5,6 +5,7 @@ import {
   decodeBase64,
   formatBytes,
   isPiAiExtraError,
+  omitUndefined,
   requestJson,
   safeStringify,
   sniffImageMimeType,
@@ -102,10 +103,8 @@ export async function generateContentImages(
   ctx: OperationContext,
   input: GenerateContentInput,
 ): Promise<{ images: ImageBytes[]; responseId: string | undefined; usage: ImageUsage | undefined }> {
-  const imageConfig: Record<string, string> = {};
-  if (input.aspectRatio) imageConfig.aspectRatio = input.aspectRatio;
-  if (input.imageSize) imageConfig.imageSize = input.imageSize;
-  const body: Record<string, unknown> = {
+  const imageConfig = omitUndefined({ aspectRatio: input.aspectRatio, imageSize: input.imageSize });
+  const body = {
     contents: [
       {
         role: "user",
@@ -113,8 +112,8 @@ export async function generateContentImages(
       },
     ],
     generationConfig: Object.keys(imageConfig).length > 0 ? { imageConfig } : {},
+    ...(input.safetySettings && input.safetySettings.length > 0 ? { safetySettings: input.safetySettings } : {}),
   };
-  if (input.safetySettings && input.safetySettings.length > 0) body.safetySettings = input.safetySettings;
 
   const response = await requestJson(
     ctx,

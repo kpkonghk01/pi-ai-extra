@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fileExtension, requestJson, type InlineReference, type OperationContext, type RetryPolicy } from "@hk01/pi-ai-extra-internal";
+import { fileExtension, requestJson, UPLOAD_RETRY, type InlineReference, type OperationContext } from "@hk01/pi-ai-extra-internal";
 import { bearerHeaders, envelope, envelopeData } from "./envelope.ts";
 
 export interface KieEndpoints {
@@ -9,7 +9,6 @@ export interface KieEndpoints {
 
 const UPLOAD_TIMEOUT_MS = 60_000;
 const SUBMIT_TIMEOUT_MS = 60_000;
-const UPLOAD_RETRY: RetryPolicy = { attempts: 2, baseDelayMs: 1_000, maxDelayMs: 5_000 };
 
 const uploadResponse = envelope(z.object({ downloadUrl: z.url() }));
 const createTaskResponse = envelope(z.object({ taskId: z.string().min(1) }));

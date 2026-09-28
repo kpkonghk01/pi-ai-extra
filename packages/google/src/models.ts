@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { option, promptSchema, referenceImagesSchema, type ImageModelInfo, type ReferenceImageSpec } from "@hk01/pi-ai-extra-internal";
+import { baseRequestShape, option, type ImageModelInfo, type ReferenceImageSpec } from "@hk01/pi-ai-extra-internal";
 import { GOOGLE_PROVIDER_ID } from "./constants.ts";
 
 export type GoogleImageModelId = "gemini-3.1-flash-image" | "gemini-3-pro-image";
@@ -23,7 +23,7 @@ export interface GoogleSafetySetting {
 }
 
 export interface NormalizedGoogleRequest {
-  model: GoogleImageModelId;
+  model: string;
   prompt: string;
   referenceImages: string[];
   aspectRatio?: string | undefined;
@@ -74,25 +74,24 @@ function definition(
   sizes: readonly [string, ...string[]],
   notes: readonly string[],
 ): GoogleModelDefinition {
+  const info: ImageModelInfo = {
+    id,
+    name,
+    provider: GOOGLE_PROVIDER_ID,
+    kind: "text-and-image-to-image",
+    promptMaxLength: null,
+    referenceImages: REFERENCES,
+    aspectRatio: option(ratios, null),
+    resolution: option(sizes, "1K"),
+    background: null,
+    outputFormat: null,
+    watermark: false,
+    notes: [...COMMON_NOTES, ...notes],
+  };
   return {
-    info: {
-      id,
-      name,
-      provider: GOOGLE_PROVIDER_ID,
-      kind: "text-and-image-to-image",
-      promptMaxLength: null,
-      referenceImages: REFERENCES,
-      aspectRatio: option(ratios, null),
-      resolution: option(sizes, "1K"),
-      background: null,
-      outputFormat: null,
-      watermark: false,
-      notes: [...COMMON_NOTES, ...notes],
-    },
+    info,
     schema: z.strictObject({
-      model: z.literal(id),
-      prompt: promptSchema(null),
-      referenceImages: referenceImagesSchema(id, REFERENCES),
+      ...baseRequestShape(info),
       aspectRatio: z.enum(ratios).optional(),
       resolution: z.enum(sizes).optional(),
       safetySettings: safetySettingsSchema,

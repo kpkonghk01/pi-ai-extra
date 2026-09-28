@@ -1,5 +1,6 @@
 import { sleep } from "./abort.ts";
 import { contextError, elapsedMs, emitProgress, type OperationContext } from "./context.ts";
+import { isPiAiExtraError } from "./errors.ts";
 
 export type PollOutcome<T> = { done: true; value: T } | { done: false; status: string };
 
@@ -17,6 +18,11 @@ export interface PollSchedule {
 export interface PollTaskOptions<T> extends PollSchedule {
   taskId: string;
   check: () => Promise<PollOutcome<T>>;
+  /**
+   * Consecutive retryable status-query failures (after the request's own retries) that
+   * are tolerated by polling the same task again. Terminal task failures always throw.
+   */
+  transientFailureLimit?: number | undefined;
 }
 
 /**
@@ -25,6 +31,7 @@ export interface PollTaskOptions<T> extends PollSchedule {
  */
 export async function pollTask<T>(ctx: OperationContext, options: PollTaskOptions<T>): Promise<T> {
   const deadline = Date.now() + options.timeoutMs;
+  const check = tolerateTransientFailures(options.check, options.transientFailureLimit ?? 0);
   let delay = options.initialDelayMs;
   let lastStatus: string | undefined;
 
@@ -33,7 +40,7 @@ export async function pollTask<T>(ctx: OperationContext, options: PollTaskOption
     if (remaining <= 0) throw timeoutError(ctx, options, lastStatus);
     await sleep(ctx, Math.min(withJitter(delay, options.jitterRatio), remaining), "poll", options.taskId);
 
-    const outcome = await options.check();
+    const outcome = await check();
     if (outcome.done) return outcome.value;
     if (outcome.status !== lastStatus) {
       lastStatus = outcome.status;
@@ -41,6 +48,21 @@ export async function pollTask<T>(ctx: OperationContext, options: PollTaskOption
     }
     delay = Math.min(options.maxDelayMs, delay * options.factor);
   }
+}
+
+function tolerateTransientFailures<T>(check: () => Promise<PollOutcome<T>>, limit: number): () => Promise<PollOutcome<T>> {
+  let consecutiveFailures = 0;
+  return async () => {
+    try {
+      const outcome = await check();
+      consecutiveFailures = 0;
+      return outcome;
+    } catch (error) {
+      if (!isPiAiExtraError(error) || !error.retryable || consecutiveFailures >= limit) throw error;
+      consecutiveFailures += 1;
+      return { done: false, status: `status query failed (${error.code}); retrying` };
+    }
+  };
 }
 
 function withJitter(delay: number, ratio: number): number {
