@@ -2,7 +2,13 @@
 
 將 open-graph-single（即 Jira 上的 remix-open-graph-single）的 KIE、ToAPIs、Gemini 生圖邏輯，換成 `@hk01/pi-ai-extra-*` packages。對應 [DATA-4512](https://hk01-digital.atlassian.net/browse/DATA-4512) P0。
 
-`files/` 內是改好的完整檔案，直接整份貼上即可。`changes.diff` 是對原檔的完整差異，供 review。
+有兩種做法：
+
+- **建議：交給 AI Studio 的 Gemini 改。** 把 [`gemini-prompt.md`](gemini-prompt.md) 整份貼給 AI Studio 的 Gemini。它包含已驗證的 `imageClient.ts`，也包含 server 和 UI 的逐步修改要求：
+  - 完全禁止 fallback；
+  - 錯誤連同 provider、model、code、task id 持續顯示在 UI，並提供「複製錯誤資訊」；
+  - 移除前端自動重試。
+- **手動：** `files/` 內是改好的 server 端完整檔案，整份貼上即可。`changes.diff` 是對原檔的完整差異，供 review。UI 端的錯誤顯示修改不在 `files/` 內，請按 `gemini-prompt.md` 第 7 步自行修改。
 
 這些檔案都已在原 app 的副本上驗證過：
 - `tsc --noEmit` 通過。
@@ -11,7 +17,7 @@
 
 ## 前置條件
 
-1. 在 pi-ai-extra 發佈三個 release：`kie-v0.1.0`、`toapis-v0.1.0`、`google-v0.1.0`（見 repo README 的 Release 一節）。發佈後，`files/package.json` 裡的三條 URL 才能下載。
+1. 三個 release 已發佈：`kie-v0.1.0`、`toapis-v0.1.0`、`google-v0.1.0`。`files/package.json` 和 `gemini-prompt.md` 內的 URL 都可以匿名下載，並已實際用 `npm install` 驗證。
 2. GitHub repo 需要是 public，AI Studio 安裝時才能匿名下載 release asset。
 3. 改動前先在 AI Studio 把整個 app 下載（Download / Export ZIP）備份。AI Studio 沒有 Git，這份 ZIP 就是 rollback 手段。
 
@@ -66,7 +72,11 @@
   - KIE GPT Image 2 在 2K 下的 4:5 → 3:4
   - 300x250 → 5:4（Grok 沒有 5:4，會變 1:1）
 - **Gemini prompt 結構**：原本文字和圖片交錯傳送，現在是一段文字（圖片以 `[Reference image N]` 標示位置）加上按序排列的圖片。標籤文字完全保留，但建議實測比較出圖效果。
-- **ToAPIs 安全審查**：被擋時仍會用簡化 prompt 再試一次，但只限同一 provider 和 model。這是 app 的明確選擇，會多一次計費。
+- **ToAPIs 安全審查**：原本被擋時會自動改用簡化 prompt 重試，現已移除。安全審查錯誤會直接顯示給用戶，由用戶決定改 prompt 再試。
+- **錯誤顯示**：
+  - server 回傳 `{ error, details }`，`details` 包含 provider、model、code、HTTP status、task id；
+  - UI 的錯誤框會持續顯示，直到用戶關閉，並附「複製錯誤資訊」按鈕；
+  - 前端不再自動重試，因為每次重試都是一個新的付費任務，而且會蓋掉第一次的錯誤。
 - **用量**：server log 每次會多一行 `[usage] provider/model task=… ref=… usage=…`。ToAPIs 請求會帶一個唯一的 `client_business_id`（`open-graph-single:<uuid>`），日後 proxy 可以按 task id 補查計費。
 
 ## 驗證清單
@@ -76,11 +86,11 @@
 3. 選 Grok Imagine 2.0，放模板 + 5 張素材：應看到上限錯誤，而不是少了素材的圖。
 4. 生成途中關閉分頁：server log 應出現 `aborted`，不會繼續輪詢。
 5. server log 有 `[usage]` 行。KIE 有 `credits` 與 `providerDurationMs`，ToAPIs 有 `billingStatus` 等欄位，Gemini 有 `tokens`。
-6. 若某模型出錯，把前端紅色錯誤訊息和 server log 貼回來。訊息已包含 provider、model 和錯誤代碼。
+6. 用錯誤的 `KIE_API_KEY` 生成一次：應看到持續顯示的錯誤框，內容包含 `kie / …` 和錯誤代碼 `auth`；按「複製錯誤資訊」可以複製完整報告。
+7. 若某模型出錯，把「複製錯誤資訊」的內容和 server log 貼回來。
 
 ## 可選的後續改善
 
-- `src/lib/gemini.ts` 的 `generateOgImage` / `editOgImage` 會在非安全錯誤時自動重試一次。每次重試都會建立一個新的付費任務。建議只在網絡錯誤時重試，或乾脆取消重試。
 - 在 UI 按 package 的 catalogue（`KIE_IMAGE_MODELS` 等）限制可上傳的素材數量，讓用戶在送出前就知道上限。
 - ToAPIs 的 `billingStatus: "pending"` 補查（`getToapisTask()`），留待 proxy service 處理。
 

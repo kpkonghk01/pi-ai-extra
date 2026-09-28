@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 import { generateOpenRouterImage } from "./server/providers/openrouter";
 import { generateToAPIsImage } from "./server/providers/toapis";
 import { generateKieImage } from "./server/providers/kie";
-import { generateAppImage, partsToPrompt } from "./server/providers/imageClient";
+import { errorDetails, generateAppImage, partsToPrompt } from "./server/providers/imageClient";
 import { isToapisModel, isOpenRouterModel, isKieModel } from "./src/models.config";
 
 dotenv.config();
@@ -135,9 +135,9 @@ function createResponseSender(req: express.Request, res: express.Response) {
           res.json({ imageUrl });
         }
       },
-      sendError: (status: number, error: string) => {
+      sendError: (status: number, error: string, cause?: unknown) => {
         if (!res.headersSent) {
-          res.status(status).json({ error });
+          res.status(status).json({ error, details: cause === undefined ? undefined : errorDetails(cause) });
         }
       },
     };
@@ -180,11 +180,12 @@ function createResponseSender(req: express.Request, res: express.Response) {
         res.end();
       }
     },
-    sendError: (_status: number, error: string) => {
+    sendError: (_status: number, error: string, cause?: unknown) => {
       clearInterval(pingInterval);
       if (!res.writableEnded && !res.destroyed) {
-        console.warn(`[ResponseSender] Sending error event: ${error}`);
-        res.write(JSON.stringify({ type: 'error', error }) + '\n');
+        const details = cause === undefined ? undefined : errorDetails(cause);
+        console.warn(`[ResponseSender] Sending error event: ${error}`, details ?? "");
+        res.write(JSON.stringify({ type: 'error', error, details }) + '\n');
         if (typeof (res as any).flush === 'function') (res as any).flush();
         res.end();
       }
@@ -248,7 +249,7 @@ app.post("/api/gemini/generate", async (req, res) => {
           return;
         }
         console.error(`[Generate] ToAPIs error for ${safeModelId}:`, err);
-        return sender.sendError(500, err.message || `${safeModelId} (ToAPIs) 生成失敗`);
+        return sender.sendError(500, err.message || `${safeModelId} (ToAPIs) 生成失敗`, err);
       }
     }
 
@@ -272,7 +273,7 @@ app.post("/api/gemini/generate", async (req, res) => {
         return sender.sendSuccess(imageUrl);
       } catch (err: any) {
         console.error(`[Generate] KIE error for ${safeModelId}:`, err);
-        return sender.sendError(500, err.message || `${safeModelId} (KIE) 生成失敗`);
+        return sender.sendError(500, err.message || `${safeModelId} (KIE) 生成失敗`, err);
       }
     }
 
@@ -291,7 +292,7 @@ app.post("/api/gemini/generate", async (req, res) => {
         });
         return sender.sendSuccess(imageUrl);
       } catch (err: any) {
-        return sender.sendError(500, err.message || "GPT Image 2 (OpenRouter) 生成失敗");
+        return sender.sendError(500, err.message || "GPT Image 2 (OpenRouter) 生成失敗", err);
       }
     }
 
@@ -427,7 +428,7 @@ ${ratioPrompt}
         errorMsg = parsed?.error?.message || parsed?.message || errorMsg;
       } catch (_) {}
     }
-    sender.sendError(500, errorMsg);
+    sender.sendError(500, errorMsg, error);
   }
 });
 
@@ -476,7 +477,7 @@ app.post("/api/gemini/edit", async (req, res) => {
           return;
         }
         console.error(`[Edit] ToAPIs error for ${safeModelId}:`, err);
-        return sender.sendError(500, err.message || `${safeModelId} (ToAPIs) 編輯失敗`);
+        return sender.sendError(500, err.message || `${safeModelId} (ToAPIs) 編輯失敗`, err);
       }
     }
 
@@ -489,11 +490,12 @@ app.post("/api/gemini/edit", async (req, res) => {
           ratio,
           baseImage,
           imageQuality,
+          signal: clientAbortController.signal,
         });
         return sender.sendSuccess(imageUrl);
       } catch (err: any) {
         console.error(`[Edit] KIE error for ${safeModelId}:`, err);
-        return sender.sendError(500, err.message || `${safeModelId} (KIE) 編輯失敗`);
+        return sender.sendError(500, err.message || `${safeModelId} (KIE) 編輯失敗`, err);
       }
     }
 
@@ -505,7 +507,7 @@ app.post("/api/gemini/edit", async (req, res) => {
         });
         return sender.sendSuccess(imageUrl);
       } catch (err: any) {
-        return sender.sendError(500, err.message || "GPT Image 2 (OpenRouter) 編輯失敗");
+        return sender.sendError(500, err.message || "GPT Image 2 (OpenRouter) 編輯失敗", err);
       }
     }
 
@@ -556,7 +558,7 @@ ${editPrompt}
         errorMsg = parsed?.error?.message || parsed?.message || errorMsg;
       } catch (_) {}
     }
-    sender.sendError(500, errorMsg);
+    sender.sendError(500, errorMsg, error);
   }
 });
 
