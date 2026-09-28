@@ -12,7 +12,9 @@ export type ImageProgressEvent =
   | { type: "task_status"; provider: string; model: string; taskId: string; status: string; elapsedMs: number }
   | { type: "request_sent"; provider: string; model: string }
   | { type: "download_started"; provider: string; model: string; index: number; total: number; url: string }
-  | { type: "completed"; provider: string; model: string; imageCount: number; elapsedMs: number };
+  | { type: "completed"; provider: string; model: string; imageCount: number; elapsedMs: number }
+  /** Non-fatal problem, e.g. usage/billing data that failed validation and was therefore omitted. */
+  | { type: "warning"; provider: string; model: string; message: string };
 
 export type ImageProgressListener = (event: ImageProgressEvent) => void;
 
