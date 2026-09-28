@@ -79,6 +79,21 @@ jobs:
           pnpm --filter "$PACKAGE_NAME" pack --pack-destination ./release-artifacts
           ls -l release-artifacts
 
+      # Installs the packed artifact exactly as a consumer would, then loads it from CommonJS and ESM.
+      - name: Smoke-test packed artifact
+        env:
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+        run: |
+          tarball="$(ls "$PWD"/release-artifacts/*.tgz)"
+          consumer="$RUNNER_TEMP/consumer"
+          mkdir -p "$consumer"
+          cd "$consumer"
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund "$tarball" @earendil-works/pi-ai@0.87.1
+          node -e 'const manifest = require(`${process.env.PACKAGE_NAME}/package.json`); if (JSON.stringify(manifest.dependencies ?? {}).includes("pi-ai-extra-internal")) throw new Error("runtime dependency on the internal package");'
+          node -e 'const entry = require(process.env.PACKAGE_NAME); if (typeof entry.isPiAiExtraError !== "function") throw new Error("CommonJS entry is broken");'
+          node --input-type=module -e 'const entry = await import(process.env.PACKAGE_NAME); const piAi = await import(`${process.env.PACKAGE_NAME}/pi-ai`); if (typeof entry.isPiAiExtraError !== "function" || Object.keys(piAi).length === 0) throw new Error("ESM entries are broken");'
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
