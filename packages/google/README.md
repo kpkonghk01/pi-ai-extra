@@ -3,9 +3,9 @@
 Server-only extension to `@earendil-works/pi-ai`: Gemini 3.1 Flash Image (`gemini-3.1-flash-image`) and Gemini 3 Pro Image (`gemini-3-pro-image`) through `generateContent`.
 
 - Main entry (CommonJS and ESM): `generateGoogleImage()`, `GOOGLE_IMAGE_MODELS`, `PiAiExtraError` / `isPiAiExtraError`.
-- `/pi-ai` subpath (ESM only, needs `@earendil-works/pi-ai@0.87.1`): `createGoogleImagesProvider()` (pi-ai `ImagesModels`).
+- `/pi-ai` subpath (ESM only, needs `@earendil-works/pi-ai@0.87.1`): `createGoogleProvider()` (pi-ai `Models`, Gemini chat) and `createGoogleImagesProvider()` (pi-ai `ImagesModels`).
 
-pi-ai 0.87.1 has no Gemini image output; this package adds it. Gemini chat stays on pi-ai's built-in `google` provider. Usage: `usageMetadata` token counts. Safety blocks are `content_blocked`; a response without an image is `no_output`.
+pi-ai 0.87.1 has no Gemini image output; this package adds it. `createGoogleProvider()` serves pi-ai's own Gemini chat adapter and catalogue (Google list prices included) with the explicit key only; it never reads `GEMINI_API_KEY`. Usage: `usageMetadata` token counts. Safety blocks are `content_blocked`; a response without an image is `no_output`.
 
 ```ts
 import { generateGoogleImage } from "@hk01/pi-ai-extra-google";
