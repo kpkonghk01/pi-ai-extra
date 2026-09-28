@@ -1,6 +1,6 @@
 # pi-ai-extra
 
-Server-only extensions to [`@earendil-works/pi-ai`](https://www.npmjs.com/package/@earendil-works/pi-ai) for KIE, ToAPIs and Gemini image generation, plus KIE/ToAPIs chat providers. Three independently installable packages, delivered as GitHub Release `.tgz` files (no npm registry):
+Server-only extensions to [`@earendil-works/pi-ai`](https://www.npmjs.com/package/@earendil-works/pi-ai) for KIE, ToAPIs and Gemini image generation, plus KIE, ToAPIs and Gemini chat providers. Three independently installable packages, delivered as GitHub Release `.tgz` files (no npm registry), for Node.js 22.19 or later:
 
 | Package | Image models | Chat (pi-ai `Models`) |
 | --- | --- | --- |
@@ -89,11 +89,13 @@ Reference images are data URLs or public `http(s)` URLs. KIE and ToAPIs upload d
 | `apiKey` | Required. Explicit provider key. |
 | `signal` | Cancels uploads, submission, polling, downloads and waits. |
 | `timeoutMs` | Deadline for the task (KIE default 10 min, ToAPIs 6 min, Google 5 min). |
-| `onProgress` | `validated`, `upload_*`, `task_submitted`, `task_status`, `download_started`, `completed`, `warning`. A throwing listener is ignored. |
+| `onProgress` | `validated`, `upload_started` / `upload_completed`, `task_submitted`, `task_status` (KIE, ToAPIs), `request_sent` (Google), `download_started`, `completed`, `warning`. A throwing listener is ignored. |
 | `maxOutputBytes` | Largest accepted result image (default 50 MiB). |
 | `fetch` | Custom fetch for tests or instrumentation. |
 
 Provider settings: KIE `apiBaseUrl`, `uploadBaseUrl`, `poll`; ToAPIs `baseUrl` (for example `https://toapis.cn`), `poll`, `clientBusinessId`; Google `baseUrl`, `headers` (non-credential only, for example `{ "User-Agent": "aistudio-build" }`).
+
+An option set to `undefined` counts as not set, so optional fields can be passed unconditionally. Any other unknown or misspelled key (for example `aspect_ratio`) is rejected with `invalid_request` instead of being ignored.
 
 ### Errors
 
@@ -113,6 +115,8 @@ Only idempotent requests (status polls, downloads, uploads) are retried, against
 | `tokens` | — | `usage.*` (input/output/total, text/image, cached) | `usageMetadata` (prompt, candidates, thoughts as `reasoning`, cached, per-modality) |
 | `providerDurationMs` | `costTime` (milliseconds per the Get Task Details reference) | — | — |
 
+`tokens` may contain `input`, `output`, `total`, `inputText`, `inputImage`, `cachedInput`, `cachedInputText`, `cachedInputImage`, `outputText`, `outputImage`, `reasoning` (Gemini thoughts, not included in `output`) and `toolUsePrompt`; `input` includes cached tokens. `result.taskId` is the provider task id for KIE and ToAPIs, and Gemini's `responseId` for Google (Gemini has no task to look up later).
+
 ToAPIs amounts stay decimal strings: sum them with a decimal library, not floating point. If a usage block has an unexpected shape it is omitted and a `warning` progress event is emitted; the image itself is still returned.
 
 **Record spend per task id, not per observation.** ToAPIs may report `billingStatus: "pending"` even when a task is `completed`; the amount can change or be refunded later. Store one record per `taskId`, replace it with newer lookups, and re-read pending tasks later:
@@ -128,9 +132,9 @@ if (task.usage?.billingStatus === "settled" || task.usage?.billingStatus === "re
 const kie = await getKieTask({ apiKey: kieKey, taskId: kieTaskId }); // state + creditsConsumed/costTime
 ```
 
-Lookups return failed tasks as a status (`failed` / `fail`) rather than throwing, and still return billing when a finished task's result URLs have expired (a `warning` event is sent to `onProgress`). For ToAPIs, pass a unique `clientBusinessId` per request (non-empty, at most 128 characters, no control characters or surrounding whitespace; for example `open-graph-single:3f1c…`) so each task is attributable to an app or request; it is sent as top-level `client_business_id` and can be used as the lookup id.
+Lookups return failed tasks as a status (`failed` / `fail`) rather than throwing, and still return billing when a finished task's result URLs have expired (pass `onProgress` to receive the `warning`). For ToAPIs, pass a unique `clientBusinessId` per request (non-empty, at most 128 characters, no control characters or surrounding whitespace; for example `open-graph-single:3f1c…`) so each task is attributable to an app or request; it is sent as top-level `client_business_id` and can be used as the lookup id.
 
-Through pi-ai, `AssistantImages.usage` is filled only when the provider reported token counts (ToAPIs, Google), following pi-ai's conventions: `input` excludes cached tokens, `cacheRead` holds them, and `output` includes `reasoning`. Credits and USD are available only on the helper result or lookups.
+Through pi-ai, `AssistantImages.usage` is filled only when the provider reported input or output token counts (ToAPIs, Google; never KIE), following pi-ai's conventions: `input` excludes cached tokens, `cacheRead` holds them, and `output` includes `reasoning`. Credits and USD are available only on the helper result or lookups.
 
 ## pi-ai integration (`/pi-ai`, ESM only)
 
@@ -172,10 +176,30 @@ createToapisProvider({
 });
 ```
 
+### Prompt caching
+
+Chat requests go through pi-ai's adapters unchanged, so caching is controlled by pi-ai's `cacheRetention` (`"none"`, `"short"` (default) or `"long"`) and `sessionId` options:
+
+```ts
+await models.complete(model, context, { cacheRetention: "short", sessionId: `og-single:${userId}` });
+// message.usage.cacheRead shows the tokens served from cache
+```
+
+| Route | What pi-ai sends | Provider documentation |
+| --- | --- | --- |
+| KIE / ToAPIs Claude (Messages) | `cache_control: {type: "ephemeral"}` by default; `"long"` adds `ttl: "1h"` | KIE reports cache tokens in responses but documents no `cache_control`; ToAPIs does not mention caching |
+| KIE / ToAPIs Codex (Responses) | `prompt_cache_key` when `sessionId` is set; `"long"` adds `prompt_cache_retention: "24h"` | Not mentioned by either |
+| Gemini chat | Nothing: Gemini 2.5+ caches implicitly (prompts of about 2,048–4,096 tokens or more); explicit `cachedContents` is not supported by pi-ai's Gemini adapter | Implicit caching is automatic |
+| Image helpers | Nothing | No caching parameters |
+
+Pass `cacheRetention` explicitly: when it is omitted, pi-ai falls back to the `PI_CACHE_RETENTION` environment variable. Prefer `"short"` with KIE/ToAPIs Codex until `"long"` has been verified against the gateway.
+
 ## Google AI Studio (server) integration
 
 1. **Secrets.** Put `KIE_API_KEY`, `TOAPIS_API_KEY` and `GEMINI_API_KEY` in the app's server-side Secrets. Never expose them through Vite `define`, client code or a browser request.
-2. **Install.** Add the pinned release URLs to `dependencies` (`"@hk01/pi-ai-extra-kie": "https://github.com/…/kie-v0.1.0/hk01-pi-ai-extra-kie-0.1.0.tgz"`, likewise for ToAPIs and Google). Import the packages only from server modules such as `server.ts`. A CommonJS server bundle (`esbuild --format=cjs --packages=external`) works with the main entries; only the `/pi-ai` subpath needs an ESM server build.
+2. **Install.** Add the pinned release URLs to `dependencies` (`"@hk01/pi-ai-extra-kie": "https://github.com/…/kie-v0.1.0/hk01-pi-ai-extra-kie-0.1.0.tgz"`, likewise for ToAPIs and Google). Import the packages only from server modules such as `server.ts`. A CommonJS server bundle (`esbuild --format=cjs --packages=external`) works with the main entries.
+
+   The `/pi-ai` subpath (and pi-ai itself) is ESM-only. AI Studio's preview runs `server.ts` as ESM, so a static `/pi-ai` import works there, but the CommonJS production bundle then fails at startup with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Before using `/pi-ai`, either build the server as ESM (`--format=esm --outfile=dist/server.mjs` and `"start": "node dist/server.mjs"`), or load it with `await import("@earendil-works/pi-ai")` and `await import("@hk01/pi-ai-extra-<provider>/pi-ai")`, which esbuild keeps as runtime imports.
 3. **Generate / edit.** Read the secret on the server and call the helper. Text-to-image and editing differ only by `model` and `referenceImages`:
 
    ```ts
@@ -195,6 +219,8 @@ createToapisProvider({
 6. **Usage.** Log `result.taskId` and `result.usage` per request. Send a unique `clientBusinessId` on ToAPIs requests. Re-read ToAPIs tasks whose `billingStatus` is `pending` with `getToapisTask()`, and keep one record per task id.
 7. **Upgrade / rollback.** Change the release URL in `package.json` to the new (or previous) version and redeploy. Released assets are never replaced, so a URL always installs the same bytes.
 
+A worked migration of `open-graph-single`, with paste-ready files verified against its CommonJS production build, is in [docs/migration/open-graph-single](docs/migration/open-graph-single/README.md).
+
 ## Playground (not released)
 
 ```sh
@@ -202,7 +228,7 @@ pnpm install
 pnpm playground   # builds the packages, then serves http://127.0.0.1:5178
 ```
 
-Enter provider keys in the page, then run text-to-image, image-to-image and multi-reference requests, re-query billing by task id, or send a chat smoke test. Every event and error goes to a copyable log with keys redacted. The server binds to 127.0.0.1 only and never stores keys.
+Enter provider keys in the page, then run text-to-image, image-to-image and multi-reference requests, re-query billing by task id, or send a KIE, ToAPIs or Gemini chat smoke test. Every event and error goes to a copyable log with keys redacted. The server binds to 127.0.0.1 only and never stores keys. If the log says the server cannot be reached, restart `pnpm playground` and reload the page.
 
 ## Release
 
@@ -210,7 +236,15 @@ Enter provider keys in the page, then run text-to-image, image-to-image and mult
 git tag kie-v0.1.0 && git push origin kie-v0.1.0      # or toapis-vX.Y.Z / google-vX.Y.Z
 ```
 
-The workflow checks that the tag matches the package version, runs check/test/build for the package and its internal dependency, packs the `.tgz`, and attaches it to a GitHub Release using `GITHUB_TOKEN`. Never replace an asset that consumers use; publish a new patch version instead ([ADR 0001](docs/adr/0001-registry-free-package-releases.md)).
+Tag the release commit on `main`. The workflow:
+
+1. checks that the tag matches the package version;
+2. runs check, test and build for the package and its internal dependency;
+3. packs the `.tgz`;
+4. installs it into a fresh project and loads it with `require()` and `import()`;
+5. attaches it to a GitHub Release using `GITHUB_TOKEN`.
+
+Each package is released by its own tag, so a KIE fix does not republish ToAPIs or Google. Never replace an asset that consumers use; publish a new patch version instead ([ADR 0001](docs/adr/0001-registry-free-package-releases.md)).
 
 ## Development
 
