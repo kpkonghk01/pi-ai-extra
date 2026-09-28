@@ -1,0 +1,1410 @@
+--- a/server.ts
++++ b/server.ts
+@@ -1,11 +1,11 @@
+ import express from "express";
+ import path from "path";
+ import { createServer as createViteServer } from "vite";
+-import { GoogleGenAI } from "@google/genai";
+ import dotenv from "dotenv";
+ import { generateOpenRouterImage } from "./server/providers/openrouter";
+ import { generateToAPIsImage } from "./server/providers/toapis";
+ import { generateKieImage } from "./server/providers/kie";
++import { generateAppImage, partsToPrompt } from "./server/providers/imageClient";
+ import { isToapisModel, isOpenRouterModel, isKieModel } from "./src/models.config";
+ 
+ dotenv.config();
+@@ -17,16 +17,6 @@
+ app.use(express.json({ limit: "100mb" }));
+ app.use(express.urlencoded({ limit: "100mb", extended: true }));
+ 
+-// Helper to convert internal ratio ID to supported Gemini API aspect ratio
+-const getGeminiAspectRatio = (ratioId: string) => {
+-  const validAspectRatios = ["1:1", "3:4", "4:3", "9:16", "16:9", "4:5", "5:4"];
+-  if (validAspectRatios.includes(ratioId)) return ratioId;
+-  if (ratioId === '300x250' || ratioId === '336x280' || ratioId === '6:5') return '4:3';
+-  if (ratioId === '300x300') return '1:1';
+-  if (ratioId === '300x600' || ratioId === '320x480') return '9:16';
+-  return '1:1';
+-};
+-
+ // Helper to convert base64 data URL or remote URL to inlineData format for Gemini SDK
+ const getInlineData = async (dataUrlOrUrl: string) => {
+   if (!dataUrlOrUrl) {
+@@ -277,6 +267,7 @@
+           imageQuality,
+           subjectFitMode,
+           keepSourceBackground,
++          signal: clientAbortController.signal,
+         });
+         return sender.sendSuccess(imageUrl);
+       } catch (err: any) {
+@@ -312,20 +303,6 @@
+       return sender.sendError(400, "Missing or empty sourceImages");
+     }
+ 
+-    const apiKey = process.env.GEMINI_API_KEY;
+-    if (!apiKey) {
+-      return sender.sendError(500, "GEMINI_API_KEY is not configured on the server. Please check the Secrets panel in Settings.");
+-    }
+-
+-    const ai = new GoogleGenAI({
+-      apiKey,
+-      httpOptions: {
+-        headers: {
+-          'User-Agent': 'aistudio-build',
+-        }
+-      }
+-    });
+-
+     const parts: any[] = [];
+ 
+     // Add template image
+@@ -429,55 +406,17 @@
+ 
+     parts.push({ text: fullPrompt });
+ 
+-    // Map to standard models
+-    const actualModelId = modelId === 'nano-banana-pro' ? 'gemini-3-pro-image' : 'gemini-3.1-flash-image';
+-
+-    const response = await ai.models.generateContent({
+-      model: actualModelId,
+-      contents: { parts },
+-      config: {
+-        safetySettings: [
+-          { category: 'HARM_CATEGORY_HATE_SPEECH' as any, threshold: 'BLOCK_NONE' as any },
+-          { category: 'HARM_CATEGORY_HARASSMENT' as any, threshold: 'BLOCK_NONE' as any },
+-          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT' as any, threshold: 'BLOCK_NONE' as any },
+-          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT' as any, threshold: 'BLOCK_NONE' as any },
+-          { category: 'HARM_CATEGORY_CIVIC_INTEGRITY' as any, threshold: 'BLOCK_NONE' as any },
+-        ],
+-        imageConfig: {
+-          aspectRatio: getGeminiAspectRatio(ratio) as any,
+-          imageSize: imageQuality === '2K' ? '2K' : '1K',
+-        }
+-      }
++    // Gemini generation via @hk01/pi-ai-extra-google: the labelled parts above become one prompt with numbered image markers.
++    const { prompt: geminiPrompt, referenceImages: geminiImages } = partsToPrompt(parts);
++    const imageUrl = await generateAppImage({
++      appModelId: safeModelId,
++      prompt: geminiPrompt,
++      referenceImages: geminiImages,
++      ratio,
++      quality: imageQuality === "2K" ? "2K" : "1K",
++      signal: clientAbortController.signal,
+     });
+-
+-    let foundImage = false;
+-    for (const part of response.candidates?.[0]?.content?.parts || []) {
+-      if (part.inlineData) {
+-        const base64EncodeString = part.inlineData.data;
+-        const mimeType = part.inlineData.mimeType || 'image/jpeg';
+-        const dataUrl = `data:${mimeType};base64,${base64EncodeString}`;
+-        
+-        foundImage = true;
+-        return sender.sendSuccess(dataUrl);
+-      }
+-    }
+-
+-    if (!foundImage) {
+-      const candidate = response.candidates?.[0];
+-      const finishReason = candidate?.finishReason;
+-      const textParts = candidate?.content?.parts?.filter((p: any) => p.text).map((p: any) => p.text).join(" ").trim();
+-      const blockReason = (response as any)?.promptFeedback?.blockReason;
+-
+-      let detailMsg = "Gemini 模型未返回圖片";
+-      if (finishReason === "SAFETY" || blockReason === "SAFETY") {
+-        detailMsg = "此內容觸發 Google Gemini 安全審查機制 (Safety Filter)。建議在「模型選擇」切換為「Grok Imagine 2.0」或「GPT Image 2」，這兩款模型由 xAI 及 OpenAI 獨立審核，不受 Google 審查限制，通常對時事及公眾人物有較高的容許度。";
+-      } else if (textParts) {
+-        detailMsg = `模型未輸出圖片，返回訊息：${textParts}`;
+-      } else if (finishReason) {
+-        detailMsg = `Gemini 中止生成（原因：${finishReason}）。可能內容觸發安全策略或格式限制。`;
+-      }
+-      throw new Error(detailMsg);
+-    }
++    return sender.sendSuccess(imageUrl);
+ 
+   } catch (error: any) {
+     console.error("Error in generate API:", error);
+@@ -577,20 +516,6 @@
+       return sender.sendError(400, "Missing editPrompt");
+     }
+ 
+-    const apiKey = process.env.GEMINI_API_KEY;
+-    if (!apiKey) {
+-      return sender.sendError(500, "GEMINI_API_KEY is not configured on the server. Please check the Secrets panel in Settings.");
+-    }
+-
+-    const ai = new GoogleGenAI({
+-      apiKey,
+-      httpOptions: {
+-        headers: {
+-          'User-Agent': 'aistudio-build',
+-        }
+-      }
+-    });
+-
+     const parts: any[] = [];
+ 
+     parts.push({ text: "ORIGINAL IMAGE TO EDIT:" });
+@@ -610,56 +535,18 @@
+ 
+     parts.push({ text: fullPrompt });
+ 
+-    // Map to standard models
+-    const actualModelId = modelId === 'nano-banana-pro' ? 'gemini-3-pro-image' : 'gemini-3.1-flash-image';
+-
+-    const response = await ai.models.generateContent({
+-      model: actualModelId,
+-      contents: { parts },
+-      config: {
+-        safetySettings: [
+-          { category: 'HARM_CATEGORY_HATE_SPEECH' as any, threshold: 'BLOCK_NONE' as any },
+-          { category: 'HARM_CATEGORY_HARASSMENT' as any, threshold: 'BLOCK_NONE' as any },
+-          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT' as any, threshold: 'BLOCK_NONE' as any },
+-          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT' as any, threshold: 'BLOCK_NONE' as any },
+-          { category: 'HARM_CATEGORY_CIVIC_INTEGRITY' as any, threshold: 'BLOCK_NONE' as any },
+-        ],
+-        imageConfig: {
+-          aspectRatio: getGeminiAspectRatio(ratio) as any,
+-          imageSize: imageQuality === '2K' ? '2K' : '1K',
+-        }
+-      }
++    // Gemini edit via @hk01/pi-ai-extra-google: the labelled parts above become one prompt with numbered image markers.
++    const { prompt: geminiPrompt, referenceImages: geminiImages } = partsToPrompt(parts);
++    const imageUrl = await generateAppImage({
++      appModelId: safeModelId,
++      prompt: geminiPrompt,
++      referenceImages: geminiImages,
++      ratio,
++      quality: imageQuality === "2K" ? "2K" : "1K",
++      signal: clientAbortController.signal,
+     });
++    return sender.sendSuccess(imageUrl);
+ 
+-    let foundImage = false;
+-    for (const part of response.candidates?.[0]?.content?.parts || []) {
+-      if (part.inlineData) {
+-        const base64EncodeString = part.inlineData.data;
+-        const mimeType = part.inlineData.mimeType || 'image/jpeg';
+-        const dataUrl = `data:${mimeType};base64,${base64EncodeString}`;
+-        
+-        foundImage = true;
+-        return sender.sendSuccess(dataUrl);
+-      }
+-    }
+-
+-    if (!foundImage) {
+-      const candidate = response.candidates?.[0];
+-      const finishReason = candidate?.finishReason;
+-      const textParts = candidate?.content?.parts?.filter((p: any) => p.text).map((p: any) => p.text).join(" ").trim();
+-      const blockReason = (response as any)?.promptFeedback?.blockReason;
+-
+-      let detailMsg = "Gemini 模型未返回圖片";
+-      if (finishReason === "SAFETY" || blockReason === "SAFETY") {
+-        detailMsg = "此內容觸發 Google Gemini 安全審查機制 (Safety Filter)。建議在「模型選擇」切換為「Grok Imagine 2.0」或「GPT Image 2」，這兩款模型由 xAI 及 OpenAI 獨立審核，不受 Google 審查限制。";
+-      } else if (textParts) {
+-        detailMsg = `模型未輸出圖片，返回訊息：${textParts}`;
+-      } else if (finishReason) {
+-        detailMsg = `Gemini 中止編輯（原因：${finishReason}）。可能是內容觸發審查或格式限制。`;
+-      }
+-      throw new Error(detailMsg);
+-    }
+-
+   } catch (error: any) {
+     console.error("Error in edit API:", error);
+     let errorMsg = error?.message || "伺服器處理錯誤";
+--- a/server/providers/kie.ts
++++ b/server/providers/kie.ts
+@@ -1,5 +1,4 @@
+-import { getModelConfig } from "../../src/models.config";
+-import { fetchImageAsBase64, findImageUrlRecursively } from "./toapis";
++import { generateAppImage } from "./imageClient";
+ 
+ export interface KieGenerateOptions {
+   modelId: string;
+@@ -15,100 +14,13 @@
+   imageQuality?: '1K' | '2K';
+   subjectFitMode?: 'crop-zoom' | 'outpaint-fill';
+   keepSourceBackground?: boolean;
++  signal?: AbortSignal;
+ }
+ 
+-const mapKieAspectRatio = (ratio: string): string => {
+-  switch (ratio) {
+-    case '16:9':
+-      return '16:9';
+-    case '1.91:1':
+-      return '16:9';
+-    case '4:5':
+-      return '4:5';
+-    case '5:4':
+-      return '5:4';
+-    case '3:2':
+-      return '3:2';
+-    case '2:3':
+-      return '2:3';
+-    case '4:3':
+-      return '4:3';
+-    case '3:4':
+-      return '3:4';
+-    case '1:1':
+-      return '1:1';
+-    case '9:16':
+-      return '9:16';
+-    case '1:2':
+-      return '1:2';
+-    case '2:1':
+-      return '2:1';
+-    case '300x250':
+-    case '336x280':
+-      return '4:3';
+-    case '300x300':
+-      return '1:1';
+-    case '300x600':
+-      return '1:2';
+-    case '320x480':
+-      return '2:3';
+-    default:
+-      return ratio || '16:9';
+-  }
+-};
+-
+ /**
+- * Upload Base64 image to KIE storage to obtain a temporary accessible URL
+- * Docs: https://docs.kie.ai/file-upload-api/upload-file-base-64.md
+- * Endpoint: https://kieai.redpandaai.co/api/file-base64-upload
++ * Generate or edit an image with a KIE model through @hk01/pi-ai-extra-kie.
++ * The prompt is unchanged; upload, task polling and result download are handled by the package.
+  */
+-async function uploadBase64ToKie(base64Data: string, apiKey: string): Promise<string> {
+-  const fileName = `og_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.png`;
+-
+-  // Ensure base64Data is properly formatted if raw base64 is passed
+-  const formattedData = base64Data.startsWith('data:')
+-    ? base64Data
+-    : `data:image/png;base64,${base64Data}`;
+-
+-  try {
+-    const res = await fetch("https://kieai.redpandaai.co/api/file-base64-upload", {
+-      method: "POST",
+-      headers: {
+-        "Authorization": `Bearer ${apiKey}`,
+-        "Content-Type": "application/json",
+-      },
+-      body: JSON.stringify({
+-        base64Data: formattedData,
+-        uploadPath: "images/og-remix",
+-        fileName,
+-      }),
+-    });
+-
+-    if (!res.ok) {
+-      const errText = await res.text();
+-      console.error(`[KIE upload] HTTP error ${res.status}:`, errText);
+-      throw new Error(`KIE 圖片上傳失敗 (${res.status}): ${errText}`);
+-    }
+-
+-    const data = await res.json();
+-    const url = data?.data?.downloadUrl || data?.data?.fileUrl || data?.data?.url || (typeof data?.data === 'string' ? data.data : null);
+-
+-    if (!url) {
+-      console.error("[KIE upload] Unexpected response format:", data);
+-      throw new Error(`KIE 圖片上傳成功但未返回有效 URL: ${JSON.stringify(data)}`);
+-    }
+-
+-    console.log(`[KIE upload] Successfully uploaded image -> ${url}`);
+-    return url;
+-  } catch (err: any) {
+-    console.error("[KIE upload] Exception:", err);
+-    throw new Error(`上傳圖片至 KIE 伺服器失敗: ${err.message || err}`);
+-  }
+-}
+-
+-/**
+- * Generate or edit an image using KIE Market API
+- */
+ export async function generateKieImage(options: KieGenerateOptions): Promise<string> {
+   const {
+     modelId,
+@@ -124,81 +36,15 @@
+     imageQuality = "1K",
+     subjectFitMode = "crop-zoom",
+     keepSourceBackground = true,
++    signal,
+   } = options;
+ 
+-  const apiKey = process.env.KIE_API_KEY?.trim();
+-  if (!apiKey) {
+-    throw new Error("KIE_API_KEY 未設定或為空，請在 Settings 秘密設定 (Secrets) 中配置 KIE_API_KEY。");
+-  }
+-
+   const isEditMode = !!editPrompt;
+-  const hasReferenceImages = isEditMode
+-    ? !!baseImage
+-    : (!!templateImage || (sourceImages && sourceImages.length > 0));
++  // Order matters and is described in the prompt: template first, then sources, then logo.
++  const referenceImages: string[] = isEditMode
++    ? [baseImage].filter((img): img is string => !!img)
++    : [templateImage, ...(sourceImages || []), brandLogo].filter((img): img is string => !!img);
+ 
+-  // Resolve candidate KIE market model names to try in order of priority
+-  const candidateModels: string[] = [];
+-  if (modelId === "kie-gpt-image-2" || modelId === "gpt-image-2-text-to-image" || modelId === "gpt-image-2-image-to-image") {
+-    if (hasReferenceImages) {
+-      candidateModels.push("gpt-image-2-image-to-image", "gpt-image-2-text-to-image");
+-    } else {
+-      candidateModels.push("gpt-image-2-text-to-image", "gpt-image-2-image-to-image");
+-    }
+-  } else if (modelId === "kie-grok-imagine-2" || modelId.includes("grok-imagine")) {
+-    if (hasReferenceImages) {
+-      // For Grok Imagine 2.0 reference editing, KIE Market uses "grok-imagine-image-2-0/image-edit"
+-      candidateModels.push(
+-        "grok-imagine-image-2-0/image-edit",
+-        "grok-imagine-image-2-0/text-to-image",
+-        "grok-imagine/image-to-image",
+-        "grok-imagine/text-to-image"
+-      );
+-    } else {
+-      candidateModels.push("grok-imagine-image-2-0/text-to-image", "grok-imagine/text-to-image");
+-    }
+-  } else if (modelId === "kie-nano-banana-2" || modelId === "nano-banana-2" || modelId === "nanobanana2") {
+-    // Official KIE docs: https://docs.kie.ai/cn/market/google/nanobanana2.md
+-    // Model identifier is "nanobanana2" (or "nano-banana-2" / "google/nanobanana2")
+-    // It natively supports image editing & reference images via "image_input": string[]
+-    candidateModels.push(
+-      "nanobanana2",
+-      "nano-banana-2",
+-      "google/nanobanana2",
+-      "google/nano-banana-2",
+-      "google/nano-banana-edit",
+-      "nano-banana-edit"
+-    );
+-  } else {
+-    candidateModels.push(modelId);
+-  }
+-
+-  const aspectRatio = mapKieAspectRatio(ratio);
+-
+-  // Upload referenced images to KIE
+-  // Order: Template Image (Style Reference) is FIRST, then Source Images, then Brand Logo
+-  const imagesToUpload: string[] = [];
+-  if (isEditMode) {
+-    if (baseImage) imagesToUpload.push(baseImage);
+-  } else {
+-    if (templateImage) imagesToUpload.push(templateImage);
+-    if (sourceImages && sourceImages.length > 0) {
+-      for (const img of sourceImages) {
+-        if (img) imagesToUpload.push(img);
+-      }
+-    }
+-    if (brandLogo) imagesToUpload.push(brandLogo);
+-  }
+-
+-  const uploadedUrls: string[] = [];
+-  for (const img of imagesToUpload) {
+-    if (img.startsWith("http://") || img.startsWith("https://")) {
+-      uploadedUrls.push(img);
+-    } else {
+-      const url = await uploadBase64ToKie(img, apiKey);
+-      uploadedUrls.push(url);
+-    }
+-  }
+-
+   // Construct prompt
+   let promptText = "";
+   if (isEditMode) {
+@@ -270,185 +116,15 @@
+ Layout Instructions (${ratio}):
+ ${ratioPrompt || '標準排版'}
+ `.trim();
+-  }
+-
+-  const inputPayload: Record<string, any> = {
+-    prompt: promptText,
+-  };
+-
+-  if (aspectRatio) {
+-    inputPayload.aspect_ratio = aspectRatio;
+-  } else if (isEditMode) {
+-    inputPayload.aspect_ratio = "auto";
+   }
+ 
+-  const isNanoBanana = modelId === "kie-nano-banana-2" || modelId.includes("nano-banana") || modelId.includes("nanobanana");
+-  if (isNanoBanana) {
+-    inputPayload.resolution = imageQuality === "2K" ? "2K" : "1K";
+-    inputPayload.output_format = "jpg";
+-    if (!inputPayload.aspect_ratio) {
+-      inputPayload.aspect_ratio = "auto";
+-    }
+-  }
+ 
+-  if (uploadedUrls.length > 0) {
+-    // Pass across all standard parameter aliases to ensure full compatibility with various KIE models:
+-    // - image_input (Official KIE nanobanana2 / google/nanobanana2 edit & multi-image input)
+-    // - input_urls (GPT Image 2 Image-to-Image)
+-    // - image_urls (Grok Imagine, Nano Banana)
+-    // - image_url (Single image endpoints)
+-    // - images / image / input_image (General image endpoints)
+-    inputPayload.image_input = uploadedUrls;
+-    inputPayload.input_urls = uploadedUrls;
+-    inputPayload.image_urls = uploadedUrls;
+-    inputPayload.image_url = uploadedUrls[0];
+-    inputPayload.images = uploadedUrls;
+-    inputPayload.image = uploadedUrls[0];
+-    inputPayload.input_image = uploadedUrls[0];
+-  }
+-
+-  let taskId: string | null = null;
+-  let lastErrorData: any = null;
+-  let usedModel = candidateModels[0];
+-
+-  for (const modelToTry of candidateModels) {
+-    usedModel = modelToTry;
+-    console.log(`[KIE] Attempting to create task: model="${modelToTry}", hasReferenceImages=${hasReferenceImages}, uploadedImages=${uploadedUrls.length}`);
+-
+-    try {
+-      const createRes = await fetch("https://api.kie.ai/api/v1/jobs/createTask", {
+-        method: "POST",
+-        headers: {
+-          "Authorization": `Bearer ${apiKey}`,
+-          "Content-Type": "application/json",
+-        },
+-        body: JSON.stringify({
+-          model: modelToTry,
+-          input: inputPayload,
+-        }),
+-      });
+-
+-      if (!createRes.ok) {
+-        const errText = await createRes.text();
+-        console.warn(`[KIE] Create task HTTP ${createRes.status} for model "${modelToTry}":`, errText);
+-        lastErrorData = { status: createRes.status, text: errText };
+-        continue;
+-      }
+-
+-      const createData = await createRes.json();
+-      const curTaskId = createData?.data?.taskId || createData?.taskId;
+-      if (curTaskId) {
+-        taskId = curTaskId;
+-        console.log(`[KIE] Task created successfully with model "${modelToTry}", taskId="${taskId}". Polling for status...`);
+-        break;
+-      }
+-
+-      console.warn(`[KIE] Model "${modelToTry}" response did not provide taskId:`, JSON.stringify(createData));
+-      lastErrorData = createData;
+-
+-      if (candidateModels.length > 1) {
+-        console.log(`[KIE] Model "${modelToTry}" did not return taskId, attempting next candidate model...`);
+-        continue;
+-      }
+-    } catch (networkErr: any) {
+-      console.warn(`[KIE] Network error attempting model "${modelToTry}":`, networkErr.message || networkErr);
+-      lastErrorData = networkErr.message || networkErr;
+-    }
+-  }
+-
+-  if (!taskId) {
+-    throw new Error(`KIE 未返回任務 ID (taskId): ${JSON.stringify(lastErrorData)}`);
+-  }
+-
+-  // Poll for completion (up to 180 seconds)
+-  const startTime = Date.now();
+-  const timeoutMs = 180000;
+-  const pollIntervalMs = 2500;
+-
+-  while (Date.now() - startTime < timeoutMs) {
+-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+-
+-    try {
+-      const statusRes = await fetch(`https://api.kie.ai/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, {
+-        method: "GET",
+-        headers: {
+-          "Authorization": `Bearer ${apiKey}`,
+-        },
+-      });
+-
+-      if (!statusRes.ok) {
+-        console.warn(`[KIE] RecordInfo HTTP ${statusRes.status}, continuing to poll...`);
+-        continue;
+-      }
+-
+-      const statusData = await statusRes.json();
+-      const taskRecord = statusData?.data || statusData;
+-      const state = taskRecord?.state || taskRecord?.status;
+-
+-      console.log(`[KIE] Task "${taskId}" status: ${state} (${Math.round((Date.now() - startTime) / 1000)}s)`);
+-
+-      if (state === "success") {
+-        let finalImageUrl: string | null = null;
+-
+-        // 1. Try reading resultUrls (Array or String)
+-        if (Array.isArray(taskRecord?.resultUrls) && taskRecord.resultUrls.length > 0) {
+-          finalImageUrl = taskRecord.resultUrls[0];
+-        } else if (typeof taskRecord?.resultUrls === 'string' && taskRecord.resultUrls.trim()) {
+-          finalImageUrl = taskRecord.resultUrls.trim();
+-        }
+-
+-        // 2. Try reading resultJson
+-        if (!finalImageUrl && taskRecord?.resultJson) {
+-          try {
+-            const parsed = typeof taskRecord.resultJson === 'string' ? JSON.parse(taskRecord.resultJson) : taskRecord.resultJson;
+-            if (Array.isArray(parsed?.resultUrls) && parsed.resultUrls.length > 0) {
+-              finalImageUrl = parsed.resultUrls[0];
+-            } else if (typeof parsed?.resultUrls === 'string' && parsed.resultUrls.trim()) {
+-              finalImageUrl = parsed.resultUrls.trim();
+-            } else if (Array.isArray(parsed?.images) && parsed.images.length > 0) {
+-              finalImageUrl = parsed.images[0]?.url || parsed.images[0];
+-            } else if (parsed?.imageUrl || parsed?.image_url) {
+-              finalImageUrl = parsed.imageUrl || parsed.image_url;
+-            } else {
+-              finalImageUrl = findImageUrlRecursively(parsed);
+-            }
+-          } catch (e) {
+-            console.warn("[KIE] Could not parse resultJson:", taskRecord.resultJson);
+-          }
+-        }
+-
+-        // 3. Fallback direct properties
+-        if (!finalImageUrl && taskRecord?.imageUrl) finalImageUrl = taskRecord.imageUrl;
+-        if (!finalImageUrl && taskRecord?.image_url) finalImageUrl = taskRecord.image_url;
+-        if (!finalImageUrl && taskRecord?.url) finalImageUrl = taskRecord.url;
+-        if (!finalImageUrl && taskRecord?.fileUrl) finalImageUrl = taskRecord.fileUrl;
+-        if (!finalImageUrl && taskRecord?.downloadUrl) finalImageUrl = taskRecord.downloadUrl;
+-
+-        // 4. Recursive deep scan
+-        if (!finalImageUrl) {
+-          finalImageUrl = findImageUrlRecursively(taskRecord);
+-        }
+-
+-        if (finalImageUrl) {
+-          console.log(`[KIE] Task "${taskId}" completed successfully! Extracted Image URL: ${finalImageUrl.slice(0, 100)}...`);
+-          return await fetchImageAsBase64(finalImageUrl);
+-        }
+-
+-        console.error(`[KIE] Task "${taskId}" status is success, but failed to find image in payload:`, JSON.stringify(taskRecord));
+-        throw new Error(`KIE 任務狀態為 success，但無法在返回數據中解析出圖片 URL: ${JSON.stringify(taskRecord).slice(0, 250)}`);
+-      }
+-
+-      if (state === "fail" || state === "failed") {
+-        const failReason = taskRecord?.failReason || taskRecord?.error || taskRecord?.msg || "未知錯誤";
+-        throw new Error(`KIE 任務生成失敗: ${failReason}`);
+-      }
+-    } catch (pollErr: any) {
+-      if (pollErr.message && pollErr.message.includes("KIE 任務")) {
+-        throw pollErr;
+-      }
+-      console.warn(`[KIE] Polling error: ${pollErr.message || pollErr}`);
+-    }
+-  }
+-
+-  throw new Error(`KIE 任務生成超時 (超過 180 秒)，taskId: ${taskId}`);
++  return generateAppImage({
++    appModelId: modelId,
++    prompt: promptText,
++    referenceImages,
++    ratio,
++    quality: imageQuality,
++    signal,
++  });
+ }
+--- a/server/providers/toapis.ts
++++ b/server/providers/toapis.ts
+@@ -1,241 +1,10 @@
+-import dotenv from "dotenv";
++import { AppImageError, generateAppImage } from "./imageClient";
+ 
+-dotenv.config();
+-
+-const getToAPIsAspectRatio = (ratioId: string, modelId?: string) => {
+-  const supported = ["1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "2:1", "1:2", "21:9", "9:21"];
+-  if (supported.includes(ratioId)) {
+-    if (modelId?.includes('gpt-image-2.5') && ratioId === '1:2') return '9:16';
+-    return ratioId;
+-  }
+-  if (ratioId === '300x250' || ratioId === '336x280' || ratioId === '6:5') return '5:4';
+-  if (ratioId === '300x300') return '1:1';
+-  if (ratioId === '300x600') {
+-    return modelId?.includes('gpt-image-2.5') ? '9:16' : '1:2';
+-  }
+-  if (ratioId === '320x480') return '2:3';
+-  return '16:9';
+-};
+-
+-// Helper to convert remote image URL to Base64 Data URL on server
+-export async function fetchImageAsBase64(url: string): Promise<string> {
+-  if (!url) return "";
+-  if (url.startsWith("data:image/")) return url;
+-  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+-    const mime = url.startsWith('iVBORw0KGgo') ? 'image/png' : 'image/jpeg';
+-    return `data:${mime};base64,${url}`;
+-  }
+-
+-  for (let attempt = 0; attempt < 3; attempt++) {
+-    try {
+-      // First attempt: standard browser user-agent.
+-      // Subsequent attempts: omit user-agent to prevent Azure Blob / AWS S3 presigned URL signature rejections
+-      const headers: Record<string, string> = { "Accept": "image/*, */*" };
+-      if (attempt === 0) {
+-        headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+-      }
+-
+-      const res = await fetch(url, {
+-        headers,
+-        signal: AbortSignal.timeout(20000)
+-      });
+-      if (res.ok) {
+-        let mime = res.headers.get("content-type") || "";
+-        if (mime.includes("text/html") || mime.includes("application/json")) {
+-          await new Promise(r => setTimeout(r, 1000));
+-          continue;
+-        }
+-
+-        const buffer = Buffer.from(await res.arrayBuffer());
+-        if (buffer.length > 0) {
+-          // Magic bytes detection for accurate mime type
+-          if (buffer.length >= 4) {
+-            if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+-              mime = "image/png";
+-            } else if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
+-              mime = "image/jpeg";
+-            } else if (buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46) {
+-              mime = "image/webp";
+-            }
+-          }
+-          if (!mime || !mime.startsWith("image/")) {
+-            mime = "image/jpeg";
+-          }
+-          return `data:${mime};base64,${buffer.toString("base64")}`;
+-        }
+-      }
+-    } catch (err) {
+-      console.warn(`Attempt ${attempt + 1} failed to fetch image as base64 on server:`, err);
+-    }
+-    await new Promise(r => setTimeout(r, 1000));
+-  }
+-  return url;
+-}
+-
+-// Helper to upload base64 data URL to ToAPIs upload endpoint if needed
+-async function uploadImageToToAPIs(dataUrlOrUrl: string, apiKey: string): Promise<string> {
+-  if (!dataUrlOrUrl) return "";
+-  if (dataUrlOrUrl.startsWith("http://") || dataUrlOrUrl.startsWith("https://")) {
+-    return dataUrlOrUrl;
+-  }
+-
+-  if (dataUrlOrUrl.startsWith("data:image/")) {
+-    try {
+-      const [header, data] = dataUrlOrUrl.split(',');
+-      const mimeType = header.split(':')[1]?.split(';')[0] || 'image/png';
+-      const buffer = Buffer.from(data, 'base64');
+-      const ext = mimeType.split('/')[1] || 'png';
+-
+-      const file = new File([buffer], `image.${ext}`, { type: mimeType });
+-      const formData = new FormData();
+-      formData.append("file", file);
+-
+-      // Prioritize https://toapis.com (fastest and most reliable for multipart uploads, ~1-2s),
+-      // followed by https://api.toapis.cn, then https://api.toapis.com with short timeout.
+-      const hosts = ["https://toapis.com", "https://api.toapis.cn", "https://api.toapis.com"];
+-      for (const host of hosts) {
+-        try {
+-          const res = await fetch(`${host}/v1/uploads/images`, {
+-            method: "POST",
+-            headers: {
+-              "Authorization": `Bearer ${apiKey.trim()}`
+-            },
+-            body: formData,
+-            signal: AbortSignal.timeout(host.includes("api.toapis.com") ? 5000 : 20000)
+-          });
+-
+-          if (res.ok) {
+-            const resJson: any = await res.json();
+-            const uploadedUrl =
+-              resJson.data?.url ||
+-              resJson.url ||
+-              resJson.data?.file_url ||
+-              (typeof resJson.data === 'string' ? resJson.data : null);
+-            if (uploadedUrl) {
+-              return uploadedUrl;
+-            }
+-          } else {
+-            const errText = await res.text().catch(() => "");
+-            console.warn(`ToAPIs image upload to ${host} returned status ${res.status}: ${errText}`);
+-          }
+-        } catch (err: any) {
+-          console.warn(`ToAPIs image upload to ${host} skipped: ${err?.message || err}`);
+-        }
+-      }
+-
+-      // Seamless fallback: If ToAPIs upload endpoints fail, use KIE file storage to obtain a public accessible URL
+-      if (process.env.KIE_API_KEY) {
+-        try {
+-          const res = await fetch("https://kieai.redpandaai.co/api/file-base64-upload", {
+-            method: "POST",
+-            headers: {
+-              "Authorization": `Bearer ${process.env.KIE_API_KEY.trim()}`,
+-              "Content-Type": "application/json",
+-            },
+-            body: JSON.stringify({
+-              base64Data: dataUrlOrUrl,
+-              uploadPath: "images/toapis-ref",
+-              fileName: `toapis_ref_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`,
+-            }),
+-            signal: AbortSignal.timeout(15000),
+-          });
+-
+-          if (res.ok) {
+-            const kieData: any = await res.json();
+-            const kieUrl = kieData?.data?.downloadUrl || kieData?.data?.fileUrl || kieData?.data?.url;
+-            if (kieUrl) {
+-              console.log("[ToAPIs] Successfully uploaded reference image using KIE fallback:", kieUrl);
+-              return kieUrl;
+-            }
+-          }
+-        } catch (kieErr: any) {
+-          console.warn("[ToAPIs] KIE storage fallback upload also failed:", kieErr?.message || kieErr);
+-        }
+-      }
+-    } catch (e) {
+-      console.warn("Failed to upload base64 image to ToAPIs:", e);
+-    }
+-  }
+-
+-  return "";
+-}
+-
+-// Helper to recursively find image URL in arbitrary response payloads
+-export function findImageUrlRecursively(obj: any, depth = 0): string | null {
+-  if (!obj || depth > 4) return null;
+-  if (typeof obj === 'string') {
+-    if ((obj.startsWith('http://') || obj.startsWith('https://')) && (/\.(png|jpe?g|webp|gif)($|\?)/i.test(obj) || obj.includes('/images/') || obj.includes('/img/'))) {
+-      return obj;
+-    }
+-    if (obj.startsWith('data:image/')) return obj;
+-    return null;
+-  }
+-  if (typeof obj === 'object') {
+-    for (const key of Object.keys(obj)) {
+-      if (key === 'prompt' || key === 'ratioPrompt' || key === 'globalPrompt') continue;
+-      const found = findImageUrlRecursively(obj[key], depth + 1);
+-      if (found) return found;
+-    }
+-  }
+-  return null;
+-}
+-
+-function extractToAPIsImageUrl(taskData: any): string | null {
+-  if (!taskData) return null;
+-
+-  // 1. Direct string in result.data or data
+-  const dataVal = taskData.result?.data ?? taskData.data;
+-  if (typeof dataVal === 'string' && (dataVal.startsWith('http://') || dataVal.startsWith('https://') || dataVal.startsWith('data:image/'))) {
+-    return dataVal;
+-  }
+-
+-  // 1b. If data or result.data is an object with url / file_url / b64_json
+-  if (dataVal && typeof dataVal === 'object' && !Array.isArray(dataVal)) {
+-    if (dataVal.url && typeof dataVal.url === 'string') return dataVal.url;
+-    if (dataVal.file_url && typeof dataVal.file_url === 'string') return dataVal.file_url;
+-    if (dataVal.image_url && typeof dataVal.image_url === 'string') return dataVal.image_url;
+-    if (dataVal.download_url && typeof dataVal.download_url === 'string') return dataVal.download_url;
+-    if (dataVal.b64_json) {
+-      if (dataVal.b64_json.startsWith('data:')) return dataVal.b64_json;
+-      const mime = dataVal.b64_json.startsWith('iVBORw0KGgo') ? 'image/png' : 'image/jpeg';
+-      return `data:${mime};base64,${dataVal.b64_json}`;
+-    }
+-  }
+-
+-  // 2. Array data or result.data or response.data or output.data
+-  const dataList = Array.isArray(dataVal) ? dataVal : (taskData.response?.data || taskData.output?.data || taskData.result?.images || taskData.images || taskData.output?.images);
+-  if (Array.isArray(dataList) && dataList.length > 0) {
+-    const first = dataList[0];
+-    if (typeof first === 'string' && (first.startsWith('http://') || first.startsWith('https://') || first.startsWith('data:image/'))) {
+-      return first;
+-    }
+-    if (first && typeof first === 'object') {
+-      if (first.url && typeof first.url === 'string') return first.url;
+-      if (first.file_url && typeof first.file_url === 'string') return first.file_url;
+-      if (first.image_url && typeof first.image_url === 'string') return first.image_url;
+-      if (first.b64_json) {
+-        if (first.b64_json.startsWith('data:')) return first.b64_json;
+-        const mime = first.b64_json.startsWith('iVBORw0KGgo') ? 'image/png' : 'image/jpeg';
+-        return `data:${mime};base64,${first.b64_json}`;
+-      }
+-    }
+-  }
+-
+-  // 3. Direct properties on root
+-  if (typeof taskData.result?.url === 'string') return taskData.result.url;
+-  if (typeof taskData.result?.file_url === 'string') return taskData.result.file_url;
+-  if (typeof taskData.result?.image_url === 'string') return taskData.result.image_url;
+-  if (typeof taskData.output?.url === 'string') return taskData.output.url;
+-  if (typeof taskData.output?.file_url === 'string') return taskData.output.file_url;
+-  if (typeof taskData.output?.image_url === 'string') return taskData.output.image_url;
+-  if (typeof taskData.url === 'string') return taskData.url;
+-  if (typeof taskData.image_url === 'string') return taskData.image_url;
+-  if (typeof taskData.file_url === 'string') return taskData.file_url;
+-
+-  // 4. Recursive deep search fallback for any URL containing image patterns
+-  return findImageUrlRecursively(taskData);
+-}
+-
++/**
++ * Generate or edit an image with a ToAPIs model through @hk01/pi-ai-extra-toapis.
++ * Prompts are unchanged. Uploads go to ToAPIs only; there is no KIE storage fallback,
++ * no GPT Image 2.5 -> GPT Image 2 fallback, and no silent reference-image dropping.
++ */
+ export async function generateToAPIsImage({
+   modelId,
+   globalPrompt,
+@@ -267,42 +36,11 @@
+   keepSourceBackground?: boolean;
+   signal?: AbortSignal;
+ }) {
+-  const apiKey = process.env.TOAPIS_API_KEY || process.env.TOAPIS_API_KEY;
+-  if (!apiKey || !apiKey.trim()) {
+-    throw new Error("TOAPIS_API_KEY 未設定或為空，請在 Settings 秘密設定 (Secrets) 中配置 TOAPIS_API_KEY。");
+-  }
+-
+-  const cleanKey = apiKey.trim();
+-  const aspect = getToAPIsAspectRatio(ratio, modelId);
+-
+-  // Upload reference images in parallel if any
+-  const rawImages: { type: string; url: string }[] = [];
+-  if (baseImage) {
+-    rawImages.push({ type: 'base', url: baseImage });
+-  }
+-  if (templateImage) {
+-    rawImages.push({ type: 'template', url: templateImage });
+-  }
+-  if (sourceImages && Array.isArray(sourceImages)) {
+-    sourceImages.forEach((img) => {
+-      if (img) rawImages.push({ type: 'source', url: img });
+-    });
+-  }
+-  if (brandLogo) {
+-    rawImages.push({ type: 'logo', url: brandLogo });
+-  }
+-
+-  const uploadedResults = await Promise.all(
+-    rawImages.map(async (item) => ({
+-      type: item.type,
+-      uploadedUrl: await uploadImageToToAPIs(item.url, cleanKey),
+-    }))
++  // Order matters and is described in the prompt: base (edit), template, sources, logo.
++  const referenceImages: string[] = [baseImage, templateImage, ...(sourceImages || []), brandLogo].filter(
++    (img): img is string => !!img,
+   );
+ 
+-  const imageUrlsToUpload: string[] = uploadedResults
+-    .map((r) => r.uploadedUrl)
+-    .filter(Boolean);
+-
+   let prompt = "";
+   if (editPrompt) {
+     prompt = `You are an expert image editor. Your task is to apply the requested edits to the provided image.
+@@ -537,259 +275,25 @@
+     }
+   };
+ 
+-  // Internal helper to send request and poll ToAPIs
+-  const executeGenerationCall = async (currentPrompt: string) => {
+-    const requestBody: any = {
+-      model: apiModelName,
+-      prompt: currentPrompt,
+-      size: aspect,
+-      n: 1,
+-    };
+ 
+-    if (apiModelName === 'doubao-seedream-5-0-pro' || apiModelName === 'doubao-seedream-5-0') {
+-      requestBody.response_format = "url";
+-      requestBody.watermark = false;
+-      requestBody.metadata = {
+-        resolution: imageQuality === '2K' ? "2K" : "1K"
+-      };
+-      if (imageUrlsToUpload.length > 0) {
+-        requestBody.reference_images = imageUrlsToUpload.slice(0, 10);
+-        requestBody.image_urls = imageUrlsToUpload.slice(0, 10);
+-      }
+-    } else if (apiModelName === 'gpt-image-2.5-flare' || apiModelName.startsWith('gpt-image-2.5')) {
+-      requestBody.quality = "high";
+-      requestBody.resolution = imageQuality === '2K' ? "2K" : "1K";
+-      if (imageUrlsToUpload.length > 0) {
+-        requestBody.reference_images = imageUrlsToUpload.slice(0, 10);
+-        requestBody.image_urls = imageUrlsToUpload.slice(0, 10);
+-      }
+-    } else {
+-      requestBody.resolution = imageQuality === '2K' ? "2k" : "1k";
+-      requestBody.response_format = "url";
+-      if (imageUrlsToUpload.length > 0) {
+-        requestBody.reference_images = imageUrlsToUpload.slice(0, 10);
+-        requestBody.image_urls = imageUrlsToUpload.slice(0, 10);
+-      }
+-    }
+-
+-    console.log(`[ToAPIs] Creating image task with model: "${apiModelName}", ratio: "${ratio}", promptLen: ${currentPrompt.length}, images: ${imageUrlsToUpload.length}`);
+-
+-    const createHosts = [
+-      "https://toapis.com", 
+-    // "https://api.toapis.cn",
+-    // "https://api.toapis.com"
+-    ];
+-    let createRes: Response | null = null;
+-    let lastCreateErr: any = null;
+-
+-    for (const host of createHosts) {
+-      try {
+-        const res = await fetch(`${host}/v1/images/generations`, {
+-          method: "POST",
+-          headers: {
+-            "Authorization": `Bearer ${cleanKey}`,
+-            "Content-Type": "application/json"
+-          },
+-          body: JSON.stringify(requestBody),
+-          signal: AbortSignal.timeout(host.includes("api.toapis.com") ? 10000 : 25000)
+-        });
+-        if (res.status >= 500) {
+-          console.warn(`[ToAPIs] Host ${host} returned HTTP ${res.status}, checking fallback host...`);
+-          lastCreateErr = new Error(`HTTP ${res.status}`);
+-          continue;
+-        }
+-        createRes = res;
+-        break;
+-      } catch (err) {
+-        lastCreateErr = err;
+-      }
+-    }
++  const run = (currentPrompt: string) =>
++    generateAppImage({
++      appModelId: modelId,
++      prompt: currentPrompt,
++      referenceImages,
++      ratio,
++      quality: imageQuality || "1K",
++      signal,
++    });
+ 
+-    if (!createRes) {
+-      throw new Error(`無法連接 ToAPIs 服務端: ${lastCreateErr?.message || '網路連線逾時'}`);
+-    }
+-
+-    if (!createRes.ok) {
+-      let errText = "";
+-      try {
+-        errText = await createRes.text();
+-        const parsed = JSON.parse(errText);
+-        if (parsed.error?.message) errText = parsed.error.message;
+-        else if (parsed.message) errText = parsed.message;
+-      } catch (_) {}
+-
+-      if (String(errText).toLowerCase().includes("safety review") || String(errText).toLowerCase().includes("blocked")) {
+-        throw new Error("SAFETY_REVIEW_BLOCKED");
+-      }
+-
+-      // If gpt-image-2.5-flare upstream channels are circuit-broken (503 / 熔断保护已触发), automatically fallback to gpt-image-2
+-      const isCircuitBroken = createRes.status === 503 || errText.includes("熔断") || errText.includes("circuit_broken") || errText.includes("所有渠道当前不可用");
+-      if (isCircuitBroken && (apiModelName === 'gpt-image-2.5-flare' || apiModelName.startsWith('gpt-image-2.5'))) {
+-        console.warn(`[ToAPIs] ${apiModelName} 渠道觸發熔斷保護 (${errText})，自動平滑切換至可用渠道 gpt-image-2 繼續生成...`);
+-        const fallbackBody: any = {
+-          model: "gpt-image-2",
+-          prompt: currentPrompt,
+-          size: aspect,
+-          n: 1,
+-          resolution: imageQuality === '2K' ? "2k" : "1k",
+-          response_format: "url",
+-        };
+-        if (imageUrlsToUpload.length > 0) {
+-          fallbackBody.reference_images = imageUrlsToUpload.slice(0, 5);
+-          fallbackBody.image_urls = imageUrlsToUpload.slice(0, 5);
+-        }
+-
+-        let fallbackRes: Response | null = null;
+-        for (const host of createHosts) {
+-          try {
+-            const res = await fetch(`${host}/v1/images/generations`, {
+-              method: "POST",
+-              headers: {
+-                "Authorization": `Bearer ${cleanKey}`,
+-                "Content-Type": "application/json"
+-              },
+-              body: JSON.stringify(fallbackBody),
+-              signal: AbortSignal.timeout(25000)
+-            });
+-            if (res.ok) {
+-              fallbackRes = res;
+-              break;
+-            }
+-          } catch (_) {}
+-        }
+-
+-        if (fallbackRes && fallbackRes.ok) {
+-          createRes = fallbackRes;
+-        } else {
+-          throw new Error(`ToAPIs 服務端暫時熔斷不可用（${errText}）。建議切換至「GPT Image 2 (ToAPIs)」或「Nano Banana 2」繼續生成。`);
+-        }
+-      } else {
+-        if (createRes.status === 401) {
+-          throw new Error("ToAPIs API 金鑰驗證失敗 (401 Unauthorized)，請檢查 TOAPIS_API_KEY。");
+-        }
+-        if (createRes.status === 403) {
+-          if (errText.includes("无权访问模型") || errText.includes("permission") || errText.includes("unauthorized")) {
+-            throw new Error(`ToAPIs 存取被拒 (403 Forbidden): ${errText}。請前往 ToAPIs 控制台 (https://toapis.com/dashboard) 為您的 API Key 開通 ${apiModelName} 模型訪問權限或確認額度。`);
+-          }
+-          throw new Error(`ToAPIs 存取被拒 (403 Forbidden): ${errText}。請檢查 TOAPIS_API_KEY 帳號額度與權限。`);
+-        }
+-        if (isCircuitBroken) {
+-          throw new Error(`ToAPIs 模型 ${apiModelName} 渠道當前暫不可用（熔斷保護中），請切換至「GPT Image 2 (ToAPIs)」或「Nano Banana 2」繼續生成。`);
+-        }
+-        throw new Error(`ToAPIs 建立任務失敗 [${createRes.status}]: ${errText}`);
+-      }
++  try {
++    return await run(buildPrompt(false));
++  } catch (firstErr) {
++    // Same provider and model, simplified prompt: an explicit app choice (a second billed task), not a fallback.
++    if (firstErr instanceof AppImageError && firstErr.code === "content_blocked") {
++      console.warn("[ToAPIs] Safety review blocked the primary prompt; retrying once with the simplified prompt.");
++      return await run(buildPrompt(true));
+     }
+-
+-    const taskInit = await createRes.json();
+-
+-    // Check if result is directly available
+-    const directUrl = extractToAPIsImageUrl(taskInit);
+-    if (directUrl) {
+-      return await fetchImageAsBase64(directUrl);
+-    }
+-
+-    const taskId = taskInit.id || taskInit.task_id || taskInit.data?.id;
+-    if (!taskId) {
+-      throw new Error("ToAPIs 未回傳有效的任務 ID 或圖片結果。");
+-    }
+-
+-    console.log(`[ToAPIs] Task created successfully: ID = ${taskId}. Polling for completion...`);
+-
+-    // Poll for result (180 * 2s = 360s / 6 mins max to support slow models like Qwen)
+-    const maxAttempts = 180;
+-    const pollHosts = ["https://toapis.com", "https://api.toapis.cn", "https://api.toapis.com"];
+-    const pollStartTime = Date.now();
+-
+-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+-      if (signal?.aborted) {
+-        console.log(`[ToAPIs] Task ${taskId} cancelled by client abort signal at poll #${attempt + 1}.`);
+-        throw new Error("CLIENT_ABORTED");
+-      }
+-
+-      await new Promise((resolve) => setTimeout(resolve, 2000));
+-
+-      if (signal?.aborted) {
+-        console.log(`[ToAPIs] Task ${taskId} cancelled by client abort signal at poll #${attempt + 1}.`);
+-        throw new Error("CLIENT_ABORTED");
+-      }
+-
+-      try {
+-        let pollRes: Response | null = null;
+-        for (const host of pollHosts) {
+-          try {
+-            const res = await fetch(`${host}/v1/images/generations/${taskId}`, {
+-              headers: {
+-                "Authorization": `Bearer ${cleanKey}`
+-              },
+-              signal: AbortSignal.timeout(15000)
+-            });
+-            if (res.ok || res.status === 400 || res.status === 403) {
+-              pollRes = res;
+-              break;
+-            }
+-          } catch (_) {}
+-        }
+-
+-        if (!pollRes || !pollRes.ok) {
+-          const elapsedSec = Math.round((Date.now() - pollStartTime) / 1000);
+-          console.warn(`[ToAPIs] Task ${taskId} poll #${attempt + 1} (${elapsedSec}s): HTTP request failed (${pollRes?.status || 'network error'}), retrying...`);
+-          continue;
+-        }
+-
+-        const taskData = await pollRes.json();
+-        const statusStr = String(taskData.status || taskData.state || taskData.task_status || taskData.msg || '').toLowerCase();
+-        const rawUrl = extractToAPIsImageUrl(taskData);
+-        const elapsedSec = Math.round((Date.now() - pollStartTime) / 1000);
+-
+-        console.log(`[ToAPIs] Task ${taskId} poll #${attempt + 1} (${elapsedSec}s): status="${statusStr}", hasUrl=${!!rawUrl}`);
+-        
+-        if (['failed', 'error', 'failure', 'rejected'].includes(statusStr)) {
+-          let msg = taskData.error?.message || taskData.error?.code || taskData.message || "未知錯誤";
+-          if (String(msg).toLowerCase().includes("safety review") || String(msg).toLowerCase().includes("blocked")) {
+-            throw new Error("SAFETY_REVIEW_BLOCKED");
+-          }
+-          throw new Error(`ToAPIs 圖片生成失敗: ${msg}`);
+-        }
+-
+-        const isPending = ['processing', 'pending', 'running', 'in_progress', 'queued', 'waiting'].includes(statusStr);
+-
+-        if (rawUrl && !isPending) {
+-          console.log(`[ToAPIs] Task ${taskId} ready with URL (${elapsedSec}s). Converting to base64...`);
+-          return await fetchImageAsBase64(rawUrl);
+-        }
+-
+-        if (['completed', 'succeeded', 'success', 'finish', 'finished', 'done', 'successful', 'ok'].includes(statusStr)) {
+-          if (rawUrl) {
+-            console.log(`[ToAPIs] Task ${taskId} completed (${elapsedSec}s). Converting to base64...`);
+-            return await fetchImageAsBase64(rawUrl);
+-          }
+-          console.error(`[ToAPIs] Task ${taskId} status="${statusStr}" but extractToAPIsImageUrl could not find URL! Payload:`, JSON.stringify(taskData));
+-          throw new Error("ToAPIs 任務完成，但未回傳有效的圖片 URL。");
+-        }
+-      } catch (pollErr: any) {
+-        if (pollErr.message === "SAFETY_REVIEW_BLOCKED" || pollErr.message?.includes("ToAPIs 圖片生成") || pollErr.message === "CLIENT_ABORTED") {
+-          throw pollErr;
+-        }
+-      }
+-    }
+-
+-    throw new Error("ToAPIs 圖片生成處理超時 (超出 6 分鐘)，請稍後再試。");
+-  };
+-
+-  // Attempt primary call, if safety review blocked, retry once with simplified prompt
+-  try {
+-    const primaryPrompt = buildPrompt(false);
+-    return await executeGenerationCall(primaryPrompt);
+-  } catch (firstErr: any) {
+-    if (firstErr.message === "SAFETY_REVIEW_BLOCKED") {
+-      console.warn("ToAPIs safety review blocked primary call, attempting fallback simplified prompt...");
+-      try {
+-        const fallbackPrompt = buildPrompt(true);
+-        return await executeGenerationCall(fallbackPrompt);
+-      } catch (secondErr: any) {
+-        throw new Error("輸入提示詞或內容未通過 API 平台內容安全審查（Safety Review Blocked），請嘗試調整提示詞、移除敏感字眼或更換參考圖後再試一次。");
+-      }
+-    }
+     throw firstErr;
+   }
+ }
+--- a/src/models.config.ts
++++ b/src/models.config.ts
+@@ -121,7 +121,7 @@
+     costUSD: 0.01,
+     costHKD: 0.08,
+     apiModelName: 'gpt-image-2.5',
+-    enabled: true,
++    enabled: false,
+   },
+   {
+     id: 'wokey-grok-imagine-2',
+@@ -131,7 +131,7 @@
+     costUSD: 0.01,
+     costHKD: 0.08,
+     apiModelName: 'grok-imagine-image-2.0',
+-    enabled: true,
++    enabled: false,
+   },
+   {
+     id: 'qwen-image-3.0-pro',
+--- a/package.json
++++ b/package.json
+@@ -13,6 +13,9 @@
+   },
+   "dependencies": {
+     "@google/genai": "^1.29.0",
++    "@hk01/pi-ai-extra-google": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.1.0/hk01-pi-ai-extra-google-0.1.0.tgz",
++    "@hk01/pi-ai-extra-kie": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.1.0/hk01-pi-ai-extra-kie-0.1.0.tgz",
++    "@hk01/pi-ai-extra-toapis": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.1.0/hk01-pi-ai-extra-toapis-0.1.0.tgz",
+     "@tailwindcss/vite": "^4.1.14",
+     "@vitejs/plugin-react": "^5.0.4",
+     "clsx": "^2.1.1",
+--- a/server/providers/imageClient.ts
++++ b/server/providers/imageClient.ts
+@@ -0,0 +1,192 @@
++import { randomUUID } from "node:crypto";
++import {
++  generateKieImage,
++  isPiAiExtraError,
++  KIE_IMAGE_MODELS,
++  type ImageGenerationResult,
++  type ImageModelInfo,
++  type KieImageRequest,
++} from "@hk01/pi-ai-extra-kie";
++import { generateToapisImage, TOAPIS_IMAGE_MODELS, type ToapisImageRequest } from "@hk01/pi-ai-extra-toapis";
++import { generateGoogleImage, GOOGLE_IMAGE_MODELS, type GoogleImageRequest } from "@hk01/pi-ai-extra-google";
++
++/**
++ * The only place this app talks to image providers. Every request goes to exactly
++ * one provider/model chosen by the user: no model fallback, no provider fallback,
++ * no cross-provider uploads, and reference images are never dropped.
++ */
++
++type Provider = "kie" | "toapis" | "google";
++
++export interface AppImageRequest {
++  /** Model id from src/models.config.ts, e.g. "kie-gpt-image-2". */
++  appModelId: string;
++  prompt: string;
++  /** Data URLs or http(s) URLs, in the order the prompt describes them. */
++  referenceImages: string[];
++  /** App ratio preset, e.g. "16:9", "4:5", "300x250". */
++  ratio: string;
++  quality: "1K" | "2K";
++  signal?: AbortSignal;
++}
++
++export class AppImageError extends Error {
++  readonly code: string | undefined;
++  readonly provider: string | undefined;
++  readonly model: string | undefined;
++  constructor(message: string, details: { code?: string; provider?: string; model?: string; cause?: unknown } = {}) {
++    super(message, { cause: details.cause });
++    this.name = "AppImageError";
++    this.code = details.code;
++    this.provider = details.provider;
++    this.model = details.model;
++  }
++}
++
++const SECRET_NAMES: Record<Provider, string> = { kie: "KIE_API_KEY", toapis: "TOAPIS_API_KEY", google: "GEMINI_API_KEY" };
++const CATALOGUES: Record<Provider, readonly ImageModelInfo[]> = { kie: KIE_IMAGE_MODELS, toapis: TOAPIS_IMAGE_MODELS, google: GOOGLE_IMAGE_MODELS };
++const TOAPIS_MODELS = new Set(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gpt-image-2", "doubao-seedream-5-0-pro", "gemini-3.1-flash-image-preview"]);
++
++/** App model id → provider model operation. Text-to-image vs edit is chosen explicitly from the reference count. */
++function resolveTarget(appModelId: string, referenceCount: number): { provider: Provider; model: string } {
++  const hasReferences = referenceCount > 0;
++  if (appModelId === "kie-gpt-image-2") return { provider: "kie", model: hasReferences ? "gpt-image-2-image-to-image" : "gpt-image-2-text-to-image" };
++  if (appModelId === "kie-grok-imagine-2") {
++    return { provider: "kie", model: hasReferences ? "grok-imagine-image-2-0/image-edit" : "grok-imagine-image-2-0/text-to-image" };
++  }
++  if (appModelId === "kie-nano-banana-2") return { provider: "kie", model: "nano-banana-2" };
++  if (TOAPIS_MODELS.has(appModelId)) return { provider: "toapis", model: appModelId };
++  if (appModelId === "nano-banana-2") return { provider: "google", model: "gemini-3.1-flash-image" };
++  if (appModelId === "nano-banana-pro") return { provider: "google", model: "gemini-3-pro-image" };
++  throw new AppImageError(`模型 ${appModelId} 目前不支援（請在模型選單選擇其他模型）。`, { code: "unsupported_model" });
++}
++
++const PRESET_RATIOS: Record<string, number> = {
++  "300x250": 300 / 250,
++  "336x280": 336 / 280,
++  "6:5": 6 / 5,
++  "300x300": 1,
++  "300x600": 300 / 600,
++  "320x480": 320 / 480,
++  "1.91:1": 1.91,
++};
++
++/** KIE GPT Image 2 documents ratios that are unavailable at 2K/4K. */
++const KIE_GPT_UNSUPPORTED_AT: Record<string, readonly string[]> = {
++  "2K": ["5:4", "4:5", "3:1", "1:3", "9:21"],
++  "4K": ["1:1", "3:1", "1:3", "9:21"],
++};
++
++function ratioValue(ratio: string): number | undefined {
++  if (PRESET_RATIOS[ratio] !== undefined) return PRESET_RATIOS[ratio];
++  const match = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.exec(ratio);
++  return match ? Number(match[1]) / Number(match[2]) : undefined;
++}
++
++/** Picks the model's own value for the app preset: exact match, else the nearest supported ratio. */
++function pickAspectRatio(info: ImageModelInfo, ratio: string, resolution: string | undefined): string | undefined {
++  if (!info.aspectRatio) return undefined;
++  const blocked = info.id.startsWith("gpt-image-2-") && resolution ? (KIE_GPT_UNSUPPORTED_AT[resolution] ?? []) : [];
++  const candidates = info.aspectRatio.values.filter((value) => value !== "auto" && !blocked.includes(value));
++  if (candidates.includes(ratio)) return ratio;
++  const target = ratioValue(ratio) ?? 16 / 9;
++  const distance = (value: string): number => Math.abs(Math.log((ratioValue(value) ?? 1) / target));
++  return [...candidates].sort((a, b) => distance(a) - distance(b))[0];
++}
++
++function apiKeyFor(provider: Provider): string {
++  const name = SECRET_NAMES[provider];
++  const value = process.env[name]?.trim();
++  if (!value) throw new AppImageError(`${name} 未設定或為空，請在 Settings 秘密設定 (Secrets) 中配置 ${name}。`, { code: "missing_key", provider });
++  return value;
++}
++
++/** Turns a package error into a user-facing message that keeps provider/model and the error code. */
++function toAppError(error: unknown): Error {
++  if (!isPiAiExtraError(error)) return error instanceof Error ? error : new Error(String(error));
++  const where = `${error.provider}/${error.model}`;
++  const prefix =
++    error.code === "content_blocked"
++      ? `內容未通過 ${where} 安全審查（Safety Filter）`
++      : error.code === "reference_limit"
++        ? `參考圖片數量超出 ${where} 的上限（圖片不會被自動刪減，請減少素材或 Logo）`
++        : error.code === "auth"
++          ? `${where} 金鑰無效或未授權，請檢查 Secrets`
++          : error.code === "insufficient_credits"
++            ? `${where} 帳戶額度不足`
++            : `${where} 生成失敗 [${error.code}]`;
++  const detail = error.message.replace(/^\[[^\]]+\]\s*/, "");
++  return new AppImageError(`${prefix}：${detail}`, { code: error.code, provider: error.provider, model: error.model, cause: error });
++}
++
++function logUsage(result: ImageGenerationResult, clientBusinessId: string | undefined): void {
++  console.log(
++    `[usage] ${result.provider}/${result.model} task=${result.taskId ?? "-"} ref=${clientBusinessId ?? "-"} elapsedMs=${result.elapsedMs} usage=${JSON.stringify(result.usage ?? null)}`,
++  );
++}
++
++/** Generates or edits one image and returns it as a data URL. */
++export async function generateAppImage(request: AppImageRequest): Promise<string> {
++  const target = resolveTarget(request.appModelId, request.referenceImages.length);
++  const info = CATALOGUES[target.provider].find((model) => model.id === target.model);
++  if (!info) throw new AppImageError(`找不到模型設定 ${target.provider}/${target.model}`, { code: "unsupported_model", ...target });
++  const resolution = info.resolution?.values.includes(request.quality) ? request.quality : undefined;
++  const common = {
++    apiKey: apiKeyFor(target.provider),
++    prompt: request.prompt,
++    referenceImages: request.referenceImages,
++    aspectRatio: pickAspectRatio(info, request.ratio, resolution),
++    signal: request.signal,
++  };
++  const clientBusinessId = target.provider === "toapis" ? `open-graph-single:${randomUUID()}` : undefined;
++  try {
++    const result =
++      target.provider === "kie"
++        ? await generateKieImage({ ...common, model: target.model, resolution, outputFormat: target.model === "nano-banana-2" ? "jpg" : undefined } as KieImageRequest)
++        : target.provider === "toapis"
++          ? await generateToapisImage({
++              ...common,
++              model: target.model,
++              resolution,
++              clientBusinessId,
++              watermark: target.model === "doubao-seedream-5-0-pro" ? false : undefined,
++            } as ToapisImageRequest)
++          : await generateGoogleImage({
++              ...common,
++              model: target.model,
++              resolution,
++              headers: { "User-Agent": "aistudio-build" },
++              safetySettings: [
++                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
++                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
++                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
++                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
++                { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "BLOCK_NONE" },
++              ],
++            } as GoogleImageRequest);
++    logUsage(result, clientBusinessId);
++    const image = result.images[0];
++    if (!image) throw new AppImageError(`${result.provider}/${result.model} 沒有返回圖片`, { code: "no_output", provider: result.provider, model: result.model });
++    return image.dataUrl;
++  } catch (error) {
++    throw toAppError(error);
++  }
++}
++
++/** Gemini-style interleaved parts (text labels + inline images) → one prompt with numbered image markers. */
++export function partsToPrompt(parts: ReadonlyArray<{ text?: string; inlineData?: { data: string; mimeType: string } }>): {
++  prompt: string;
++  referenceImages: string[];
++} {
++  const referenceImages: string[] = [];
++  const lines: string[] = [];
++  for (const part of parts) {
++    if (part.inlineData) {
++      referenceImages.push(`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`);
++      lines.push(`[Reference image ${referenceImages.length}]`);
++    } else if (part.text) {
++      lines.push(part.text);
++    }
++  }
++  return { prompt: lines.join("\n\n"), referenceImages };
++}
+diff --git a/server/providers/wokey.ts b/server/providers/wokey.ts
+deleted file (dead code, never imported)
