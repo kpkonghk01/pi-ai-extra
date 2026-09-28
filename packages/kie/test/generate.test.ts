@@ -142,6 +142,18 @@ describe("generateKieImage", () => {
     assert.equal(fake.calls.length, 0);
   });
 
+  it("treats undefined-valued options as unset but still rejects misspelled keys with values", async () => {
+    const fake = createFakeFetch(kieRoutes());
+    const request = { ...base, model: "gpt-image-2-image-to-image", prompt: "x", referenceImages: ["https://cdn.example.com/a.png"], outputFormat: undefined, resolution: undefined };
+    await generateKieImage({ ...request, fetch: fake.fetch } as unknown as KieImageRequest);
+    assert.deepEqual(bodyOf(fake.callsTo(CREATE_URL)[0]).input, { prompt: "x", input_urls: ["https://cdn.example.com/a.png"] });
+
+    await assert.rejects(
+      generateKieImage({ ...request, outputFormat: "png", fetch: fake.fetch } as unknown as KieImageRequest),
+      isCode("invalid_request"),
+    );
+  });
+
   it("surfaces KIE envelope errors on submission without retrying or falling back", async () => {
     const fake = createFakeFetch(kieRoutes({ create: () => jsonResponse({ code: 402, msg: "Credits insufficient", data: null }) }));
     await assert.rejects(
