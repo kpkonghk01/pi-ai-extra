@@ -94,6 +94,21 @@ describe("generateGoogleImage", () => {
     });
   });
 
+  it("reports an invalid API key (HTTP 400 API_KEY_INVALID) as auth", async () => {
+    const fake = createFakeFetch([
+      {
+        method: "POST",
+        url: FLASH_URL,
+        respond: () =>
+          jsonResponse(
+            { error: { code: 400, message: "API key not valid. Please pass a valid API key.", status: "INVALID_ARGUMENT", details: [{ reason: "API_KEY_INVALID" }] } },
+            400,
+          ),
+      },
+    ]);
+    await assert.rejects(generateGoogleImage({ apiKey: "bad", model: "gemini-3.1-flash-image", prompt: "p", fetch: fake.fetch }), isCode("auth"));
+  });
+
   it("maps HTTP errors with Gemini's message and does not retry", async () => {
     const fake = createFakeFetch([
       { method: "POST", url: FLASH_URL, respond: () => jsonResponse({ error: { code: 429, message: "Resource exhausted", status: "RESOURCE_EXHAUSTED" } }, 429) },

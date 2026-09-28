@@ -4,12 +4,14 @@ import {
   contextError,
   decodeBase64,
   formatBytes,
+  isPiAiExtraError,
   requestJson,
   safeStringify,
   sniffImageMimeType,
   parseUsageBlock,
   tokenCountSchema,
   truncate,
+  withErrorContext,
   type ImageBytes,
   type ImageUsage,
   type OperationContext,
@@ -125,7 +127,9 @@ export async function generateContentImages(
       timeoutMs: input.timeoutMs,
     },
     responseSchema,
-  );
+  ).catch((error: unknown) => {
+    throw asAuthErrorIfInvalidKey(error);
+  });
   const images = extractImages(ctx, response, input.maxOutputBytes);
   return { images, responseId: response.responseId, usage: googleUsage(ctx, response.usageMetadata) };
 }
@@ -206,6 +210,14 @@ function decodeOutput(ctx: OperationContext, base64: string, maxOutputBytes: num
     });
   }
   return { mimeType, bytes };
+}
+
+/** Gemini reports a bad API key as HTTP 400 INVALID_ARGUMENT with reason API_KEY_INVALID. */
+function asAuthErrorIfInvalidKey(error: unknown): unknown {
+  if (isPiAiExtraError(error) && error.status === 400 && /API_KEY_INVALID|API key not valid/.test(error.responseBody ?? error.message)) {
+    return withErrorContext(error, { code: "auth" });
+  }
+  return error;
 }
 
 function suffix(message: string | undefined): string {
