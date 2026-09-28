@@ -1,4 +1,5 @@
 export {
+  CLIENT_BUSINESS_ID_PATTERN,
   generateToapisImage,
   type ToapisGeminiFlashImageRequest,
   type ToapisGptImage25Request,
@@ -18,10 +19,13 @@ export {
   type ToapisSeedreamAspectRatio,
   type ToapisSeedreamResolution,
 } from "./models.ts";
+export { getToapisTask, type GetToapisTaskOptions, type ToapisTaskInfo } from "./get-task.ts";
+export type { ToapisTaskStatus } from "./task.ts";
 export { TOAPIS_BASE_URL, TOAPIS_PROVIDER_ID } from "./constants.ts";
 export {
   isPiAiExtraError,
   PiAiExtraError,
+  type BillingStatus,
   type GeneratedImage,
   type ImageGenerationResult,
   type ImageHelperOptions,
@@ -29,6 +33,8 @@ export {
   type ImageOptionSpec,
   type ImageProgressEvent,
   type ImageProgressListener,
+  type ImageTokenUsage,
+  type ImageUsage,
   type PiAiExtraErrorCode,
   type PiAiExtraOperation,
   type ReferenceImageSpec,
