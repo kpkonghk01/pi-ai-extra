@@ -201,6 +201,24 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
+  examples/playground:
+    dependencies:
+      '@earendil-works/pi-ai':
+        specifier: 0.87.1
+        version: 0.87.1(ws@8.21.3)(zod@4.6.5)
+      '@hk01/pi-ai-extra-google':
+        specifier: workspace:*
+        version: link:../../packages/google
+      '@hk01/pi-ai-extra-kie':
+        specifier: workspace:*
+        version: link:../../packages/kie
+      '@hk01/pi-ai-extra-toapis':
+        specifier: workspace:*
+        version: link:../../packages/toapis
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+
   packages/google:
     dependencies:
       zod:

@@ -1,0 +1,18 @@
+{
+  "name": "@hk01/pi-ai-extra-playground",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Local-only playground for manual live testing of the pi-ai-extra packages. Not released.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.ts",
+    "check": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "0.87.1",
+    "@hk01/pi-ai-extra-google": "workspace:*",
+    "@hk01/pi-ai-extra-kie": "workspace:*",
+    "@hk01/pi-ai-extra-toapis": "workspace:*",
+    "zod": "4.6.5"
+  }
+}

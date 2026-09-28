@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>pi-ai-extra playground</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>pi-ai-extra playground</h1>
+      <p class="hint">Local-only test harness. Keys go only to this local server (127.0.0.1) and from there to the selected provider; they are never stored server-side or written to the log.</p>
+    </header>
+
+    <main>
+      <section class="card" id="keys">
+        <h2>Provider keys</h2>
+        <div class="grid3">
+          <label>KIE API key <input type="password" data-key="kie" autocomplete="off" /></label>
+          <label>ToAPIs API key <input type="password" data-key="toapis" autocomplete="off" /></label>
+          <label>Gemini API key <input type="password" data-key="google" autocomplete="off" /></label>
+        </div>
+        <div class="row">
+          <label class="inline"><input type="checkbox" id="remember-keys" /> Remember keys in this browser (localStorage)</label>
+          <label class="inline"><input type="checkbox" id="show-keys" /> Show keys</label>
+        </div>
+      </section>
+
+      <section class="card" id="image">
+        <h2>Image: text-to-image / image-to-image</h2>
+        <div class="grid3">
+          <label>Provider
+            <select id="image-provider">
+              <option value="kie">KIE</option>
+              <option value="toapis">ToAPIs</option>
+              <option value="google">Google Gemini</option>
+            </select>
+          </label>
+          <label>Model <select id="image-model"></select></label>
+          <label>Timeout ms (optional) <input id="image-timeout" type="number" min="1000" step="1000" placeholder="provider default" /></label>
+        </div>
+        <div id="model-info" class="info"></div>
+        <label>Prompt <textarea id="image-prompt" rows="4">A clean 16:9 Open Graph news cover in Traditional Chinese, bold headline area, soft gradient background.</textarea></label>
+        <div id="model-options" class="grid4"></div>
+
+        <h3>Reference images <span id="ref-count" class="badge"></span></h3>
+        <div class="grid2">
+          <label>Files (converted to data URLs, uploaded via the selected provider)
+            <input id="ref-files" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple />
+          </label>
+          <label>Public URLs (one per line, passed through)
+            <textarea id="ref-urls" rows="3" placeholder="https://..."></textarea>
+          </label>
+        </div>
+        <div id="ref-list" class="thumbs"></div>
+
+        <div class="row">
+          <button id="generate" class="primary">Generate</button>
+          <button id="cancel" disabled>Cancel</button>
+          <span id="image-status" class="status"></span>
+        </div>
+        <div id="image-results"></div>
+      </section>
+
+      <section class="card" id="chat">
+        <h2>Chat smoke test (pi-ai Models)</h2>
+        <div class="grid3">
+          <label>Provider
+            <select id="chat-provider">
+              <option value="kie">KIE</option>
+              <option value="toapis">ToAPIs</option>
+            </select>
+          </label>
+          <label>Model <select id="chat-model"></select></label>
+          <label>Prompt <input id="chat-prompt" value="Reply with the single word: pong" /></label>
+        </div>
+        <div class="row">
+          <button id="chat-send" class="primary">Send</button>
+          <span id="chat-status" class="status"></span>
+        </div>
+        <pre id="chat-output" class="output"></pre>
+      </section>
+
+      <section class="card" id="log-card">
+        <div class="row between">
+          <h2>Log (copy and send this for feedback)</h2>
+          <div>
+            <button id="log-copy">Copy log</button>
+            <button id="log-clear">Clear</button>
+          </div>
+        </div>
+        <div id="log" class="log" tabindex="0"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/js/main.js"></script>
+  </body>
+</html>
