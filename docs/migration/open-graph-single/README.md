@@ -11,6 +11,7 @@
 - **手動：** `files/` 內是改好的 server 端完整檔案，`changes.diff` 是差異，供 review 或比對 Gemini 的改動。使用前注意：
   - 這些檔案是根據 2026-09-28 從 AI Studio 取得的版本修改的。你之後在 AI Studio 做過的改動（例如改用 ESM build），整份貼上時會被覆蓋。
   - UI 端的錯誤顯示修改不在 `files/` 內，請按 `gemini-prompt.md` 第 7 步自行修改。
+  - 本資料夾的 `tsconfig.json` 和 `typecheck/` 只供本 repo 檢查 `files/` 的型別：以 app 的編譯設定，對照已發佈 package 的型別宣告（由 `pnpm run check` 執行）。不要複製到 app。
 
 這些檔案都已在原 app 的副本上驗證過（套件從 release URL 安裝）：
 - `tsc --noEmit` 通過。

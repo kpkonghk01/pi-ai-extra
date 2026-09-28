@@ -1,0 +1,28 @@
+{
+  // Type-checks files/ as they compile inside open-graph-single: its compiler options
+  // (non-strict, TypeScript 5.8 defaults made explicit) against the packages' published
+  // declarations (dist/*.d.mts, so run `pnpm run build` first). Not part of the files to
+  // copy into the app.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "strict": false,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowImportingTsExtensions": true,
+    "allowSyntheticDefaultImports": true,
+    "noEmit": true,
+    // Lets files/server.ts resolve the unchanged app module ./server/providers/openrouter to a stub.
+    "rootDirs": ["files", "typecheck/app"],
+    "paths": {
+      "@hk01/pi-ai-extra-kie": ["../../../packages/kie/dist/index.d.mts"],
+      "@hk01/pi-ai-extra-toapis": ["../../../packages/toapis/dist/index.d.mts"],
+      "@hk01/pi-ai-extra-google": ["../../../packages/google/dist/index.d.mts"]
+    }
+  },
+  "include": ["files/**/*.ts", "typecheck/**/*.d.ts"]
+}
