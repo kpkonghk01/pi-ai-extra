@@ -16,8 +16,9 @@ Publish one self-contained `.tgz` artifact per public adapter package through Gi
 
 - `@hk01/pi-ai-extra-kie` releases from `kie-vX.Y.Z`.
 - `@hk01/pi-ai-extra-toapis` releases from `toapis-vX.Y.Z`.
+- `@hk01/pi-ai-extra-google` releases from `google-vX.Y.Z` (added 2026-09-28 for Gemini image generation, which pi-ai does not provide).
 
-GitHub Actions validates that the tag matches the package manifest version, checks and builds the selected package, packs it, and attaches the artifact to the matching GitHub Release.
+GitHub Actions validates that the tag matches the package manifest version, checks, tests and builds the selected package, packs it, and attaches the artifact to the matching GitHub Release. The pnpm version comes from the root `packageManager` field.
 
 Shared implementation is private workspace code and must be bundled into each public artifact. A consumer must never need to resolve an unpublished sibling workspace package.
 
