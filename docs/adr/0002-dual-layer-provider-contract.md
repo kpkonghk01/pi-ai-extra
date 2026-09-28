@@ -14,10 +14,12 @@ Using only pi-ai would leave consumer applications to pass unvalidated provider-
 
 Each public adapter package exposes two complementary layers:
 
-1. A pi-ai provider factory (`createKieProvider()` or `createToapisProvider()`) for standard protocol integration and existing `Models` collections.
-2. A Zod-validated high-level image helper (`generateKieImage()` or `generateToapisImage()`) for model operation schemas, provider-native reference-image upload, task polling, and normalized output.
+1. A Zod-validated high-level image helper (`generateKieImage()`, `generateToapisImage()` or `generateGoogleImage()`) on the main entry, for model operation schemas, provider-native reference-image upload, task polling, normalized output and provider-reported usage.
+2. pi-ai adapters on the `/pi-ai` subpath. pi-ai 0.87.1 keeps chat providers (`Models`) and image providers (`ImagesModels`) in separate collections, so the subpath exports a chat `Provider` factory (`createKieProvider()`, `createToapisProvider()`, `createGoogleProvider()`) and an `ImagesProvider` factory (`createKieImagesProvider()`, `createToapisImagesProvider()`, `createGoogleImagesProvider()`). The image factories delegate to the helper and read model options from `ImagesOptions.metadata`, validated with the same strict schema.
 
-When a capability cannot accurately fit the common image helper, the adapter exposes an additional explicit operation rather than adding untyped escape-hatch fields.
+When a capability cannot accurately fit the common image helper, the adapter exposes an additional explicit operation rather than adding untyped escape-hatch fields. Task lookups by id (`getKieTask()`, `getToapisTask()`) are such operations.
+
+Amended 2026-09-28: the original decision assumed `createProvider()` accepted an image map; the installed pi-ai 0.87.1 does not, hence the separate images factories. `createGoogleProvider()` was added so Gemini chat and images come from one package with the same explicit-key auth; it reuses pi-ai's Gemini adapter and catalogue unchanged, whereas pi-ai's own `googleProvider()` reads `GEMINI_API_KEY` from the environment.
 
 ## Consequences
 

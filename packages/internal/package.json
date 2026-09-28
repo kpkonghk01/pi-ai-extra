@@ -4,11 +4,18 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./pi-ai": "./src/pi-ai/index.ts",
+    "./testing": "./src/testing/fake-fetch.ts"
   },
   "scripts": {
-    "build": "tsc --noEmit",
-    "check": "tsc --noEmit",
-    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\""
+    "check": "tsc --noEmit -p .",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.87.1"
   }
 }
