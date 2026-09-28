@@ -1,6 +1,7 @@
 import type { ServerResponse } from "node:http";
 import { createModels } from "@earendil-works/pi-ai";
 import { generateGoogleImage, GOOGLE_IMAGE_MODELS, type GoogleImageRequest } from "@hk01/pi-ai-extra-google";
+import { createGoogleProvider, GOOGLE_CHAT_MODEL_IDS } from "@hk01/pi-ai-extra-google/pi-ai";
 import { generateKieImage, getKieTask, KIE_IMAGE_MODELS, type KieImageRequest } from "@hk01/pi-ai-extra-kie";
 import { createKieProvider, KIE_CHAT_MODELS } from "@hk01/pi-ai-extra-kie/pi-ai";
 import { generateToapisImage, getToapisTask, TOAPIS_IMAGE_MODELS, type ToapisImageRequest } from "@hk01/pi-ai-extra-toapis";
@@ -22,7 +23,7 @@ const taskBody = z.object({
 });
 
 const chatBody = z.object({
-  provider: z.enum(["kie", "toapis"]),
+  provider: z.enum(["kie", "toapis", "google"]),
   apiKey: z.string().trim().min(1, "apiKey is required"),
   model: z.string().min(1),
   prompt: z.string().trim().min(1, "prompt is required"),
@@ -31,7 +32,7 @@ const chatBody = z.object({
 export function catalogRoute(response: ServerResponse): void {
   sendJson(response, 200, {
     image: { kie: KIE_IMAGE_MODELS, toapis: TOAPIS_IMAGE_MODELS, google: GOOGLE_IMAGE_MODELS },
-    chat: { kie: KIE_CHAT_MODELS, toapis: TOAPIS_CHAT_MODELS },
+    chat: { kie: KIE_CHAT_MODELS, toapis: TOAPIS_CHAT_MODELS, google: GOOGLE_CHAT_MODEL_IDS.map((id) => ({ id })) },
   });
 }
 
@@ -71,11 +72,17 @@ export async function taskRoute(body: unknown, response: ServerResponse): Promis
   }
 }
 
-/** One-message smoke test through pi-ai `Models` with the KIE/ToAPIs chat provider. */
+const CHAT_PROVIDERS = {
+  kie: (apiKey: string) => createKieProvider({ apiKey }),
+  toapis: (apiKey: string) => createToapisProvider({ apiKey }),
+  google: (apiKey: string) => createGoogleProvider({ apiKey }),
+};
+
+/** One-message smoke test through pi-ai `Models` with the selected chat provider. */
 export async function chatRoute(body: unknown, response: ServerResponse): Promise<void> {
   const input = parse(chatBody, body);
   const models = createModels();
-  models.setProvider(input.provider === "kie" ? createKieProvider({ apiKey: input.apiKey }) : createToapisProvider({ apiKey: input.apiKey }));
+  models.setProvider(CHAT_PROVIDERS[input.provider](input.apiKey));
   const model = models.getModel(input.provider, input.model);
   if (!model) throw new HttpError(400, `Unknown ${input.provider} chat model ${input.model}.`);
   const startedAt = Date.now();

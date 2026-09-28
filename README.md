@@ -6,7 +6,7 @@ Server-only extensions to [`@earendil-works/pi-ai`](https://www.npmjs.com/packag
 | --- | --- | --- |
 | `@hk01/pi-ai-extra-kie` | Grok Imagine Image 2.0 (text-to-image, image edit), GPT Image 2 (text-to-image, image-to-image), Nano Banana 2 | GPT Codex (OpenAI Responses), Claude (Anthropic Messages) |
 | `@hk01/pi-ai-extra-toapis` | Gemini 3.1 Flash Image (preview), GPT Image 2, GPT Image 2.5 Flare / Sunburst, Seedream 5.0 Pro | Codex (OpenAI Responses), Claude (Anthropic Messages) |
-| `@hk01/pi-ai-extra-google` | Gemini 3.1 Flash Image, Gemini 3 Pro Image | — (use pi-ai's built-in `google` provider) |
+| `@hk01/pi-ai-extra-google` | Gemini 3.1 Flash Image, Gemini 3 Pro Image | Gemini (pi-ai's Gemini adapter and catalogue, explicit key) |
 
 Each package has two entry points:
 
@@ -138,11 +138,12 @@ Through pi-ai, `AssistantImages.usage` is filled only when the provider reported
 import { createModels, createImagesModels } from "@earendil-works/pi-ai";
 import { createKieProvider, createKieImagesProvider } from "@hk01/pi-ai-extra-kie/pi-ai";
 import { createToapisProvider, createToapisImagesProvider } from "@hk01/pi-ai-extra-toapis/pi-ai";
-import { createGoogleImagesProvider } from "@hk01/pi-ai-extra-google/pi-ai";
+import { createGoogleProvider, createGoogleImagesProvider } from "@hk01/pi-ai-extra-google/pi-ai";
 
 const models = createModels();
 models.setProvider(createKieProvider({ apiKey: kieKey }));       // Codex on https://api.kie.ai/api/v1, Claude on https://api.kie.ai/claude (Bearer)
 models.setProvider(createToapisProvider({ apiKey: toapisKey })); // Codex on https://toapis.com/v1, Claude on https://toapis.com
+models.setProvider(createGoogleProvider({ apiKey: geminiKey }));  // Gemini chat; never reads GEMINI_API_KEY
 
 const images = createImagesModels();
 images.setProvider(createToapisImagesProvider({ apiKey: toapisKey }));
@@ -157,9 +158,11 @@ const output = await images.generateImages(
 // output.stopReason: "stop" | "error" | "aborted"; errors never throw at this layer.
 ```
 
-pi-ai keeps chat providers (`Models`) and image providers (`ImagesModels`) in separate collections, so each package exports one factory for each. Image options go in `ImagesOptions.metadata` using the helper option names and are validated strictly; unknown keys fail the request rather than being ignored.
+pi-ai keeps chat providers (`Models`) and image providers (`ImagesModels`) in separate collections, so each package exports one factory for each, taking the same explicit key. Image options go in `ImagesOptions.metadata` using the helper option names and are validated strictly; unknown keys fail the request rather than being ignored.
 
-Chat models use pi-ai's own OpenAI Responses and Anthropic Messages adapters. Capability metadata (context window, thinking levels) is copied from pi-ai's catalogue when the id matches. `ChatModelDefinition.cost` defaults to `0`, because KIE and ToAPIs prices differ from list prices; set it from your provider's current price sheet if you want pi-ai to compute cost:
+`createGoogleProvider({ apiKey, modelIds?, baseUrl? })` serves pi-ai's own Gemini adapter and model catalogue (`GOOGLE_CHAT_MODEL_IDS`) unchanged, including Google's list prices, but authenticates only with the explicit key: unlike pi-ai's `googleProvider()`, it never reads `GEMINI_API_KEY`. `modelIds` restricts the list; unknown ids throw.
+
+KIE and ToAPIs chat models use pi-ai's own OpenAI Responses and Anthropic Messages adapters. Capability metadata (context window, thinking levels) is copied from pi-ai's catalogue when the id matches. `ChatModelDefinition.cost` defaults to `0`, because KIE and ToAPIs prices differ from list prices; set it from your provider's current price sheet if you want pi-ai to compute cost:
 
 ```ts
 createToapisProvider({
