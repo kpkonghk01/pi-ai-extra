@@ -1,13 +1,30 @@
 // Thin client for the local playground server.
 
+/**
+ * fetch() rejects with a bare "Failed to fetch" when the local server is not reachable
+ * (stopped, crashed or restarted). Say so explicitly, without masking cancellation.
+ */
+async function localFetch(path, init) {
+  try {
+    return await fetch(path, init);
+  } catch (error) {
+    if (init?.signal?.aborted) throw error;
+    throw new Error(
+      `Cannot reach the playground server at ${location.origin}${path} (${error?.message ?? error}). ` +
+        "Is `pnpm playground` still running? Restart it, reload this page, and try again.",
+      { cause: error },
+    );
+  }
+}
+
 export async function getCatalog() {
-  const response = await fetch("/api/catalog");
+  const response = await localFetch("/api/catalog");
   if (!response.ok) throw new Error(`catalog request failed: HTTP ${response.status}`);
   return response.json();
 }
 
 export async function postJson(path, body, signal) {
-  const response = await fetch(path, {
+  const response = await localFetch(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -23,7 +40,7 @@ export async function postJson(path, body, signal) {
 
 /** Posts and yields each NDJSON event from the streamed response. */
 export async function* streamNdjson(path, body, signal) {
-  const response = await fetch(path, {
+  const response = await localFetch(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
