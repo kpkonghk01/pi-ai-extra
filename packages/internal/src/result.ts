@@ -1,6 +1,7 @@
 import { elapsedMs, emitProgress, type FetchLike, type ImageProgressListener, type OperationContext } from "./context.ts";
 import { encodeBase64, toDataUrl, type ImageBytes, type ImageMimeType } from "./image-data.ts";
 import type { ImageUsage } from "./usage.ts";
+import { omitUndefined } from "./util.ts";
 
 /** Options shared by every high-level image helper. */
 export interface ImageHelperOptions {
@@ -69,10 +70,14 @@ export function completeResult(
   return result;
 }
 
-/** Splits helper options into transport settings and the model payload that the schema validates. */
+/**
+ * Splits helper options into transport settings and the model payload that the schema
+ * validates. Keys whose value is `undefined` mean "not set" and are dropped, so callers
+ * can pass optional fields unconditionally; misspelled keys with a value are still rejected.
+ */
 export function splitHelperOptions<T extends ImageHelperOptions>(
   options: T,
 ): { settings: ImageHelperOptions; payload: Record<string, unknown> } {
   const { apiKey, signal, timeoutMs, maxOutputBytes, onProgress, fetch, ...payload } = options;
-  return { settings: { apiKey, signal, timeoutMs, maxOutputBytes, onProgress, fetch }, payload };
+  return { settings: { apiKey, signal, timeoutMs, maxOutputBytes, onProgress, fetch }, payload: omitUndefined(payload) };
 }
