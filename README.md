@@ -128,7 +128,7 @@ if (task.usage?.billingStatus === "settled" || task.usage?.billingStatus === "re
 const kie = await getKieTask({ apiKey: kieKey, taskId: kieTaskId }); // state + creditsConsumed/costTime
 ```
 
-Lookups return failed tasks as a status (`failed` / `fail`) rather than throwing. For ToAPIs, pass `clientBusinessId` (1–128 characters of `A-Z a-z 0-9 . _ : -`, for example `open-graph-single:req-123`) so each task is attributable to an app or request; it is sent as top-level `client_business_id` and can be used as the lookup id.
+Lookups return failed tasks as a status (`failed` / `fail`) rather than throwing, and still return billing when a finished task's result URLs have expired (a `warning` event is sent to `onProgress`). For ToAPIs, pass a unique `clientBusinessId` per request (non-empty, at most 128 characters, no control characters or surrounding whitespace; for example `open-graph-single:3f1c…`) so each task is attributable to an app or request; it is sent as top-level `client_business_id` and can be used as the lookup id.
 
 Through pi-ai, `AssistantImages.usage` is filled only when the provider reported token counts (ToAPIs, Google), following pi-ai's conventions: `input` excludes cached tokens, `cacheRead` holds them, and `output` includes `reasoning`. Credits and USD are available only on the helper result or lookups.
 
@@ -152,7 +152,7 @@ const model = images.getModel("toapis", "gpt-image-2.5-flare")!;
 const output = await images.generateImages(
   model,
   { input: [{ type: "text", text: "A lighthouse at dawn" }] },
-  { metadata: { aspectRatio: "16:9", resolution: "2K", clientBusinessId: "proxy:app-7" } },
+  { metadata: { aspectRatio: "16:9", resolution: "2K", clientBusinessId: `proxy:app-7:${crypto.randomUUID()}` } },
 );
 // output.stopReason: "stop" | "error" | "aborted"; errors never throw at this layer.
 ```
@@ -171,11 +171,26 @@ createToapisProvider({
 
 ## Google AI Studio (server) integration
 
-1. Put `KIE_API_KEY`, `TOAPIS_API_KEY` and `GEMINI_API_KEY` in the app's server-side Secrets. Never expose them through Vite `define`, client code or a browser request.
-2. Add the pinned release URLs to `dependencies` and import the packages only from server modules (for example `server.ts`).
-3. Read the secret on the server and pass it as `apiKey`. Forward the request's abort signal so a closed tab cancels the task.
-4. Show `{ provider, model, code, message }` to users and in logs. Do not retry through another model or provider automatically.
-5. A CommonJS server bundle (`esbuild --format=cjs --packages=external`) can use the main entries. Only the `/pi-ai` subpath needs an ESM server build.
+1. **Secrets.** Put `KIE_API_KEY`, `TOAPIS_API_KEY` and `GEMINI_API_KEY` in the app's server-side Secrets. Never expose them through Vite `define`, client code or a browser request.
+2. **Install.** Add the pinned release URLs to `dependencies` (`"@hk01/pi-ai-extra-kie": "https://github.com/…/kie-v0.1.0/hk01-pi-ai-extra-kie-0.1.0.tgz"`, likewise for ToAPIs and Google). Import the packages only from server modules such as `server.ts`. A CommonJS server bundle (`esbuild --format=cjs --packages=external`) works with the main entries; only the `/pi-ai` subpath needs an ESM server build.
+3. **Generate / edit.** Read the secret on the server and call the helper. Text-to-image and editing differ only by `model` and `referenceImages`:
+
+   ```ts
+   const result = await generateKieImage({
+     apiKey: process.env.KIE_API_KEY!,
+     model: referenceImages.length > 0 ? "gpt-image-2-image-to-image" : "gpt-image-2-text-to-image",
+     prompt,
+     referenceImages, // template, sources, logo — in the order the prompt describes
+     aspectRatio: "16:9",
+     signal: abortController.signal,
+   });
+   res.json({ imageUrl: result.images[0]!.dataUrl });
+   ```
+
+4. **Cancellation.** Create an `AbortController` per request, abort it when the browser disconnects (`res.on("close", …)`), and pass its `signal`. Uploads, polling and downloads stop, and the helper rejects with `code: "aborted"`.
+5. **Errors.** Show `{ provider, model, code, message }` to users and in logs. Do not retry through another model or provider automatically; offering the user another model is fine.
+6. **Usage.** Log `result.taskId` and `result.usage` per request. Send a unique `clientBusinessId` on ToAPIs requests. Re-read ToAPIs tasks whose `billingStatus` is `pending` with `getToapisTask()`, and keep one record per task id.
+7. **Upgrade / rollback.** Change the release URL in `package.json` to the new (or previous) version and redeploy. Released assets are never replaced, so a URL always installs the same bytes.
 
 ## Playground (not released)
 
