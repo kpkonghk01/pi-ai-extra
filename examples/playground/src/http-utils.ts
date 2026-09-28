@@ -49,13 +49,16 @@ export async function sendStatic(response: ServerResponse, root: string, urlPath
   if (!filePath.startsWith(root + sep)) throw new HttpError(403, "Forbidden.");
   const contentType = CONTENT_TYPES[extname(filePath)];
   if (!contentType) throw new HttpError(404, "Not found.");
+  let content: Buffer;
   try {
-    const content = await readFile(filePath);
-    response.writeHead(200, { "content-type": contentType, "cache-control": "no-store" });
-    response.end(content);
-  } catch {
-    throw new HttpError(404, "Not found.");
+    content = await readFile(filePath);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "EISDIR") throw new HttpError(404, "Not found.");
+    throw error;
   }
+  response.writeHead(200, { "content-type": contentType, "cache-control": "no-store" });
+  response.end(content);
 }
 
 /** JSON-serialisable description of any error, keeping pi-ai-extra context (provider, model, code, taskId…). */
