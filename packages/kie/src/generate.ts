@@ -15,8 +15,9 @@ import {
   type ImageGenerationResult,
   type ImageHelperOptions,
 } from "@hk01/pi-ai-extra-internal";
-import { createKieTask, uploadToKie, waitForKieTask, type KieEndpoints } from "./client.ts";
+import { createKieTask, uploadToKie, type KieEndpoints } from "./client.ts";
 import { KIE_API_BASE_URL, KIE_PROVIDER_ID, KIE_UPLOAD_BASE_URL } from "./constants.ts";
+import { waitForKieTask } from "./task.ts";
 import {
   KIE_IMAGE_MODEL_IDS,
   kieModelDefinition,
@@ -130,7 +131,7 @@ export async function generateKieImage(request: KieImageRequest): Promise<ImageG
   emitProgress(ctx, { type: "task_submitted", taskId });
 
   const initialDelayMs = options.poll?.initialDelayMs ?? 2_500;
-  const resultUrls = await waitForKieTask(ctx, apiKey, endpoints, taskId, {
+  const { resultUrls, usage } = await waitForKieTask(ctx, apiKey, endpoints.apiBaseUrl, taskId, {
     initialDelayMs,
     maxDelayMs: Math.max(initialDelayMs, options.poll?.maxDelayMs ?? 10_000),
     factor: 1.5,
@@ -144,7 +145,7 @@ export async function generateKieImage(request: KieImageRequest): Promise<ImageG
     retry: { attempts: 3, baseDelayMs: 1_000, maxDelayMs: 5_000 },
     taskId,
   });
-  return completeResult(ctx, taskId, images);
+  return completeResult(ctx, taskId, images, usage);
 }
 
 function withoutTrailingSlash(url: string): string {

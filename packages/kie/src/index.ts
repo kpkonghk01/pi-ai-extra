@@ -19,10 +19,13 @@ export {
   type KieNanoBanana2OutputFormat,
   type KieResolution,
 } from "./models.ts";
+export { getKieTask, type GetKieTaskOptions, type KieTaskInfo } from "./get-task.ts";
+export type { KieTaskState } from "./task.ts";
 export { KIE_API_BASE_URL, KIE_PROVIDER_ID, KIE_UPLOAD_BASE_URL } from "./constants.ts";
 export {
   isPiAiExtraError,
   PiAiExtraError,
+  type BillingStatus,
   type GeneratedImage,
   type ImageGenerationResult,
   type ImageHelperOptions,
@@ -30,6 +33,8 @@ export {
   type ImageOptionSpec,
   type ImageProgressEvent,
   type ImageProgressListener,
+  type ImageTokenUsage,
+  type ImageUsage,
   type PiAiExtraErrorCode,
   type PiAiExtraOperation,
   type ReferenceImageSpec,
