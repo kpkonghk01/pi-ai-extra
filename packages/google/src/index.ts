@@ -21,6 +21,7 @@ export { GOOGLE_BASE_URL, GOOGLE_PROVIDER_ID } from "./constants.ts";
 export {
   isPiAiExtraError,
   PiAiExtraError,
+  type BillingStatus,
   type GeneratedImage,
   type ImageGenerationResult,
   type ImageHelperOptions,
@@ -28,6 +29,8 @@ export {
   type ImageOptionSpec,
   type ImageProgressEvent,
   type ImageProgressListener,
+  type ImageTokenUsage,
+  type ImageUsage,
   type PiAiExtraErrorCode,
   type PiAiExtraOperation,
   type ReferenceImageSpec,

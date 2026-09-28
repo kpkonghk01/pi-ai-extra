@@ -129,7 +129,7 @@ export async function generateGoogleImage(request: GoogleImageRequest): Promise<
     timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     maxOutputBytes,
   });
-  return completeResult(ctx, generated.responseId, generated.images);
+  return completeResult(ctx, generated.responseId, generated.images, generated.usage);
 }
 
 /** Inline data stays as-is; URL references are fetched with the same type/size rules as inline ones. */
