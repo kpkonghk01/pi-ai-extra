@@ -9,7 +9,7 @@
  import { generateOpenRouterImage } from "./server/providers/openrouter";
  import { generateToAPIsImage } from "./server/providers/toapis";
  import { generateKieImage } from "./server/providers/kie";
-+import { generateAppImage, partsToPrompt } from "./server/providers/imageClient";
++import { errorDetails, generateAppImage, partsToPrompt } from "./server/providers/imageClient";
  import { isToapisModel, isOpenRouterModel, isKieModel } from "./src/models.config";
  
  dotenv.config();
@@ -30,7 +30,44 @@
  // Helper to convert base64 data URL or remote URL to inlineData format for Gemini SDK
  const getInlineData = async (dataUrlOrUrl: string) => {
    if (!dataUrlOrUrl) {
-@@ -277,6 +267,7 @@
+@@ -145,9 +135,9 @@
+           res.json({ imageUrl });
+         }
+       },
+-      sendError: (status: number, error: string) => {
++      sendError: (status: number, error: string, cause?: unknown) => {
+         if (!res.headersSent) {
+-          res.status(status).json({ error });
++          res.status(status).json({ error, details: cause === undefined ? undefined : errorDetails(cause) });
+         }
+       },
+     };
+@@ -190,11 +180,12 @@
+         res.end();
+       }
+     },
+-    sendError: (_status: number, error: string) => {
++    sendError: (_status: number, error: string, cause?: unknown) => {
+       clearInterval(pingInterval);
+       if (!res.writableEnded && !res.destroyed) {
+-        console.warn(`[ResponseSender] Sending error event: ${error}`);
+-        res.write(JSON.stringify({ type: 'error', error }) + '\n');
++        const details = cause === undefined ? undefined : errorDetails(cause);
++        console.warn(`[ResponseSender] Sending error event: ${error}`, details ?? "");
++        res.write(JSON.stringify({ type: 'error', error, details }) + '\n');
+         if (typeof (res as any).flush === 'function') (res as any).flush();
+         res.end();
+       }
+@@ -258,7 +249,7 @@
+           return;
+         }
+         console.error(`[Generate] ToAPIs error for ${safeModelId}:`, err);
+-        return sender.sendError(500, err.message || `${safeModelId} (ToAPIs) 生成失敗`);
++        return sender.sendError(500, err.message || `${safeModelId} (ToAPIs) 生成失敗`, err);
+       }
+     }
+ 
+@@ -277,11 +268,12 @@
            imageQuality,
            subjectFitMode,
            keepSourceBackground,
@@ -38,7 +75,22 @@
          });
          return sender.sendSuccess(imageUrl);
        } catch (err: any) {
-@@ -312,20 +303,6 @@
+         console.error(`[Generate] KIE error for ${safeModelId}:`, err);
+-        return sender.sendError(500, err.message || `${safeModelId} (KIE) 生成失敗`);
++        return sender.sendError(500, err.message || `${safeModelId} (KIE) 生成失敗`, err);
+       }
+     }
+ 
+@@ -300,7 +292,7 @@
+         });
+         return sender.sendSuccess(imageUrl);
+       } catch (err: any) {
+-        return sender.sendError(500, err.message || "GPT Image 2 (OpenRouter) 生成失敗");
++        return sender.sendError(500, err.message || "GPT Image 2 (OpenRouter) 生成失敗", err);
+       }
+     }
+ 
+@@ -312,20 +304,6 @@
        return sender.sendError(400, "Missing or empty sourceImages");
      }
  
@@ -59,7 +111,7 @@
      const parts: any[] = [];
  
      // Add template image
-@@ -429,55 +406,17 @@
+@@ -429,55 +407,17 @@
  
      parts.push({ text: fullPrompt });
  
@@ -125,7 +177,48 @@
  
    } catch (error: any) {
      console.error("Error in generate API:", error);
-@@ -577,20 +516,6 @@
+@@ -488,7 +428,7 @@
+         errorMsg = parsed?.error?.message || parsed?.message || errorMsg;
+       } catch (_) {}
+     }
+-    sender.sendError(500, errorMsg);
++    sender.sendError(500, errorMsg, error);
+   }
+ });
+ 
+@@ -537,7 +477,7 @@
+           return;
+         }
+         console.error(`[Edit] ToAPIs error for ${safeModelId}:`, err);
+-        return sender.sendError(500, err.message || `${safeModelId} (ToAPIs) 編輯失敗`);
++        return sender.sendError(500, err.message || `${safeModelId} (ToAPIs) 編輯失敗`, err);
+       }
+     }
+ 
+@@ -550,11 +490,12 @@
+           ratio,
+           baseImage,
+           imageQuality,
++          signal: clientAbortController.signal,
+         });
+         return sender.sendSuccess(imageUrl);
+       } catch (err: any) {
+         console.error(`[Edit] KIE error for ${safeModelId}:`, err);
+-        return sender.sendError(500, err.message || `${safeModelId} (KIE) 編輯失敗`);
++        return sender.sendError(500, err.message || `${safeModelId} (KIE) 編輯失敗`, err);
+       }
+     }
+ 
+@@ -566,7 +507,7 @@
+         });
+         return sender.sendSuccess(imageUrl);
+       } catch (err: any) {
+-        return sender.sendError(500, err.message || "GPT Image 2 (OpenRouter) 編輯失敗");
++        return sender.sendError(500, err.message || "GPT Image 2 (OpenRouter) 編輯失敗", err);
+       }
+     }
+ 
+@@ -577,20 +518,6 @@
        return sender.sendError(400, "Missing editPrompt");
      }
  
@@ -146,7 +239,7 @@
      const parts: any[] = [];
  
      parts.push({ text: "ORIGINAL IMAGE TO EDIT:" });
-@@ -610,56 +535,18 @@
+@@ -610,56 +537,18 @@
  
      parts.push({ text: fullPrompt });
  
@@ -213,6 +306,15 @@
    } catch (error: any) {
      console.error("Error in edit API:", error);
      let errorMsg = error?.message || "伺服器處理錯誤";
+@@ -669,7 +558,7 @@
+         errorMsg = parsed?.error?.message || parsed?.message || errorMsg;
+       } catch (_) {}
+     }
+-    sender.sendError(500, errorMsg);
++    sender.sendError(500, errorMsg, error);
+   }
+ });
+ 
 --- a/server/providers/kie.ts
 +++ b/server/providers/kie.ts
 @@ -1,5 +1,4 @@
@@ -611,7 +713,7 @@
 +++ b/server/providers/toapis.ts
 @@ -1,241 +1,10 @@
 -import dotenv from "dotenv";
-+import { AppImageError, generateAppImage } from "./imageClient";
++import { generateAppImage } from "./imageClient";
  
 -dotenv.config();
 -
@@ -903,7 +1005,7 @@
    let prompt = "";
    if (editPrompt) {
      prompt = `You are an expert image editor. Your task is to apply the requested edits to the provided image.
-@@ -537,259 +275,25 @@
+@@ -537,259 +275,18 @@
      }
    };
  
@@ -1057,14 +1159,7 @@
 -        }
 -        throw new Error(`ToAPIs 建立任務失敗 [${createRes.status}]: ${errText}`);
 -      }
-+  try {
-+    return await run(buildPrompt(false));
-+  } catch (firstErr) {
-+    // Same provider and model, simplified prompt: an explicit app choice (a second billed task), not a fallback.
-+    if (firstErr instanceof AppImageError && firstErr.code === "content_blocked") {
-+      console.warn("[ToAPIs] Safety review blocked the primary prompt; retrying once with the simplified prompt.");
-+      return await run(buildPrompt(true));
-     }
+-    }
 -
 -    const taskInit = await createRes.json();
 -
@@ -1176,8 +1271,11 @@
 -        throw new Error("輸入提示詞或內容未通過 API 平台內容安全審查（Safety Review Blocked），請嘗試調整提示詞、移除敏感字眼或更換參考圖後再試一次。");
 -      }
 -    }
-     throw firstErr;
-   }
+-    throw firstErr;
+-  }
++  // No automatic retry (not even with a simplified prompt): a safety block is returned to the UI
++  // as-is, so the user can see it, report it, or change the prompt and try again.
++  return run(buildPrompt(false));
  }
 --- a/src/models.config.ts
 +++ b/src/models.config.ts
@@ -1201,7 +1299,17 @@
      id: 'qwen-image-3.0-pro',
 --- a/package.json
 +++ b/package.json
-@@ -13,6 +13,9 @@
+@@ -5,14 +5,17 @@
+   "type": "module",
+   "scripts": {
+     "dev": "tsx server.ts",
+-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+-    "start": "node dist/server.cjs",
++    "build": "vite build && esbuild server.ts --bundle --platform=node --format=esm --packages=external --sourcemap --outfile=dist/server.mjs",
++    "start": "node dist/server.mjs",
+     "preview": "vite preview",
+     "clean": "rm -rf dist",
+     "lint": "tsc --noEmit"
    },
    "dependencies": {
      "@google/genai": "^1.29.0",
@@ -1213,7 +1321,7 @@
      "clsx": "^2.1.1",
 --- a/server/providers/imageClient.ts
 +++ b/server/providers/imageClient.ts
-@@ -0,0 +1,192 @@
+@@ -0,0 +1,223 @@
 +import { randomUUID } from "node:crypto";
 +import {
 +  generateKieImage,
@@ -1246,17 +1354,33 @@
 +  signal?: AbortSignal;
 +}
 +
++/** What the UI shows (and users copy into bug reports) for a failed request. */
++export interface AppErrorDetails {
++  provider?: string;
++  model?: string;
++  code?: string;
++  taskId?: string;
++  status?: number;
++  providerCode?: string;
++}
++
 +export class AppImageError extends Error {
-+  readonly code: string | undefined;
-+  readonly provider: string | undefined;
-+  readonly model: string | undefined;
-+  constructor(message: string, details: { code?: string; provider?: string; model?: string; cause?: unknown } = {}) {
-+    super(message, { cause: details.cause });
++  readonly details: AppErrorDetails;
++  constructor(message: string, details: AppErrorDetails = {}, cause?: unknown) {
++    super(message, { cause });
 +    this.name = "AppImageError";
-+    this.code = details.code;
-+    this.provider = details.provider;
-+    this.model = details.model;
++    this.details = details;
 +  }
++  get code(): string | undefined {
++    return this.details.code;
++  }
++}
++
++/** Error details for the API response. Unknown errors still report their message; nothing is hidden. */
++export function errorDetails(error: unknown): AppErrorDetails {
++  if (error instanceof AppImageError) return error.details;
++  if (isPiAiExtraError(error)) return { provider: error.provider, model: error.model, code: error.code, taskId: error.taskId, status: error.status };
++  return { code: "unexpected" };
 +}
 +
 +const SECRET_NAMES: Record<Provider, string> = { kie: "KIE_API_KEY", toapis: "TOAPIS_API_KEY", google: "GEMINI_API_KEY" };
@@ -1274,7 +1398,7 @@
 +  if (TOAPIS_MODELS.has(appModelId)) return { provider: "toapis", model: appModelId };
 +  if (appModelId === "nano-banana-2") return { provider: "google", model: "gemini-3.1-flash-image" };
 +  if (appModelId === "nano-banana-pro") return { provider: "google", model: "gemini-3-pro-image" };
-+  throw new AppImageError(`模型 ${appModelId} 目前不支援（請在模型選單選擇其他模型）。`, { code: "unsupported_model" });
++  throw new AppImageError(`模型 ${appModelId} 目前不支援（請在模型選單選擇其他模型）。`, { code: "unsupported_model", model: appModelId });
 +}
 +
 +const PRESET_RATIOS: Record<string, number> = {
@@ -1332,7 +1456,15 @@
 +            ? `${where} 帳戶額度不足`
 +            : `${where} 生成失敗 [${error.code}]`;
 +  const detail = error.message.replace(/^\[[^\]]+\]\s*/, "");
-+  return new AppImageError(`${prefix}：${detail}`, { code: error.code, provider: error.provider, model: error.model, cause: error });
++  const details: AppErrorDetails = {
++    provider: error.provider,
++    model: error.model,
++    code: error.code,
++    ...(error.taskId ? { taskId: error.taskId } : {}),
++    ...(error.status !== undefined ? { status: error.status } : {}),
++    ...(error.providerCode ? { providerCode: error.providerCode } : {}),
++  };
++  return new AppImageError(`${prefix}：${detail}`, details, error);
 +}
 +
 +function logUsage(result: ImageGenerationResult, clientBusinessId: string | undefined): void {
@@ -1382,7 +1514,14 @@
 +            } as GoogleImageRequest);
 +    logUsage(result, clientBusinessId);
 +    const image = result.images[0];
-+    if (!image) throw new AppImageError(`${result.provider}/${result.model} 沒有返回圖片`, { code: "no_output", provider: result.provider, model: result.model });
++    if (!image) {
++      throw new AppImageError(`${result.provider}/${result.model} 沒有返回圖片`, {
++        code: "no_output",
++        provider: result.provider,
++        model: result.model,
++        ...(result.taskId ? { taskId: result.taskId } : {}),
++      });
++    }
 +    return image.dataUrl;
 +  } catch (error) {
 +    throw toAppError(error);

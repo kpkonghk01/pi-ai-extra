@@ -30,17 +30,33 @@ export interface AppImageRequest {
   signal?: AbortSignal;
 }
 
+/** What the UI shows (and users copy into bug reports) for a failed request. */
+export interface AppErrorDetails {
+  provider?: string;
+  model?: string;
+  code?: string;
+  taskId?: string;
+  status?: number;
+  providerCode?: string;
+}
+
 export class AppImageError extends Error {
-  readonly code: string | undefined;
-  readonly provider: string | undefined;
-  readonly model: string | undefined;
-  constructor(message: string, details: { code?: string; provider?: string; model?: string; cause?: unknown } = {}) {
-    super(message, { cause: details.cause });
+  readonly details: AppErrorDetails;
+  constructor(message: string, details: AppErrorDetails = {}, cause?: unknown) {
+    super(message, { cause });
     this.name = "AppImageError";
-    this.code = details.code;
-    this.provider = details.provider;
-    this.model = details.model;
+    this.details = details;
   }
+  get code(): string | undefined {
+    return this.details.code;
+  }
+}
+
+/** Error details for the API response. Unknown errors still report their message; nothing is hidden. */
+export function errorDetails(error: unknown): AppErrorDetails {
+  if (error instanceof AppImageError) return error.details;
+  if (isPiAiExtraError(error)) return { provider: error.provider, model: error.model, code: error.code, taskId: error.taskId, status: error.status };
+  return { code: "unexpected" };
 }
 
 const SECRET_NAMES: Record<Provider, string> = { kie: "KIE_API_KEY", toapis: "TOAPIS_API_KEY", google: "GEMINI_API_KEY" };
@@ -58,7 +74,7 @@ function resolveTarget(appModelId: string, referenceCount: number): { provider: 
   if (TOAPIS_MODELS.has(appModelId)) return { provider: "toapis", model: appModelId };
   if (appModelId === "nano-banana-2") return { provider: "google", model: "gemini-3.1-flash-image" };
   if (appModelId === "nano-banana-pro") return { provider: "google", model: "gemini-3-pro-image" };
-  throw new AppImageError(`模型 ${appModelId} 目前不支援（請在模型選單選擇其他模型）。`, { code: "unsupported_model" });
+  throw new AppImageError(`模型 ${appModelId} 目前不支援（請在模型選單選擇其他模型）。`, { code: "unsupported_model", model: appModelId });
 }
 
 const PRESET_RATIOS: Record<string, number> = {
@@ -116,7 +132,15 @@ function toAppError(error: unknown): Error {
             ? `${where} 帳戶額度不足`
             : `${where} 生成失敗 [${error.code}]`;
   const detail = error.message.replace(/^\[[^\]]+\]\s*/, "");
-  return new AppImageError(`${prefix}：${detail}`, { code: error.code, provider: error.provider, model: error.model, cause: error });
+  const details: AppErrorDetails = {
+    provider: error.provider,
+    model: error.model,
+    code: error.code,
+    ...(error.taskId ? { taskId: error.taskId } : {}),
+    ...(error.status !== undefined ? { status: error.status } : {}),
+    ...(error.providerCode ? { providerCode: error.providerCode } : {}),
+  };
+  return new AppImageError(`${prefix}：${detail}`, details, error);
 }
 
 function logUsage(result: ImageGenerationResult, clientBusinessId: string | undefined): void {
@@ -166,7 +190,14 @@ export async function generateAppImage(request: AppImageRequest): Promise<string
             } as GoogleImageRequest);
     logUsage(result, clientBusinessId);
     const image = result.images[0];
-    if (!image) throw new AppImageError(`${result.provider}/${result.model} 沒有返回圖片`, { code: "no_output", provider: result.provider, model: result.model });
+    if (!image) {
+      throw new AppImageError(`${result.provider}/${result.model} 沒有返回圖片`, {
+        code: "no_output",
+        provider: result.provider,
+        model: result.model,
+        ...(result.taskId ? { taskId: result.taskId } : {}),
+      });
+    }
     return image.dataUrl;
   } catch (error) {
     throw toAppError(error);
