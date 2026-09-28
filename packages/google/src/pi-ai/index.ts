@@ -23,16 +23,7 @@ export function createGoogleImagesProvider(options: GoogleImagesProviderOptions)
     baseUrl: options.settings?.baseUrl ?? GOOGLE_BASE_URL,
     apiKey: options.apiKey,
     models: GOOGLE_IMAGE_MODELS,
-    generate: (request) =>
-      generateGoogleImage({
-        ...request.params,
-        ...options.settings,
-        model: request.model,
-        prompt: request.prompt,
-        referenceImages: request.referenceImages,
-        apiKey: request.apiKey,
-        signal: request.signal,
-        fetch: request.fetch,
-      } as GoogleImageRequest),
+    settings: options.settings,
+    generate: (request) => generateGoogleImage(request as unknown as GoogleImageRequest),
   });
 }

@@ -5,14 +5,13 @@ import {
   requestJson,
   safeStringify,
   truncate,
+  UPLOAD_RETRY,
   type InlineReference,
   type OperationContext,
-  type RetryPolicy,
 } from "@hk01/pi-ai-extra-internal";
 
 const UPLOAD_TIMEOUT_MS = 60_000;
 const SUBMIT_TIMEOUT_MS = 60_000;
-const UPLOAD_RETRY: RetryPolicy = { attempts: 2, baseDelayMs: 1_000, maxDelayMs: 5_000 };
 
 const uploadResponse = z.object({
   success: z.boolean(),
@@ -20,9 +19,14 @@ const uploadResponse = z.object({
   data: z.object({ url: z.url() }).nullish(),
 });
 
+/** The submit response carries the task id as `id` (some examples show `task_id`). */
 const submitResponse = z
   .object({ id: z.string().min(1).optional(), task_id: z.string().min(1).optional() })
-  .refine((body) => body.id !== undefined || body.task_id !== undefined, { message: "missing task id (id or task_id)" });
+  .transform((body, ctx) => {
+    const taskId = body.id ?? body.task_id;
+    if (taskId === undefined) ctx.addIssue({ code: "custom", message: "missing task id (id or task_id)" });
+    return taskId ?? "";
+  });
 
 /** Uploads one inline reference through ToAPIs `/v1/uploads/images` and returns its public URL. */
 export async function uploadToToapis(
@@ -74,5 +78,5 @@ export async function createToapisTask(
     },
     submitResponse,
   );
-  return (response.id ?? response.task_id) as string;
+  return response;
 }

@@ -50,9 +50,10 @@ describe("toPiAiUsage", () => {
     });
   });
 
-  it("returns undefined when no token counts were reported", () => {
+  it("returns undefined unless input or output tokens were reported (no zero-filled pi-ai usage)", () => {
     assert.equal(toPiAiUsage(model, undefined), undefined);
     assert.equal(toPiAiUsage(model, { inputImage: 3 }), undefined);
+    assert.equal(toPiAiUsage(model, { total: 42 }), undefined);
   });
 });
 

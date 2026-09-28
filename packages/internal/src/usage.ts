@@ -63,13 +63,16 @@ export const tokenCountSchema: z.ZodNumber = z.number().int().nonnegative();
 
 /** Builds an `ImageUsage`, omitting absent fields; returns undefined when nothing was reported. */
 export function compactUsage(input: ImageUsageInput): ImageUsage | undefined {
-  const usage: ImageUsage = {};
-  if (input.credits !== null && input.credits !== undefined) usage.credits = input.credits;
-  if (input.costUsd !== null && input.costUsd !== undefined) usage.costUsd = input.costUsd;
-  if (input.billingStatus !== null && input.billingStatus !== undefined) usage.billingStatus = input.billingStatus;
-  if (input.providerDurationMs !== null && input.providerDurationMs !== undefined) usage.providerDurationMs = input.providerDurationMs;
-  const tokens = compactTokens(input.tokens ?? {});
-  if (tokens) usage.tokens = tokens;
+  const tokens = omitNullish(input.tokens ?? {});
+  const usage: ImageUsage = {
+    ...omitNullish({
+      credits: input.credits,
+      costUsd: input.costUsd,
+      billingStatus: input.billingStatus,
+      providerDurationMs: input.providerDurationMs,
+    }),
+    ...(Object.keys(tokens).length > 0 ? { tokens } : {}),
+  };
   return Object.keys(usage).length > 0 ? usage : undefined;
 }
 
@@ -86,10 +89,9 @@ export function parseUsageBlock<T>(ctx: OperationContext, schema: z.ZodType<T>, 
   return undefined;
 }
 
-function compactTokens(input: { [K in keyof ImageTokenUsage]?: number | null | undefined }): ImageTokenUsage | undefined {
-  const tokens: ImageTokenUsage = {};
-  for (const [key, value] of Object.entries(input) as Array<[keyof ImageTokenUsage, number | null | undefined]>) {
-    if (value !== null && value !== undefined) tokens[key] = value;
-  }
-  return Object.keys(tokens).length > 0 ? tokens : undefined;
+/** Copy without null/undefined values: reported-but-absent counters stay absent, never 0. */
+function omitNullish<T extends Record<string, unknown>>(input: T): { [K in keyof T]?: Exclude<T[K], null | undefined> } {
+  return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== null && value !== undefined)) as {
+    [K in keyof T]?: Exclude<T[K], null | undefined>;
+  };
 }

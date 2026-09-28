@@ -28,7 +28,7 @@ export interface GeneratedImage {
 export interface ImageGenerationResult {
   provider: string;
   model: string;
-  /** Provider task id for asynchronous providers. */
+  /** Provider task id (KIE, ToAPIs) or response id (Gemini `responseId`); use it to reconcile usage. */
   taskId: string | undefined;
   images: GeneratedImage[];
   elapsedMs: number;

@@ -1,17 +1,11 @@
 import type { z } from "zod";
-import { abortedError, sleep } from "./abort.ts";
+import { abortedError } from "./abort.ts";
 import { contextError, type OperationContext } from "./context.ts";
 import { isPiAiExtraError, type PiAiExtraError, type PiAiExtraErrorCode, type PiAiExtraOperation } from "./errors.ts";
+import { withRetry, type RetryPolicy } from "./retry.ts";
 import { formatZodIssues } from "./validation.ts";
 
 const RESPONSE_BODY_LIMIT = 2_000;
-
-export interface RetryPolicy {
-  /** Total attempts including the first one. */
-  attempts: number;
-  baseDelayMs: number;
-  maxDelayMs: number;
-}
 
 export interface HttpRequest {
   url: string;
@@ -34,17 +28,8 @@ export interface JsonResponse {
 }
 
 /** Sends one HTTP request (with same-endpoint retries when allowed) and returns the parsed JSON body. */
-export async function sendJson(ctx: OperationContext, request: HttpRequest): Promise<JsonResponse> {
-  const attempts = Math.max(1, request.retry?.attempts ?? 1);
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      return await sendJsonOnce(ctx, request);
-    } catch (error) {
-      if (!isPiAiExtraError(error) || !error.retryable || attempt >= attempts || !request.retry) throw error;
-      const delay = retryDelayMs(request.retry, attempt, error);
-      await sleep(ctx, delay, request.operation, request.taskId);
-    }
-  }
+export function sendJson(ctx: OperationContext, request: HttpRequest): Promise<JsonResponse> {
+  return withRetry(ctx, request.retry, request.operation, request.taskId, () => sendJsonOnce(ctx, request));
 }
 
 /** `sendJson` plus schema validation of the response body. */
@@ -70,10 +55,12 @@ export interface OpenedResponse {
 /** Performs the fetch with the caller's signal plus a per-request timeout. Network failures become `PiAiExtraError`s. */
 export async function openRequest(ctx: OperationContext, request: HttpRequest): Promise<OpenedResponse> {
   const timeoutSignal = AbortSignal.timeout(request.timeoutMs);
-  const signal = ctx.signal ? AbortSignal.any([ctx.signal, timeoutSignal]) : timeoutSignal;
-  const init: RequestInit = { method: request.method, signal };
-  if (request.headers) init.headers = request.headers;
-  if (request.body !== undefined) init.body = request.body;
+  const init: RequestInit = {
+    method: request.method,
+    signal: ctx.signal ? AbortSignal.any([ctx.signal, timeoutSignal]) : timeoutSignal,
+    ...(request.headers ? { headers: request.headers } : {}),
+    ...(request.body === undefined ? {} : { body: request.body }),
+  };
   const toError = (error: unknown): PiAiExtraError => transportError(ctx, request, timeoutSignal, error);
   try {
     return { response: await ctx.fetch(request.url, init), toError };
@@ -143,18 +130,16 @@ export function httpStatusError(
   const extracted = extractProviderMessage(body);
   const code = codeForStatus(status);
   const detail = extracted.message ?? (text.trim() ? truncate(text.trim(), 300) : response.statusText);
-  const error = contextError(ctx, `${request.operation} failed with HTTP ${status}: ${detail}`, {
+  return contextError(ctx, `${request.operation} failed with HTTP ${status}: ${detail}`, {
     code,
     operation: request.operation,
     status,
     taskId: request.taskId,
     providerCode: extracted.code,
     retryable: status === 429 || status === 408 || status >= 500,
+    retryAfterMs: parseRetryAfter(response.headers.get("retry-after")),
     responseBody: truncate(text),
   });
-  const retryAfter = parseRetryAfter(response.headers.get("retry-after"));
-  if (retryAfter !== undefined) retryAfterByError.set(error, retryAfter);
-  return error;
 }
 
 export function codeForStatus(status: number): PiAiExtraErrorCode {
@@ -179,10 +164,7 @@ export function extractProviderMessage(body: unknown): { message?: string; code?
     asNonEmptyString(body.msg) ??
     asNonEmptyString(body.fail_reason);
   const code = asCode(nested?.code) ?? asCode(nested?.status) ?? asCode(body.code);
-  const result: { message?: string; code?: string } = {};
-  if (message !== undefined) result.message = message;
-  if (code !== undefined) result.code = code;
-  return result;
+  return { ...(message === undefined ? {} : { message }), ...(code === undefined ? {} : { code }) };
 }
 
 export function truncate(value: string, limit: number = RESPONSE_BODY_LIMIT): string {
@@ -209,15 +191,6 @@ export function describeUrl(url: string): string {
   } catch {
     return "invalid URL";
   }
-}
-
-const retryAfterByError = new WeakMap<PiAiExtraError, number>();
-
-function retryDelayMs(policy: RetryPolicy, attempt: number, error: PiAiExtraError): number {
-  const requested = retryAfterByError.get(error);
-  const exponential = policy.baseDelayMs * 2 ** (attempt - 1);
-  const delay = requested ?? exponential;
-  return Math.min(policy.maxDelayMs, delay);
 }
 
 function parseRetryAfter(header: string | null): number | undefined {

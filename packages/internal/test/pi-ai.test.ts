@@ -7,7 +7,6 @@ import {
   buildChatModel,
   createHelperImagesProvider,
   explicitApiKeyAuth,
-  type HelperImageRequest,
 } from "../src/pi-ai/index.ts";
 import { dataUrl, PNG_BYTES } from "../src/testing/fake-fetch.ts";
 
@@ -26,7 +25,7 @@ const MODEL: ImageModelInfo = {
   notes: [],
 };
 
-function provider(generate: (request: HelperImageRequest) => Promise<unknown>) {
+function provider(generate: (request: Record<string, unknown>) => Promise<unknown>) {
   const images = createImagesModels();
   images.setProvider(
     createHelperImagesProvider({
@@ -36,6 +35,7 @@ function provider(generate: (request: HelperImageRequest) => Promise<unknown>) {
       baseUrl: "https://api.example.com",
       apiKey: "factory-key",
       models: [MODEL],
+      settings: { poll: { initialDelayMs: 1 } },
       generate: generate as never,
     }),
   );
@@ -46,7 +46,7 @@ function provider(generate: (request: HelperImageRequest) => Promise<unknown>) {
 
 describe("createHelperImagesProvider", () => {
   it("exposes catalogue limits and converts helper results to pi-ai image content", async () => {
-    let seen: HelperImageRequest | undefined;
+    let seen: Record<string, unknown> | undefined;
     const { images, model } = provider(async (request) => {
       seen = request;
       return {
@@ -67,10 +67,12 @@ describe("createHelperImagesProvider", () => {
     assert.equal(result.stopReason, "stop");
     assert.equal(result.responseId, "task-9");
     assert.deepEqual(result.output[0], { type: "image", mimeType: "image/png", data: Buffer.from(PNG_BYTES).toString("base64") });
+    assert.equal(seen?.model, "img-1");
     assert.equal(seen?.prompt, "a cat");
     assert.deepEqual(seen?.referenceImages, ["data:image/png;base64,AAAA"]);
     assert.equal(seen?.apiKey, "factory-key");
-    assert.deepEqual(seen?.params, { aspectRatio: "1:1" });
+    assert.equal(seen?.aspectRatio, "1:1");
+    assert.deepEqual(seen?.poll, { initialDelayMs: 1 });
   });
 
   it("returns errors as stopReason error with provider/model context instead of throwing", async () => {

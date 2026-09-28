@@ -73,10 +73,10 @@ export function buildChatModel(provider: string, baseUrl: string, definition: Ch
     cost: definition.cost ?? ZERO_COST,
     contextWindow: definition.contextWindow ?? builtin?.contextWindow ?? defaults.contextWindow,
     maxTokens: definition.maxTokens ?? builtin?.maxTokens ?? defaults.maxTokens,
+    ...(builtin?.thinkingLevelMap ? { thinkingLevelMap: builtin.thinkingLevelMap } : {}),
+    ...(builtin?.inputLimits ? { inputLimits: builtin.inputLimits } : {}),
+    ...(builtin?.compat ? { compat: withoutFallbackModels(builtin.compat) as NonNullable<Model<ChatProtocol>["compat"]> } : {}),
   };
-  if (builtin?.thinkingLevelMap) model.thinkingLevelMap = builtin.thinkingLevelMap;
-  if (builtin?.inputLimits) model.inputLimits = builtin.inputLimits;
-  if (builtin?.compat) model.compat = withoutFallbackModels(builtin.compat) as NonNullable<Model<ChatProtocol>["compat"]>;
   return model;
 }
 

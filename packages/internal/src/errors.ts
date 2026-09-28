@@ -37,6 +37,8 @@ export interface PiAiExtraErrorDetails {
   providerCode?: string | undefined;
   /** Whether repeating the same request to the same provider/model may succeed. */
   retryable?: boolean | undefined;
+  /** Provider-requested wait before repeating the request (HTTP `Retry-After`), in milliseconds. */
+  retryAfterMs?: number | undefined;
   /** Truncated provider response body for diagnostics. Never contains request credentials. */
   responseBody?: string | undefined;
   cause?: unknown;
@@ -68,6 +70,7 @@ export class PiAiExtraError extends Error {
   readonly taskId: string | undefined;
   readonly providerCode: string | undefined;
   readonly retryable: boolean;
+  readonly retryAfterMs: number | undefined;
   readonly responseBody: string | undefined;
 
   constructor(message: string, details: PiAiExtraErrorDetails) {
@@ -82,6 +85,7 @@ export class PiAiExtraError extends Error {
     this.taskId = details.taskId;
     this.providerCode = details.providerCode;
     this.retryable = details.retryable ?? false;
+    this.retryAfterMs = details.retryAfterMs;
     this.responseBody = details.responseBody;
   }
 
@@ -127,6 +131,7 @@ export function withErrorContext(error: PiAiExtraError, extra: Partial<PiAiExtra
     taskId: error.taskId,
     providerCode: error.providerCode,
     retryable: error.retryable,
+    retryAfterMs: error.retryAfterMs,
     responseBody: error.responseBody,
     cause: error.cause,
     ...extra,

@@ -2,7 +2,7 @@ import { z } from "zod";
 import {
   compactUsage,
   contextError,
-  isPiAiExtraError,
+  emitProgress,
   looksLikeContentBlock,
   parseUsageBlock,
   pollTask,
@@ -33,6 +33,13 @@ export interface KieTaskRecord {
 const POLL_REQUEST_TIMEOUT_MS = 30_000;
 const POLL_RETRY: RetryPolicy = { attempts: 3, baseDelayMs: 1_000, maxDelayMs: 10_000 };
 const MAX_TRANSIENT_POLL_FAILURES = 3;
+
+/**
+ * `poll`: strict (a malformed success fails the generation); usage parsed on terminal states.
+ * `lookup`: billing reconciliation; usage always parsed, and a malformed result is reported as a
+ * warning with `resultUrls: undefined` so the billing record is still returned.
+ */
+export type KieRecordMode = "poll" | "lookup";
 const STATES = ["waiting", "queuing", "generating", "success", "fail"] as const;
 const PENDING_STATES: ReadonlySet<string> = new Set(["waiting", "queuing", "generating"]);
 
@@ -50,13 +57,13 @@ const recordInfoResponse = envelope(
 );
 const resultJsonSchema = z.object({ resultUrls: z.array(z.url()).min(1) });
 
-/** Reads `GET /api/v1/jobs/recordInfo` once. `withUsage` parses billing fields (terminal states and explicit lookups). */
+/** Reads `GET /api/v1/jobs/recordInfo` once. */
 export async function fetchKieTaskRecord(
   ctx: OperationContext,
   apiKey: string,
   apiBaseUrl: string,
   taskId: string,
-  withUsage: boolean,
+  mode: KieRecordMode,
   timeoutMs: number = POLL_REQUEST_TIMEOUT_MS,
 ): Promise<KieTaskRecord> {
   const response = await requestJson(
@@ -87,10 +94,10 @@ export async function fetchKieTaskRecord(
     taskId,
     model: data.model ?? undefined,
     state,
-    resultUrls: state === "success" ? parseResultUrls(ctx, data.resultJson, taskId) : undefined,
+    resultUrls: state === "success" ? resultUrlsFor(ctx, data.resultJson, taskId, mode) : undefined,
     failCode: data.failCode === null || data.failCode === undefined || data.failCode === "" ? undefined : String(data.failCode),
     failMessage: data.failMsg?.trim() || undefined,
-    usage: withUsage || terminal ? kieUsage(ctx, data) : undefined,
+    usage: mode === "lookup" || terminal ? kieUsage(ctx, data) : undefined,
   };
 }
 
@@ -102,23 +109,12 @@ export async function waitForKieTask(
   taskId: string,
   schedule: PollSchedule,
 ): Promise<{ resultUrls: string[]; usage: ImageUsage | undefined }> {
-  let consecutiveTransientFailures = 0;
   return pollTask(ctx, {
     ...schedule,
     taskId,
+    transientFailureLimit: MAX_TRANSIENT_POLL_FAILURES,
     check: async () => {
-      let record: KieTaskRecord;
-      try {
-        record = await fetchKieTaskRecord(ctx, apiKey, apiBaseUrl, taskId, false);
-        consecutiveTransientFailures = 0;
-      } catch (error) {
-        // Transient status-query failures (after HTTP-level retries) keep polling the same task, within a bound.
-        if (isPiAiExtraError(error) && error.retryable && consecutiveTransientFailures < MAX_TRANSIENT_POLL_FAILURES) {
-          consecutiveTransientFailures += 1;
-          return { done: false, status: `status query failed (${error.code}); retrying` };
-        }
-        throw error;
-      }
+      const record = await fetchKieTaskRecord(ctx, apiKey, apiBaseUrl, taskId, "poll");
       if (record.state === "success") return { done: true, value: { resultUrls: record.resultUrls ?? [], usage: record.usage } };
       if (record.state === "fail") throw taskFailedError(ctx, record);
       return { done: false, status: record.state };
@@ -146,6 +142,16 @@ function kieUsage(ctx: OperationContext, data: { creditsConsumed?: unknown; cost
     credits: parseUsageBlock(ctx, z.number().nonnegative(), data.creditsConsumed, "KIE creditsConsumed"),
     providerDurationMs: parseUsageBlock(ctx, z.number().int().nonnegative(), data.costTime, "KIE costTime"),
   });
+}
+
+function resultUrlsFor(ctx: OperationContext, resultJson: string | null | undefined, taskId: string, mode: KieRecordMode): string[] | undefined {
+  if (mode === "poll") return parseResultUrls(ctx, resultJson, taskId);
+  try {
+    return parseResultUrls(ctx, resultJson, taskId);
+  } catch (error) {
+    emitProgress(ctx, { type: "warning", message: `resultUrls omitted: ${(error as Error).message}` });
+    return undefined;
+  }
 }
 
 function parseResultUrls(ctx: OperationContext, resultJson: string | null | undefined, taskId: string): string[] {

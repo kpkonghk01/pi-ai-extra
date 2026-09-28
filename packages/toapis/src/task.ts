@@ -3,7 +3,7 @@ import {
   compactUsage,
   contextError,
   decimalStringSchema,
-  isPiAiExtraError,
+  emitProgress,
   looksLikeContentBlock,
   parseUsageBlock,
   pollTask,
@@ -38,12 +38,20 @@ const MAX_TRANSIENT_POLL_FAILURES = 3;
 const STATUSES = ["pending", "queued", "in_progress", "completed", "failed"] as const;
 const PENDING_STATUSES: ReadonlySet<string> = new Set(["pending", "queued", "in_progress"]);
 
+/**
+ * `poll`: strict (a completed task without valid result URLs fails the generation).
+ * `lookup`: billing reconciliation; usage always parsed, and a missing/invalid result is
+ * reported as a warning with `resultUrls: undefined` so the billing record is still returned.
+ */
+export type ToapisRecordMode = "poll" | "lookup";
+
 const statusResponse = z.object({
   id: z.string().nullish(),
   model: z.string().nullish(),
   client_business_id: z.string().nullish(),
   status: z.string(),
-  result: z.object({ data: z.array(z.object({ url: z.url() })).nullish() }).nullish(),
+  // Validated separately (see resultUrlsFor) so lookups can still return billing.
+  result: z.unknown().optional(),
   error: z.object({ code: z.union([z.string(), z.number()]).nullish(), message: z.string().nullish() }).nullish(),
   fail_reason: z.string().nullish(),
   // Validated separately (see toapisUsage) so an accounting shape change cannot fail a finished task.
@@ -58,6 +66,8 @@ const billingSchema = z.object({
   cost_usd: decimalStringSchema.optional(),
 });
 
+const resultSchema = z.object({ data: z.array(z.object({ url: z.url() })).min(1) });
+
 const tokenPair = z.object({ text_tokens: tokenCountSchema.optional(), image_tokens: tokenCountSchema.optional() });
 
 /** Settled image token usage per ToAPIs "Get image task status" (`usage.*`). */
@@ -71,13 +81,13 @@ const usageSchema = z.object({
   output_tokens_details: tokenPair.optional(),
 });
 
-/** Reads the task status once. Billing is parsed on terminal statuses and explicit lookups. */
+/** Reads the task status once. */
 export async function fetchToapisTaskRecord(
   ctx: OperationContext,
   apiKey: string,
   baseUrl: string,
   taskId: string,
-  withUsage: boolean,
+  mode: ToapisRecordMode,
   timeoutMs: number = POLL_REQUEST_TIMEOUT_MS,
 ): Promise<ToapisTaskRecord> {
   const response = await requestJson(
@@ -95,8 +105,7 @@ export async function fetchToapisTaskRecord(
   );
   const status = STATUSES.find((known) => known === response.status);
   if (!status) throw invalid(ctx, taskId, `returned unknown status ${JSON.stringify(response.status)}`, response);
-  const resultUrls = status === "completed" ? (response.result?.data ?? []).map((item) => item.url) : undefined;
-  if (resultUrls && resultUrls.length === 0) throw invalid(ctx, taskId, "completed without result.data[].url", response);
+  const resultUrls = status === "completed" ? resultUrlsFor(ctx, taskId, response, mode) : undefined;
   const errorCode = response.error?.code === null || response.error?.code === undefined ? undefined : String(response.error.code);
   return {
     taskId: response.id ?? taskId,
@@ -106,7 +115,7 @@ export async function fetchToapisTaskRecord(
     resultUrls,
     errorCode,
     errorMessage: response.error?.message?.trim() || response.fail_reason?.trim() || undefined,
-    usage: withUsage || !PENDING_STATUSES.has(status) ? toapisUsage(ctx, response) : undefined,
+    usage: mode === "lookup" || !PENDING_STATUSES.has(status) ? toapisUsage(ctx, response) : undefined,
   };
 }
 
@@ -118,22 +127,12 @@ export async function waitForToapisTask(
   taskId: string,
   schedule: PollSchedule,
 ): Promise<{ resultUrls: string[]; usage: ImageUsage | undefined }> {
-  let consecutiveTransientFailures = 0;
   return pollTask(ctx, {
     ...schedule,
     taskId,
+    transientFailureLimit: MAX_TRANSIENT_POLL_FAILURES,
     check: async () => {
-      let record: ToapisTaskRecord;
-      try {
-        record = await fetchToapisTaskRecord(ctx, apiKey, baseUrl, taskId, false);
-        consecutiveTransientFailures = 0;
-      } catch (error) {
-        if (isPiAiExtraError(error) && error.retryable && consecutiveTransientFailures < MAX_TRANSIENT_POLL_FAILURES) {
-          consecutiveTransientFailures += 1;
-          return { done: false, status: `status query failed (${error.code}); retrying` };
-        }
-        throw error;
-      }
+      const record = await fetchToapisTaskRecord(ctx, apiKey, baseUrl, taskId, "poll");
       if (record.status === "completed") return { done: true, value: { resultUrls: record.resultUrls ?? [], usage: record.usage } };
       if (record.status === "failed") throw taskFailedError(ctx, record);
       return { done: false, status: record.status };
@@ -173,6 +172,14 @@ function toapisUsage(ctx: OperationContext, response: { billing?: unknown; usage
       outputImage: output?.image_tokens,
     },
   });
+}
+
+function resultUrlsFor(ctx: OperationContext, taskId: string, response: { result?: unknown }, mode: ToapisRecordMode): string[] | undefined {
+  const parsed = resultSchema.safeParse(response.result);
+  if (parsed.success) return parsed.data.data.map((item) => item.url);
+  if (mode === "poll") throw invalid(ctx, taskId, "completed without valid result.data[].url", response);
+  emitProgress(ctx, { type: "warning", message: `Task ${taskId}: resultUrls omitted (no valid result.data[].url).` });
+  return undefined;
 }
 
 function invalid(ctx: OperationContext, taskId: string, reason: string, response: unknown) {

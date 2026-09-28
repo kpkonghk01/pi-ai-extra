@@ -6,13 +6,16 @@ import {
   contextError,
   createOperationContext,
   DEFAULT_MAX_OUTPUT_BYTES,
+  DOWNLOAD_RETRY,
   downloadImage,
   emitProgress,
   encodeBase64,
+  httpUrlSchema,
   parseRequest,
   resolveReferenceImages,
   splitHelperOptions,
   throwIfAborted,
+  withoutTrailingSlash,
   type ImageGenerationResult,
   type ImageHelperOptions,
   type OperationContext,
@@ -71,7 +74,7 @@ const REFERENCE_DOWNLOAD_TIMEOUT_MS = 30_000;
 const CREDENTIAL_HEADERS = new Set(["authorization", "x-goog-api-key", "cookie"]);
 
 const settingsSchema = z.strictObject({
-  baseUrl: z.url({ protocol: /^https?$/ }).optional(),
+  baseUrl: httpUrlSchema.optional(),
   headers: z
     .record(z.string(), z.string())
     .refine((headers) => Object.keys(headers).every((name) => !CREDENTIAL_HEADERS.has(name.toLowerCase())), {
@@ -117,7 +120,7 @@ export async function generateGoogleImage(request: GoogleImageRequest): Promise<
   throwIfAborted(ctx, "generate");
   emitProgress(ctx, { type: "request_sent" });
   const generated = await generateContentImages(ctx, {
-    baseUrl: (options.baseUrl ?? GOOGLE_BASE_URL).replace(/\/+$/, ""),
+    baseUrl: withoutTrailingSlash(options.baseUrl ?? GOOGLE_BASE_URL),
     apiKey: request.apiKey,
     model: parsed.model,
     prompt: parsed.prompt,
@@ -148,7 +151,7 @@ async function inlineReferences(
     const image = await downloadImage(ctx, reference.url, {
       timeoutMs: REFERENCE_DOWNLOAD_TIMEOUT_MS,
       maxBytes: spec.maxInlineBytes,
-      retry: { attempts: 2, baseDelayMs: 1_000, maxDelayMs: 2_000 },
+      retry: DOWNLOAD_RETRY,
     });
     if (!spec.acceptedMimeTypes.includes(image.mimeType)) {
       throw contextError(ctx, `referenceImages[${reference.index}] is ${image.mimeType}; accepted types: ${spec.acceptedMimeTypes.join(", ")}.`, {

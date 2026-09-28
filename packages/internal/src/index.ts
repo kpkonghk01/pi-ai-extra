@@ -36,8 +36,8 @@ export {
   type HttpRequest,
   type JsonResponse,
   type OpenedResponse,
-  type RetryPolicy,
 } from "./http.ts";
+export { DOWNLOAD_RETRY, UPLOAD_RETRY, withRetry, type RetryPolicy } from "./retry.ts";
 export {
   decodeBase64,
   encodeBase64,
@@ -70,6 +70,7 @@ export {
 export {
   assertApiKey,
   assertSupportedModel,
+  baseRequestShape,
   formatZodIssues,
   parseRequest,
   promptSchema,
@@ -87,3 +88,12 @@ export {
   type ImageUsage,
   type ImageUsageInput,
 } from "./usage.ts";
+export {
+  httpUrlSchema,
+  pollSchedule,
+  runAsyncImageTask,
+  taskSettingsShape,
+  type AsyncImageTask,
+  type PollDefaults,
+} from "./pipeline.ts";
+export { omitUndefined, withoutTrailingSlash } from "./util.ts";

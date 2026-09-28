@@ -87,16 +87,7 @@ export function createKieImagesProvider(options: KieImagesProviderOptions): Imag
     baseUrl: options.settings?.apiBaseUrl ?? KIE_API_BASE_URL,
     apiKey: options.apiKey,
     models: KIE_IMAGE_MODELS,
-    generate: (request) =>
-      generateKieImage({
-        ...request.params,
-        ...options.settings,
-        model: request.model,
-        prompt: request.prompt,
-        referenceImages: request.referenceImages,
-        apiKey: request.apiKey,
-        signal: request.signal,
-        fetch: request.fetch,
-      } as KieImageRequest),
+    settings: options.settings,
+    generate: (request) => generateKieImage(request as unknown as KieImageRequest),
   });
 }
