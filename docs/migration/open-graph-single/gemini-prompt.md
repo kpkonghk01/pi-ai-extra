@@ -1,3 +1,51 @@
+# Task: migrate this app's image providers to the `@hk01/pi-ai-extra-*` packages
+
+You are editing this Google AI Studio app (React + Vite client, Express `server.ts`). Replace the hand-written KIE, ToAPIs and Gemini image-generation code with three published server-only packages. Keep every prompt text exactly as it is today, and keep all unrelated features unchanged: Firebase, history, canvas post-processing (`processFinalImage`), layout and styling.
+
+## Non-negotiable rules
+
+1. **No fallback of any kind.** Each request uses exactly one provider and one model: the one the user selected. Delete all of the following, and do not add new versions of them:
+   - the KIE candidate model lists that try several model names in turn;
+   - the ToAPIs host loops (`toapis.com` / `api.toapis.cn` / `api.toapis.com`);
+   - uploading ToAPIs reference images to KIE storage when ToAPIs upload fails;
+   - switching `gpt-image-2.5-*` to `gpt-image-2` on "circuit broken";
+   - slicing, filtering or silently dropping reference images (`.slice(0, 10)`, `.slice(0, 5)`, `.filter(Boolean)` after failed uploads);
+   - the ToAPIs "safety blocked → retry with a simplified prompt" re-run;
+   - Wokey models being routed to Gemini or KIE;
+   - automatic client-side retries (`maxAttempts = 2` in `src/lib/gemini.ts`). Every retry creates a new billed task and hides the first error.
+2. **Every failure must reach the UI, explicitly and completely**, so users can report it. The UI must show:
+   - the provider;
+   - the model actually used;
+   - the error code;
+   - the HTTP status and task id when known;
+   - the message.
+
+   The error must stay on screen until the user closes it and must have a "複製錯誤資訊" (copy error details) button. Do not replace errors with generic text, and do not swallow them. The only exception is user cancellation (`USER_CANCELLED`), which stays silent as today.
+3. **API keys stay on the server.** Read `KIE_API_KEY`, `TOAPIS_API_KEY` and `GEMINI_API_KEY` from `process.env` in server code only, and pass them explicitly to the packages. Never send them to the browser.
+4. **Keep the CommonJS server build** (`esbuild --format=cjs --packages=external`). Import only the packages' main entries (`@hk01/pi-ai-extra-kie`, `@hk01/pi-ai-extra-toapis`, `@hk01/pi-ai-extra-google`). Never import any `/pi-ai` subpath: it is ESM-only and would work in the preview but crash in production.
+5. Do not invent package APIs. Use only what `server/providers/imageClient.ts` (below) uses.
+
+## Step 1: dependencies
+
+Add these three entries to `dependencies` in `package.json`. Leave everything else unchanged.
+
+```json
+"@hk01/pi-ai-extra-google": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.1.0/hk01-pi-ai-extra-google-0.1.0.tgz",
+"@hk01/pi-ai-extra-kie": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.1.0/hk01-pi-ai-extra-kie-0.1.0.tgz",
+"@hk01/pi-ai-extra-toapis": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.1.0/hk01-pi-ai-extra-toapis-0.1.0.tgz"
+```
+
+## Step 2: create `server/providers/imageClient.ts`
+
+Create this file with exactly this content. It is the only place that calls the packages. It handles:
+- mapping the app's model ids to provider operations;
+- mapping ratio presets to each model's supported ratios;
+- reading the keys;
+- giving ToAPIs requests a unique `clientBusinessId`;
+- usage logging;
+- turning package errors into `AppImageError`, which carries UI-ready `details`.
+
+```ts
 import { randomUUID } from "node:crypto";
 import {
   generateKieImage,
@@ -221,3 +269,105 @@ export function partsToPrompt(parts: ReadonlyArray<{ text?: string; inlineData?:
   }
   return { prompt: lines.join("\n\n"), referenceImages };
 }
+```
+
+## Step 3: rewrite `server/providers/kie.ts`
+
+- Keep `export interface KieGenerateOptions` and add `signal?: AbortSignal;`. Keep `export async function generateKieImage(options: KieGenerateOptions): Promise<string>`.
+- Keep the destructuring of `options` (add `signal`) and keep the whole `// Construct prompt` block verbatim, including every rule text, so `promptText` is built exactly as before.
+- Delete:
+  - `mapKieAspectRatio` and `uploadBase64ToKie`;
+  - the `KIE_API_KEY` check;
+  - the candidate model list;
+  - the uploads, `inputPayload`, `createTask` and polling code;
+  - the imports from `./toapis` and `../../src/models.config`.
+- Build the references in the order the prompt describes: edit mode → `[baseImage]`, otherwise `[templateImage, ...sourceImages, brandLogo]`, leaving out empty values.
+- End the function with `return generateAppImage({ appModelId: modelId, prompt: promptText, referenceImages, ratio, quality: imageQuality, signal });`, importing `generateAppImage` from `./imageClient`.
+
+## Step 4: rewrite `server/providers/toapis.ts`
+
+- Keep `export async function generateToAPIsImage({...})` with its parameters, and keep the `buildPrompt` function and all prompt text verbatim.
+- Delete:
+  - `getToAPIsAspectRatio`, `fetchImageAsBase64`, `uploadImageToToAPIs`, `findImageUrlRecursively` and `extractToAPIsImageUrl`;
+  - the `TOAPIS_API_KEY` check;
+  - the parallel upload block;
+  - `executeGenerationCall`, including every host loop and every fallback;
+  - the final safety-retry `try/catch`.
+- References: `[baseImage, templateImage, ...sourceImages, brandLogo]`, leaving out empty values.
+- End with `return generateAppImage({ appModelId: modelId, prompt: buildPrompt(false), referenceImages, ratio, quality: imageQuality || "1K", signal });`.
+
+## Step 5: update `server.ts`
+
+- Remove `import { GoogleGenAI } from "@google/genai";` and the `getGeminiAspectRatio` helper. Keep `getInlineData`.
+- Add `import { errorDetails, generateAppImage, partsToPrompt } from "./server/providers/imageClient";`.
+- Pass `signal: clientAbortController.signal` in both `generateKieImage({...})` calls (generate and edit routes); both are missing it today.
+- In both `/api/gemini/generate` and `/api/gemini/edit`, keep the code that builds the labelled `parts` array unchanged. Delete the `GEMINI_API_KEY` check, the `new GoogleGenAI(...)` client, `ai.models.generateContent(...)` and all response parsing after it. Replace them with:
+  ```ts
+  const { prompt: geminiPrompt, referenceImages: geminiImages } = partsToPrompt(parts);
+  const imageUrl = await generateAppImage({
+    appModelId: safeModelId,
+    prompt: geminiPrompt,
+    referenceImages: geminiImages,
+    ratio,
+    quality: imageQuality === "2K" ? "2K" : "1K",
+    signal: clientAbortController.signal,
+  });
+  return sender.sendSuccess(imageUrl);
+  ```
+- In `createResponseSender`, change both `sendError` implementations to `sendError(status: number, error: string, cause?: unknown)`, and include `details: cause === undefined ? undefined : errorDetails(cause)`:
+  - JSON mode: `res.status(status).json({ error, details })`;
+  - NDJSON mode: `{ type: "error", error, details }`.
+- On every 500 error path, pass the caught error as the third argument: `sender.sendError(500, err.message || "…", err)`, and in the route-level `catch (error)`: `sender.sendError(500, errorMsg, error)`.
+
+## Step 6: remove Wokey
+
+In `src/models.config.ts`, set `enabled: false` on `wokey-gpt-image-2.5` and `wokey-grok-imagine-2`. Delete `server/providers/wokey.ts`: it is never imported, and it depends on helpers removed in Step 4.
+
+## Step 7: show errors in the UI (client)
+
+**`src/lib/gemini.ts`**
+- Add and export:
+  ```ts
+  export interface ImageErrorDetails { provider?: string; model?: string; code?: string; taskId?: string; status?: number; providerCode?: string }
+  export class ImageRequestError extends Error {
+    constructor(message: string, readonly details: ImageErrorDetails = {}) { super(message); this.name = "ImageRequestError"; }
+  }
+  ```
+- Fix the NDJSON parser. Today, any server error whose message contains "JSON" is swallowed, because `catch (err) { if (!err.message.includes("JSON")) throw err; }` wraps event handling. Wrap only `JSON.parse` in `try/catch` (skip lines that do not parse), then handle the event outside it.
+- For `{ type: "error" }` events, and for non-OK JSON responses, throw `new ImageRequestError(data.error || "生成失敗", data.details ?? {})`.
+- In `generateOgImage` and `editOgImage`, make a single attempt: remove the retry loop and the 2-second waits. Keep `USER_CANCELLED` handling as it is.
+- Add `export function formatErrorReport(error: unknown, context: { operation: "generate" | "edit"; appModelId: string; ratio?: string }): string`. It returns plain text such as:
+  ```
+  [OG 圖片錯誤報告]
+  時間：2026-09-28T06:30:00.000Z
+  操作：generate（比例 16:9）
+  App 模型：kie-gpt-image-2
+  Provider / Model：kie / gpt-image-2-image-to-image
+  錯誤代碼：auth
+  HTTP 狀態：401
+  Task ID：task_xxx
+  訊息：<full message>
+  ```
+  Omit lines whose value is unknown.
+
+**`src/App.tsx`**
+- Store the error as `{ message, details, report }` (use `formatErrorReport`) instead of a plain string. When several ratios are generated, say which ratio failed.
+- The red error banner shows:
+  - the message;
+  - a compact line `provider / model · code · HTTP status · task id`;
+  - a "複製錯誤資訊" button that copies `report` with `navigator.clipboard.writeText`. If that is unavailable, fall back to selecting the text.
+- The banner stays until the user clicks "關閉". Keep cancellations silent.
+
+**`src/components/DeepEditor.tsx`**
+- Show edit failures in the same persistent form: message, details line and copy button, until dismissed. Do not use the 4-second toast for errors. Success toasts can stay as they are.
+
+## Step 8: verify before finishing
+
+1. `npm run lint` (tsc) and `npm run build` both pass. `dist/server.cjs` must still be CommonJS.
+2. With a wrong `KIE_API_KEY`, generating with "Grok Imagine 2.0" shows a persistent banner containing `kie / grok-imagine-image-2-0/...` and code `auth`, and the copy button copies the full report.
+3. "Grok Imagine 2.0" with a template, 5 source images and a logo (7 images) shows a `reference_limit` error. Do not silently drop images.
+4. Cancelling a running generation shows no error banner.
+5. A normal generation with valid keys still returns an image, and the server log prints one `[usage] …` line per request.
+6. Search the server code: no references remain to `api.toapis.cn`, `redpandaai` (outside the packages), `slice(0, 10)`, `slice(0, 5)`, `nanobanana2`, `SAFETY_REVIEW_BLOCKED`, or `@google/genai`.
+
+Finish with a short list of every file you changed, created or deleted.

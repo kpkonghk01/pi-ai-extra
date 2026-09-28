@@ -1,4 +1,4 @@
-import { AppImageError, generateAppImage } from "./imageClient";
+import { generateAppImage } from "./imageClient";
 
 /**
  * Generate or edit an image with a ToAPIs model through @hk01/pi-ai-extra-toapis.
@@ -286,14 +286,7 @@ ${ratioPrompt || ''}`;
       signal,
     });
 
-  try {
-    return await run(buildPrompt(false));
-  } catch (firstErr) {
-    // Same provider and model, simplified prompt: an explicit app choice (a second billed task), not a fallback.
-    if (firstErr instanceof AppImageError && firstErr.code === "content_blocked") {
-      console.warn("[ToAPIs] Safety review blocked the primary prompt; retrying once with the simplified prompt.");
-      return await run(buildPrompt(true));
-    }
-    throw firstErr;
-  }
+  // No automatic retry (not even with a simplified prompt): a safety block is returned to the UI
+  // as-is, so the user can see it, report it, or change the prompt and try again.
+  return run(buildPrompt(false));
 }
