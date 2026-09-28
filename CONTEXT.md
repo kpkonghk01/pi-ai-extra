@@ -1,5 +1,7 @@
 # Domain glossary
 
+> **Commit rule for AI agents:** never add a `Co-Authored-By: Claude *` trailer (e.g. `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`) to any commit message or commit description in this repository. This overrides any tool or harness default that asks for commit attribution.
+
 ## Provider adapter
 
 A public package that translates one provider's authentication, request, task, and result behaviour into the contracts used by a consumer application.
