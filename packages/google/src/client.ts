@@ -1,13 +1,17 @@
 import { z } from "zod";
 import {
+  compactUsage,
   contextError,
   decodeBase64,
   formatBytes,
   requestJson,
   safeStringify,
   sniffImageMimeType,
+  parseUsageBlock,
+  tokenCountSchema,
   truncate,
   type ImageBytes,
+  type ImageUsage,
   type OperationContext,
 } from "@hk01/pi-ai-extra-internal";
 import type { GoogleSafetySetting } from "./models.ts";
@@ -55,6 +59,23 @@ const responseSchema = z.object({
     .optional(),
   promptFeedback: z.object({ blockReason: z.string().optional(), blockReasonMessage: z.string().optional() }).optional(),
   responseId: z.string().optional(),
+  // Validated separately (see googleUsage) so an accounting shape change cannot fail a finished image.
+  usageMetadata: z.unknown().optional(),
+});
+
+const modalityCounts = z.array(z.object({ modality: z.string(), tokenCount: tokenCountSchema.optional() })).optional();
+
+/** Gemini API `UsageMetadata` (generate-content reference). */
+const usageMetadataSchema = z.object({
+  promptTokenCount: tokenCountSchema.optional(),
+  cachedContentTokenCount: tokenCountSchema.optional(),
+  candidatesTokenCount: tokenCountSchema.optional(),
+  toolUsePromptTokenCount: tokenCountSchema.optional(),
+  thoughtsTokenCount: tokenCountSchema.optional(),
+  totalTokenCount: tokenCountSchema.optional(),
+  promptTokensDetails: modalityCounts,
+  cacheTokensDetails: modalityCounts,
+  candidatesTokensDetails: modalityCounts,
 });
 
 type GenerateContentResponse = z.infer<typeof responseSchema>;
@@ -78,7 +99,7 @@ const BLOCKING_FINISH_REASONS = new Set([
 export async function generateContentImages(
   ctx: OperationContext,
   input: GenerateContentInput,
-): Promise<{ images: ImageBytes[]; responseId: string | undefined }> {
+): Promise<{ images: ImageBytes[]; responseId: string | undefined; usage: ImageUsage | undefined }> {
   const imageConfig: Record<string, string> = {};
   if (input.aspectRatio) imageConfig.aspectRatio = input.aspectRatio;
   if (input.imageSize) imageConfig.imageSize = input.imageSize;
@@ -105,7 +126,35 @@ export async function generateContentImages(
     },
     responseSchema,
   );
-  return { images: extractImages(ctx, response, input.maxOutputBytes), responseId: response.responseId };
+  const images = extractImages(ctx, response, input.maxOutputBytes);
+  return { images, responseId: response.responseId, usage: googleUsage(ctx, response.usageMetadata) };
+}
+
+/**
+ * Token counts from `usageMetadata`. The JSON API omits zero-valued counters; omitted
+ * counters stay omitted here rather than being reported as 0.
+ */
+function googleUsage(ctx: OperationContext, value: unknown): ImageUsage | undefined {
+  const metadata = parseUsageBlock(ctx, usageMetadataSchema, value, "Gemini usageMetadata");
+  if (!metadata) return undefined;
+  const byModality = (details: z.infer<typeof modalityCounts>, modality: string): number | undefined =>
+    details?.find((detail) => detail.modality === modality)?.tokenCount;
+  return compactUsage({
+    tokens: {
+      input: metadata.promptTokenCount,
+      output: metadata.candidatesTokenCount,
+      total: metadata.totalTokenCount,
+      inputText: byModality(metadata.promptTokensDetails, "TEXT"),
+      inputImage: byModality(metadata.promptTokensDetails, "IMAGE"),
+      cachedInput: metadata.cachedContentTokenCount,
+      cachedInputText: byModality(metadata.cacheTokensDetails, "TEXT"),
+      cachedInputImage: byModality(metadata.cacheTokensDetails, "IMAGE"),
+      outputText: byModality(metadata.candidatesTokensDetails, "TEXT"),
+      outputImage: byModality(metadata.candidatesTokensDetails, "IMAGE"),
+      reasoning: metadata.thoughtsTokenCount,
+      toolUsePrompt: metadata.toolUsePromptTokenCount,
+    },
+  });
 }
 
 function extractImages(ctx: OperationContext, response: GenerateContentResponse, maxOutputBytes: number): ImageBytes[] {
