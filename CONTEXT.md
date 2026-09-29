@@ -47,3 +47,10 @@ A provider's settlement state for a task's charge (`pending`, `settled`, `refund
 ## Client business id
 
 A caller-chosen identifier (for example `open-graph-single:req-123`) sent with a ToAPIs task so provider records can be attributed to an app or request, and used to look the task up later.
+## Auto OG pipeline
+
+A consumer application that automatically reads an article, creates title candidates, and creates an Open Graph collage. Its title-creation and image-creation steps are separate model operations with different capability requirements.
+
+## App model selection
+
+A consumer-owned, stable UI identifier that maps to one provider-native model operation. It is not necessarily the provider model id and must declare whether it supports collage generation, edit generation, its reference-image limit, and supported output ratios.
