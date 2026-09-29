@@ -127,6 +127,8 @@ describe("generateGoogleImage", () => {
       [{ apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", referenceImages: Array(15).fill(dataUrl(PNG_BYTES, "image/png")) }, "reference_limit"],
       [{ apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", referenceImages: [dataUrl(GIF_BYTES, "image/gif")] }, "invalid_reference"],
       [{ apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", headers: { Authorization: "Bearer x" } }, "invalid_request"],
+      [{ apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", headers: { "x-api-key": "secret" } }, "invalid_request"],
+      [{ apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", headers: { "Proxy-Authorization": "Basic secret" } }, "invalid_request"],
     ];
     for (const [request, code] of cases) {
       await assert.rejects(generateGoogleImage({ ...request, fetch: fake.fetch }), isCode(code), `${code}`);

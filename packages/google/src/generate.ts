@@ -71,7 +71,7 @@ export type GoogleImageRequest = GoogleFlashImageRequest | GoogleProImageRequest
 
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 const REFERENCE_DOWNLOAD_TIMEOUT_MS = 30_000;
-const CREDENTIAL_HEADERS = new Set(["authorization", "x-goog-api-key", "cookie"]);
+const CREDENTIAL_HEADERS = new Set(["authorization", "proxy-authorization", "x-api-key", "x-goog-api-key", "cookie"]);
 
 const settingsSchema = z.strictObject({
   baseUrl: httpUrlSchema.optional(),
