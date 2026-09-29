@@ -1,7 +1,7 @@
 // Copyable diagnostic log. Credentials are redacted and data URLs are shortened
 // before anything is written, so the whole log can be pasted into a bug report.
 
-const SECRET_KEYS = new Set(["apikey", "api_key", "authorization", "x-goog-api-key"]);
+const SECRET_KEYS = new Set(["apikey", "api_key", "authorization", "proxy-authorization", "x-api-key", "x-goog-api-key"]);
 
 export function redact(value, depth = 0) {
   if (depth > 12) return "[depth limit]";
