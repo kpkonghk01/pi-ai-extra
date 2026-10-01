@@ -28,6 +28,10 @@ Bring Your Own Key. The consumer application supplies its provider API key at ru
 
 An image supplied to an image operation to preserve, transform, or use as a composition/style reference. Each model operation defines its own reference-image limit and accepted input form.
 
+## Image model catalogue
+
+The published description of the options and limits that vary between image model operations: aspect ratios, resolutions, reference-image limit, temperature, system instruction, and so on. Consumer applications offer only what it lists. When a model's entry does not list one of these options, the model does not support it, and a request that uses it is rejected. Provider-wide settings that every model of a provider accepts, such as a request attribution id, are not part of the catalogue.
+
 ## Fallback
 
 Automatically changing provider, model, or file-storage provider after a request fails. Fallback is prohibited: the selected provider/model either succeeds or reports its own failure.
