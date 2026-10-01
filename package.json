@@ -10,7 +10,7 @@
   "scripts": {
     "build": "pnpm --recursive --workspace-concurrency=1 run build",
     "check": "pnpm --recursive --workspace-concurrency=1 run check && pnpm run check:docs",
-    "check:docs": "pnpm --filter \"./packages/*\" run build && tsc --noEmit -p docs/migration/open-graph-single",
+    "check:docs": "pnpm --filter \"./packages/*\" run build && tsc --noEmit -p docs/migration/open-graph-single && tsc --noEmit -p docs/migration/auto-og",
     "test": "pnpm --recursive --workspace-concurrency=1 run test",
     "clean": "pnpm --recursive run clean",
     "pack:kie": "pnpm --filter @hk01/pi-ai-extra-kie pack --pack-destination ./release-artifacts",
