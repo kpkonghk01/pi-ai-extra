@@ -5,7 +5,7 @@ Server-only extension to `@earendil-works/pi-ai`: Gemini 3.1 Flash Image (`gemin
 - Main entry (CommonJS and ESM): `generateGoogleImage()`, `GOOGLE_IMAGE_MODELS`, `PiAiExtraError` / `isPiAiExtraError`.
 - `/pi-ai` subpath (ESM only, needs `@earendil-works/pi-ai@0.87.1`): `createGoogleProvider()` (pi-ai `Models`, Gemini chat) and `createGoogleImagesProvider()` (pi-ai `ImagesModels`).
 
-pi-ai 0.87.1 has no Gemini image output; this package adds it. `createGoogleProvider()` serves pi-ai's own Gemini chat adapter and catalogue (Google list prices included) with the explicit key only; it never reads `GEMINI_API_KEY`. Usage: `usageMetadata` token counts. Safety blocks are `content_blocked`; a response without an image is `no_output`.
+pi-ai 0.87.1 has no Gemini image output; this package adds it. `createGoogleProvider()` serves pi-ai's own Gemini chat adapter and catalogue (Google list prices included) with the explicit key only; it never reads `GEMINI_API_KEY`. Optional `temperature` (0–2) and `systemInstruction` map to Gemini `generationConfig.temperature` and `systemInstruction`; omitted values are not sent. Usage: `usageMetadata` token counts. Safety blocks are `content_blocked`; a response without an image is `no_output`.
 
 ```ts
 import { generateGoogleImage } from "@hk01/pi-ai-extra-google";
@@ -17,6 +17,8 @@ const result = await generateGoogleImage({
   referenceImages: [templateDataUrl, photoDataUrl],
   aspectRatio: "16:9",
   resolution: "2K",
+  temperature: 0.7, // optional, 0–2 (generationConfig.temperature)
+  systemInstruction: "Keep the template layout.", // optional Gemini system instruction
   headers: { "User-Agent": "aistudio-build" },
 });
 const { dataUrl } = result.images[0]!;

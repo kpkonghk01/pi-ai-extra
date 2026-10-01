@@ -30,7 +30,7 @@ Install the exact release asset on the server (build) side and pin the full URL:
 ```sh
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.1.0/hk01-pi-ai-extra-kie-0.1.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.1.0/hk01-pi-ai-extra-toapis-0.1.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.1.0/hk01-pi-ai-extra-google-0.1.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.2.0/hk01-pi-ai-extra-google-0.2.0.tgz
 ```
 
 npm works the same way (`npm install <url>`). Upgrade or roll back by changing the URL. `zod@4.6.5` is installed automatically; install `@earendil-works/pi-ai@0.87.1` only if you use the `/pi-ai` subpath.
@@ -75,10 +75,12 @@ try {
 | ToAPIs | `gpt-image-2` | 0–6 | `aspectRatio`, `resolution`, `background: "transparent"` |
 | ToAPIs | `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst` | not documented (not capped) | `aspectRatio`, `resolution`, `background: "transparent"` |
 | ToAPIs | `doubao-seedream-5-0-pro` | 0–10 (JPEG/PNG) | `aspectRatio`, `resolution` (1K/2K), `watermark` |
-| Google | `gemini-3.1-flash-image` | 0–14 | `aspectRatio`, `resolution` (`512`/1K/2K/4K), `safetySettings` |
-| Google | `gemini-3-pro-image` | 0–14 | `aspectRatio`, `resolution` (1K/2K/4K), `safetySettings` |
+| Google | `gemini-3.1-flash-image` | 0–14 | `aspectRatio`, `resolution` (`512`/1K/2K/4K), `safetySettings`, `temperature` (0–2), `systemInstruction` |
+| Google | `gemini-3-pro-image` | 0–14 | `aspectRatio`, `resolution` (1K/2K/4K), `safetySettings`, `temperature` (0–2), `systemInstruction` |
 
 Build UI choices from the exported catalogues (`KIE_IMAGE_MODELS`, `TOAPIS_IMAGE_MODELS`, `GOOGLE_IMAGE_MODELS`): each entry lists supported values, defaults, reference limits, accepted image types and documented cross-field rules. Map your own presets (for example `300x250`) to a supported ratio before calling; unsupported values are rejected, not rewritten.
+
+Two catalogue fields appear only on models that accept them: `temperature` (the accepted `{ min, max }` range) and `systemInstruction` (`true`). Only the Google models list them; KIE and ToAPIs document neither, so their models omit both and reject them with `invalid_request`. Use the fields to enable or disable the matching UI controls.
 
 Reference images are data URLs or public `http(s)` URLs. KIE and ToAPIs upload data URLs through their own upload APIs; Google sends them inline (URLs are downloaded by your server first). Results are downloaded promptly and returned as validated `data:` URLs.
 
@@ -162,7 +164,7 @@ const output = await images.generateImages(
 // output.stopReason: "stop" | "error" | "aborted"; errors never throw at this layer.
 ```
 
-pi-ai keeps chat providers (`Models`) and image providers (`ImagesModels`) in separate collections, so each package exports one factory for each, taking the same explicit key. Image options go in `ImagesOptions.metadata` using the helper option names and are validated strictly; unknown keys fail the request rather than being ignored.
+pi-ai keeps chat providers (`Models`) and image providers (`ImagesModels`) in separate collections, so each package exports one factory for each, taking the same explicit key. Image options go in `ImagesOptions.metadata` using the helper option names and are validated strictly; unknown keys fail the request rather than being ignored. pi-ai's `ImagesContext` has no system prompt and `ImagesOptions` no temperature, so Google's `temperature` and `systemInstruction` also go in `metadata`.
 
 `createGoogleProvider({ apiKey, modelIds?, baseUrl? })` serves pi-ai's own Gemini adapter and model catalogue (`GOOGLE_CHAT_MODEL_IDS`) unchanged, including Google's list prices, but authenticates only with the explicit key: unlike pi-ai's `googleProvider()`, it never reads `GEMINI_API_KEY`. `modelIds` restricts the list; unknown ids throw.
 
@@ -197,7 +199,7 @@ Pass `cacheRetention` explicitly: when it is omitted, pi-ai falls back to the `P
 ## Google AI Studio (server) integration
 
 1. **Secrets.** Put `KIE_API_KEY`, `TOAPIS_API_KEY` and `GEMINI_API_KEY` in the app's server-side Secrets. Never expose them through Vite `define`, client code or a browser request.
-2. **Install.** Add the pinned release URLs to `dependencies` (`"@hk01/pi-ai-extra-kie": "https://github.com/…/kie-v0.1.0/hk01-pi-ai-extra-kie-0.1.0.tgz"`, likewise for ToAPIs and Google). Import the packages only from server modules such as `server.ts`. A CommonJS server bundle (`esbuild --format=cjs --packages=external`) works with the main entries.
+2. **Install.** Add the pinned release URLs to `dependencies` (`"@hk01/pi-ai-extra-kie": "https://github.com/…/kie-v0.1.0/hk01-pi-ai-extra-kie-0.1.0.tgz"`, likewise for ToAPIs and Google; each package has its own version, see Install). Import the packages only from server modules such as `server.ts`. A CommonJS server bundle (`esbuild --format=cjs --packages=external`) works with the main entries.
 
    The `/pi-ai` subpath (and pi-ai itself) is ESM-only. AI Studio's preview runs `server.ts` as ESM, so a static `/pi-ai` import works there, but the CommonJS production bundle then fails at startup with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Before using `/pi-ai`, either build the server as ESM (`--format=esm --outfile=dist/server.mjs` and `"start": "node dist/server.mjs"`), or load it with `await import("@earendil-works/pi-ai")` and `await import("@hk01/pi-ai-extra-<provider>/pi-ai")`, which esbuild keeps as runtime imports.
 3. **Generate / edit.** Read the secret on the server and call the helper. Text-to-image and editing differ only by `model` and `referenceImages`:

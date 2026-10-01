@@ -51,6 +51,10 @@ interface GoogleRequestBase extends ImageHelperOptions, GoogleImageSettings {
   /** Data URLs, or http(s) URLs that the server downloads and sends inline. Up to 14. */
   referenceImages?: readonly string[] | undefined;
   safetySettings?: readonly GoogleSafetySetting[] | undefined;
+  /** Gemini `generationConfig.temperature`. Omitted: the model's default. */
+  temperature?: number | undefined;
+  /** Gemini `systemInstruction` (text only). Omitted: none. */
+  systemInstruction?: string | undefined;
 }
 
 export interface GoogleFlashImageRequest extends GoogleRequestBase {
@@ -128,6 +132,8 @@ export async function generateGoogleImage(request: GoogleImageRequest): Promise<
     aspectRatio: parsed.aspectRatio,
     imageSize: parsed.resolution,
     safetySettings: parsed.safetySettings,
+    temperature: parsed.temperature,
+    systemInstruction: parsed.systemInstruction,
     headers: options.headers ?? {},
     timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     maxOutputBytes,
