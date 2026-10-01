@@ -8,6 +8,9 @@ interface ImageModelSelectorProps {
   /** Reference images the next request will send; options that cannot take them are disabled. */
   referenceCount: number;
   loading?: boolean;
+  /** The model list failed to load; show a retry button instead of an empty list. */
+  failed?: boolean;
+  onReload?: () => void;
   className?: string;
 }
 
@@ -15,7 +18,14 @@ interface ImageModelSelectorProps {
  * Image model picker grouped by provider (Google, KIE, ToAPIs). Models without a server key or
  * with a lower reference-image limit stay visible but disabled, with the reason in the label.
  */
-export const ImageModelSelector: React.FC<ImageModelSelectorProps> = ({ models, value, onChange, referenceCount, loading, className }) => {
+export const ImageModelSelector: React.FC<ImageModelSelectorProps> = ({ models, value, onChange, referenceCount, loading, failed, onReload, className }) => {
+  if (failed && models.length === 0) {
+    return (
+      <button type="button" onClick={onReload} className={className} title="重新載入圖片模型清單">
+        模型清單載入失敗，按此重試
+      </button>
+    );
+  }
   if (loading && models.length === 0) {
     return (
       <select disabled className={className} value="">

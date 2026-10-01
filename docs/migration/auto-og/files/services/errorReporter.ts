@@ -1,4 +1,5 @@
-import { ImageRequestError, type ImageErrorDetails } from './imageApi';
+import { ImageRequestError } from './imageApi';
+import type { ImageErrorDetails } from '../shared/imageModels';
 
 /**
  * Collects server errors for the ErrorPanel so users can copy an exact report.
@@ -30,6 +31,8 @@ const OPERATION_LABELS: Record<ErrorOperation, string> = {
 type Listener = (entry: ErrorEntry) => void;
 const listeners = new Set<Listener>();
 let nextId = 1;
+/** Latest error, replayed to a panel that mounts after it was reported. */
+let latest: ErrorEntry | null = null;
 
 export function operationLabel(operation: ErrorOperation): string {
   return OPERATION_LABELS[operation];
@@ -45,12 +48,14 @@ export function reportError(error: unknown, operation: ErrorOperation, context: 
     httpStatus: error instanceof ImageRequestError ? error.httpStatus : undefined,
     context: Object.fromEntries(Object.entries(context).flatMap(([key, value]) => (value === undefined ? [] : [[key, String(value)]]))),
   };
+  latest = entry;
   listeners.forEach((listener) => listener(entry));
   return entry;
 }
 
 export function subscribeErrors(listener: Listener): () => void {
   listeners.add(listener);
+  if (latest) listener(latest);
   return () => {
     listeners.delete(listener);
   };

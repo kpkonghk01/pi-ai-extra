@@ -1,5 +1,4 @@
 import type { Response } from 'express';
-import { errorDetails } from './imageClient';
 
 /** Keeps the connection busy so proxies with a 60-second idle timeout do not cut long image tasks. */
 const PING_INTERVAL_MS = 10_000;
@@ -13,6 +12,7 @@ const PING_INTERVAL_MS = 10_000;
 export async function streamImageResponse(
   res: Response,
   work: (signal: AbortSignal) => Promise<{ rawImageBase64: string }>,
+  describeError: (error: unknown) => { error: string; details: object },
 ): Promise<void> {
   const abort = new AbortController();
   res.on('close', () => {
@@ -35,7 +35,7 @@ export async function streamImageResponse(
     write({ type: 'complete', ...result });
   } catch (error) {
     console.error('[image] request failed:', error);
-    write({ type: 'error', error: error instanceof Error ? error.message : String(error), details: errorDetails(error) });
+    write({ type: 'error', ...describeError(error) });
   } finally {
     clearInterval(timer);
     if (!res.writableEnded) res.end();

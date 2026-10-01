@@ -1,3 +1,4 @@
+import { USD_TO_HKD } from '../shared/imageModels';
 
 export interface MonthlyUsageData {
   inputTokens: number;
@@ -17,7 +18,6 @@ export interface UsageHistory {
 const STORAGE_KEY = 'og_collage_usage_history';
 
 // Estimates only: prices come from GET /api/image-models (see shared/imageModels.ts estimateCostUsd).
-const HKD_EXCHANGE_RATE = 7.8;
 
 export const UsageService = {
   // Get the current YYYY-MM string (e.g., "2023-10")
@@ -64,7 +64,7 @@ export const UsageService = {
       inputTokens: current.inputTokens + inputTokens,
       outputImages: current.outputImages + outputImages,
       totalCostUSD: current.totalCostUSD + txCostUSD,
-      totalCostHKD: current.totalCostHKD + txCostUSD * HKD_EXCHANGE_RATE,
+      totalCostHKD: current.totalCostHKD + txCostUSD * USD_TO_HKD,
       requestCount: current.requestCount + 1,
       lastUpdated: Date.now(),
       unpricedImages: (current.unpricedImages ?? 0) + (costUsd === null ? outputImages : 0),

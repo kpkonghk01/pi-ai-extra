@@ -110,6 +110,17 @@ export interface PriceEstimate {
   inputPerMillionTokensUsd: number;
 }
 
+/** Error fields returned for failed image requests (server/imageClient.ts) and shown by the ErrorPanel. */
+export interface ImageErrorDetails {
+  appModelId?: string;
+  provider?: string;
+  model?: string;
+  code?: string;
+  status?: number;
+  taskId?: string;
+  providerCode?: string;
+}
+
 /** One entry of GET /api/image-models. */
 export interface ImageModelView {
   id: string;
@@ -117,6 +128,10 @@ export interface ImageModelView {
   description: string;
   provider: ImageProvider;
   providerLabel: string;
+  /** Provider model operation used with reference images (KIE GPT Image 2 uses text-to-image without). */
+  providerModel: string;
+  /** Reference image types the model accepts (the app sends JPEG or PNG). */
+  acceptedMimeTypes: string[];
   /** Reference images the model accepts; max null = no documented limit. */
   referenceLimit: { min: number; max: number | null };
   /** Accepted temperature range, or null when the model does not accept temperature. */
@@ -139,6 +154,11 @@ export const TEMPERATURE_SUPPORT_NOTE =
 
 export const MASK_REFERENCE_ONLY_NOTE =
   '此模型以參考圖方式理解遮罩，局部編輯可能影響遮罩以外的範圍；需要精準局部修改時建議使用 Nano Banana 系列。';
+
+/** `value` when the model accepts temperature, otherwise undefined (the server rejects it for the others). */
+export function temperatureFor(model: ImageModelView | undefined, value: number): number | undefined {
+  return model?.temperature ? value : undefined;
+}
 
 /** Why `model` cannot take `referenceCount` reference images, or null when it can. */
 export function referenceIssue(model: ImageModelView, referenceCount: number): string | null {
@@ -187,7 +207,7 @@ export function estimateCostUsd(
 - `price` is an estimate shown in the UI. `null` means unknown, and the UI shows "—".
 
 `server/imageClient.ts` is the only code that calls the image packages:
-- It validates the request first. An unknown model, a missing key, an unsupported temperature or too many reference images returns HTTP 400 or 503.
+- It validates the request first. Each of these returns HTTP 400 or 503 before any provider call: an unknown model, a missing key, a temperature that is not a number or that the model does not accept, a missing or unreadable ratio, or too many reference images.
 - It then calls exactly one provider.
 - Rules go in Gemini `systemInstruction` where the model supports it. Otherwise they go at the start of the prompt.
 - It picks each model's own aspect ratio: the exact value when supported, otherwise the nearest one.
@@ -195,7 +215,8 @@ export function estimateCostUsd(
 
 `server/ndjson.ts` streams the response:
 - It sends a ping line every 10 seconds, so the 60-second proxy idle timeout cannot cut long KIE/ToAPIs tasks.
-- It stops provider polling when the browser disconnects.
+- It stops provider polling when the browser disconnects or the user cancels.
+- Each package still applies its own task limit (KIE 10 minutes, ToAPIs 6, Google 5). Node sets no response timeout, so no server timeout change is needed.
 
 `server/imageModels.ts`:
 
@@ -385,6 +406,8 @@ function toView(entry: RegistryEntry, env: NodeJS.ProcessEnv): ImageModelView {
     description: entry.description,
     provider: entry.provider,
     providerLabel: PROVIDER_LABELS[entry.provider],
+    providerModel: entry.model,
+    acceptedMimeTypes: main ? [...main.referenceImages.acceptedMimeTypes] : [],
     referenceLimit: {
       min: infos.length > 0 ? Math.min(...infos.map((info) => info.referenceImages.min)) : 0,
       max: maxes.includes(null) ? null : Math.max(0, ...maxes.map((max) => max ?? 0)),
@@ -418,11 +441,11 @@ export function imageModelView(appModelId: string, env: NodeJS.ProcessEnv = proc
 
 ```ts
 import { randomUUID } from 'node:crypto';
-import { generateKieImage, isPiAiExtraError, type ImageGenerationResult, type KieImageRequest } from '@hk01/pi-ai-extra-kie';
+import { generateKieImage, isPiAiExtraError, type ImageGenerationResult, type KieImageRequest, type PiAiExtraError } from '@hk01/pi-ai-extra-kie';
 import { generateToapisImage, type ToapisImageRequest } from '@hk01/pi-ai-extra-toapis';
 // The Google 0.2.0 type includes the optional temperature / systemInstruction catalogue fields.
 import { generateGoogleImage, type GoogleImageRequest, type ImageModelInfo } from '@hk01/pi-ai-extra-google';
-import { TEMPERATURE_SUPPORT_NOTE, type ImageProvider } from '../shared/imageModels';
+import { TEMPERATURE_SUPPORT_NOTE, type ImageErrorDetails, type ImageProvider } from '../shared/imageModels';
 import { outputSpec, ratioValue } from '../shared/imageOutput';
 import { findRegistryEntry, providerKey, resolveOperation, secretName } from './imageModels';
 
@@ -443,23 +466,20 @@ export interface AppImageRequest {
   parts: readonly ImagePart[];
   /** Model rules. Sent as systemInstruction where supported, otherwise placed before the prompt. */
   systemInstruction: string;
-  /** App ratio preset ("16:9", "300x250", …) or the input image's "width:height"; decides aspect ratio and resolution. */
-  ratio: string;
+  /**
+   * App ratio preset ("16:9", "300x250", …) or the input image's "width:height". Decides the
+   * resolution, and the aspect ratio unless the input aspect is kept. Required when an aspect
+   * ratio has to be chosen.
+   */
+  ratio: string | undefined;
   /** Edits: keep the input image's aspect where the model can (Google: omit; KIE: "auto"). */
   keepInputAspect?: boolean;
-  temperature?: number | undefined;
+  /** Raw request value; validated here (number, and accepted by the model). */
+  temperature?: unknown;
 }
 
 /** What the UI shows, and users copy into bug reports, for a failed request. */
-export interface AppErrorDetails {
-  appModelId?: string;
-  provider?: string;
-  model?: string;
-  code?: string;
-  status?: number;
-  taskId?: string;
-  providerCode?: string;
-}
+export type AppErrorDetails = ImageErrorDetails;
 
 export class AppImageError extends Error {
   readonly details: AppErrorDetails;
@@ -473,12 +493,22 @@ export class AppImageError extends Error {
   }
 }
 
-/** Details for an API error response. Unknown errors still report their message elsewhere; nothing is hidden. */
+function packageErrorDetails(error: PiAiExtraError, appModelId?: string): AppErrorDetails {
+  return {
+    ...(appModelId ? { appModelId } : {}),
+    provider: error.provider,
+    model: error.model,
+    code: error.code,
+    ...(error.taskId ? { taskId: error.taskId } : {}),
+    ...(error.status !== undefined ? { status: error.status } : {}),
+    ...(error.providerCode ? { providerCode: error.providerCode } : {}),
+  };
+}
+
+/** Details for an API error response. Unknown errors still report their message; nothing is hidden. */
 export function errorDetails(error: unknown): AppErrorDetails {
   if (error instanceof AppImageError) return error.details;
-  if (isPiAiExtraError(error)) {
-    return { provider: error.provider, model: error.model, code: error.code, taskId: error.taskId, status: error.status };
-  }
+  if (isPiAiExtraError(error)) return packageErrorDetails(error);
   return { code: 'unexpected' };
 }
 
@@ -495,20 +525,21 @@ export interface PreparedImageRequest {
   temperature: number | undefined;
 }
 
-/** KIE GPT Image 2 documents ratios that are unavailable at 2K/4K (catalogue notes; the package enforces them). */
+/**
+ * KIE GPT Image 2 ratios that are unavailable at 2K. The catalogue states this only as a note
+ * (the package rejects them), so it is repeated here to pick a ratio the package accepts.
+ */
 const KIE_GPT_UNSUPPORTED_AT: Record<string, readonly string[]> = {
   '2K': ['5:4', '4:5', '3:1', '1:3', '9:21'],
-  '4K': ['1:1', '3:1', '1:3', '9:21'],
 };
 
 /** The model's own ratio for an app preset: an exact match, otherwise the nearest supported ratio. */
-function pickAspectRatio(info: ImageModelInfo, ratio: string, resolution: string | undefined): string | undefined {
+function pickAspectRatio(info: ImageModelInfo, ratio: string, target: number, resolution: string | undefined): string | undefined {
   if (!info.aspectRatio) return undefined;
   const blocked = info.id.startsWith('gpt-image-2-') && resolution ? (KIE_GPT_UNSUPPORTED_AT[resolution] ?? []) : [];
   const candidates = info.aspectRatio.values.filter((value) => value !== 'auto' && !blocked.includes(value));
   if (candidates.includes(ratio)) return ratio;
-  const target = ratioValue(ratio) ?? 1;
-  const distance = (value: string): number => Math.abs(Math.log((ratioValue(value) ?? 1) / target));
+  const distance = (value: string): number => Math.abs(Math.log((ratioValue(value) ?? Number.POSITIVE_INFINITY) / target));
   return [...candidates].sort((a, b) => distance(a) - distance(b))[0];
 }
 
@@ -537,9 +568,22 @@ export function partsToPrompt(parts: readonly ImagePart[]): { prompt: string; re
   return { prompt: lines.join('\n\n'), referenceImages };
 }
 
-function aspectRatioFor(info: ImageModelInfo, request: AppImageRequest, resolution: string | undefined): string | undefined {
+function aspectRatioFor(info: ImageModelInfo, request: AppImageRequest, resolution: string | undefined, base: AppErrorDetails): string | undefined {
   const kept = request.keepInputAspect ? inputAspectValue(info) : null;
-  return kept === null ? pickAspectRatio(info, request.ratio, resolution) : kept;
+  if (kept !== null) return kept;
+  const target = request.ratio === undefined ? undefined : ratioValue(request.ratio);
+  if (target === undefined || !Number.isFinite(target) || target <= 0) {
+    throw new AppImageError(`無法判斷圖片比例（收到「${request.ratio ?? ''}」），無法為 ${info.id} 選擇比例。`, { ...base, code: 'invalid_request' }, { httpStatus: 400 });
+  }
+  return pickAspectRatio(info, request.ratio ?? '', target, resolution);
+}
+
+function validTemperature(value: unknown, base: AppErrorDetails): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new AppImageError('temperature 必須是數字。', { ...base, code: 'invalid_request' }, { httpStatus: 400 });
+  }
+  return value;
 }
 
 /** Validates everything that can fail before a provider is called (HTTP 400 / 503). */
@@ -558,7 +602,8 @@ export function prepareAppImage(request: AppImageRequest): PreparedImageRequest 
   if (!apiKey) {
     throw new AppImageError(`伺服器未設定 ${secretName(entry.provider)}，無法使用 ${entry.label}。`, { ...target, code: 'missing_key' }, { httpStatus: 503 });
   }
-  if (request.temperature !== undefined && !info.temperature) {
+  const temperature = validTemperature(request.temperature, target);
+  if (temperature !== undefined && !info.temperature) {
     throw new AppImageError(`${entry.label} 不支援 Temperature。${TEMPERATURE_SUPPORT_NOTE}`, { ...target, code: 'temperature_unsupported' }, { httpStatus: 400 });
   }
   const { min, max } = info.referenceImages;
@@ -567,7 +612,7 @@ export function prepareAppImage(request: AppImageRequest): PreparedImageRequest 
     throw new AppImageError(`${entry.label} 接受 ${limit}參考圖，這次有 ${referenceImages.length} 張（圖片不會被自動刪減）。`, { ...target, code: 'reference_limit' }, { httpStatus: 400 });
   }
 
-  const wanted = outputSpec(request.ratio).resolution;
+  const wanted = outputSpec(request.ratio ?? '').resolution;
   const resolution = info.resolution?.values.includes(wanted) ? wanted : undefined;
   const separateRules = info.systemInstruction === true;
   return {
@@ -577,9 +622,9 @@ export function prepareAppImage(request: AppImageRequest): PreparedImageRequest 
     prompt: separateRules ? prompt : `${request.systemInstruction.trim()}\n\n${prompt}`,
     systemInstruction: separateRules ? request.systemInstruction : undefined,
     referenceImages,
-    aspectRatio: aspectRatioFor(info, request, resolution),
+    aspectRatio: aspectRatioFor(info, request, resolution, target),
     resolution,
-    temperature: request.temperature,
+    temperature,
   };
 }
 
@@ -598,16 +643,7 @@ function toAppError(error: unknown, appModelId: string): Error {
             ? `${where} 帳戶額度不足`
             : `${where} 生成失敗 [${error.code}]`;
   const detail = error.message.replace(/^\[[^\]]+\]\s*/, '');
-  const details: AppErrorDetails = {
-    appModelId,
-    provider: error.provider,
-    model: error.model,
-    code: error.code,
-    ...(error.taskId ? { taskId: error.taskId } : {}),
-    ...(error.status !== undefined ? { status: error.status } : {}),
-    ...(error.providerCode ? { providerCode: error.providerCode } : {}),
-  };
-  return new AppImageError(`${prefix}：${detail}`, details, { cause: error });
+  return new AppImageError(`${prefix}：${detail}`, packageErrorDetails(error, appModelId), { cause: error });
 }
 
 /** Provider-reported usage, logged per task id for later per-app recording. */
@@ -666,7 +702,6 @@ export async function runAppImage(prepared: PreparedImageRequest, signal?: Abort
 
 ```ts
 import type { Response } from 'express';
-import { errorDetails } from './imageClient';
 
 /** Keeps the connection busy so proxies with a 60-second idle timeout do not cut long image tasks. */
 const PING_INTERVAL_MS = 10_000;
@@ -680,6 +715,7 @@ const PING_INTERVAL_MS = 10_000;
 export async function streamImageResponse(
   res: Response,
   work: (signal: AbortSignal) => Promise<{ rawImageBase64: string }>,
+  describeError: (error: unknown) => { error: string; details: object },
 ): Promise<void> {
   const abort = new AbortController();
   res.on('close', () => {
@@ -702,7 +738,7 @@ export async function streamImageResponse(
     write({ type: 'complete', ...result });
   } catch (error) {
     console.error('[image] request failed:', error);
-    write({ type: 'error', error: error instanceof Error ? error.message : String(error), details: errorDetails(error) });
+    write({ type: 'error', ...describeError(error) });
   } finally {
     clearInterval(timer);
     if (!res.writableEnded) res.end();
@@ -717,31 +753,32 @@ Apply this diff. It:
 - imports the new modules and removes the Gemini-only `mapRatioToSupported`, `mapQualityToSize` and `buildImageConfig` helpers.
 - adds `GET /api/image-models` and a `sendImageError` helper.
 - **`/api/generate-collage`:**
+  - rejects an unknown ratio preset with HTTP 400;
   - no longer creates a `GoogleGenAI` client or loops over models;
   - the `isNanoBanana2` prompt branch now applies to every Nano Banana 2 entry (Google, KIE, ToAPIs) through the model's `promptProfile`;
   - the composed `parts` and `systemInstruction` go to `prepareAppImage`, and the result streams through `streamImageResponse`.
 - **`/api/edit-image`:**
   - sends references in a fixed order: Image 1 base, Image 2 mask, then the extra reference, which now has its own label;
-  - keeps the input image's aspect where the model allows it;
+  - keeps the input image's aspect where the model allows it (Google: no ratio; KIE: `auto`); other models need the request's `sourceAspect` ("width:height") and get the nearest ratio, otherwise HTTP 400;
   - uses temperature 0.7 on models that accept temperature, unless the request sets one (logo replacement sends 0.5).
-- allows long requests: `server.requestTimeout = 420_000`.
 
 ```diff
 diff --git a/server.ts b/server.ts
-index 10ac9b2..e607162 100644
+index 10ac9b2..abe6d32 100644
 --- a/server.ts
 +++ b/server.ts
-@@ -2,6 +2,9 @@ import express from "express";
+@@ -2,6 +2,10 @@ import express from "express";
  import path from "path";
  import { createServer as createViteServer } from "vite";
  import { GoogleGenAI } from "@google/genai";
 +import { AppImageError, errorDetails, prepareAppImage, runAppImage, type ImagePart } from "./server/imageClient";
 +import { imageModelView, listImageModels } from "./server/imageModels";
 +import { streamImageResponse } from "./server/ndjson";
++import { OUTPUT_SPECS } from "./shared/imageOutput";
  
  const app = express();
  const PORT = 3000;
-@@ -27,47 +30,28 @@ const urlToAsset = async (url: string) => {
+@@ -27,47 +31,32 @@ const urlToAsset = async (url: string) => {
    };
  };
  
@@ -794,18 +831,22 @@ index 10ac9b2..e607162 100644
 +/** Edits keep the previous fixed temperature, sent only to models that accept temperature. */
 +const EDIT_TEMPERATURE = 0.7;
 +
++/** Error body for both JSON responses and the NDJSON `error` line. */
++function imageErrorBody(error: unknown) {
++  return { error: error instanceof Error ? error.message : String(error), details: errorDetails(error) };
++}
++
 +/** Errors found before streaming starts (unknown model, missing key, unsupported option) as JSON. */
 +function sendImageError(res: express.Response, route: string, error: unknown) {
 +  console.error(`[PROXY ERROR] ${route} failed:`, error);
 +  if (res.headersSent) return;
-+  const status = error instanceof AppImageError ? error.httpStatus : 500;
-+  res.status(status).json({ error: error instanceof Error ? error.message : String(error), details: errorDetails(error) });
++  res.status(error instanceof AppImageError ? error.httpStatus : 500).json(imageErrorBody(error));
 +}
 +
  // Helper to extract and format HTML text into clean, structured paragraphs
  function parseHtmlToStructuredParagraphs(html: string): string {
    // 1. Remove non-article script/style/nav/header/footer/iframe/comment blocks
-@@ -405,11 +389,6 @@ ${articleText.slice(0, 10000)}
+@@ -405,11 +394,6 @@ ${articleText.slice(0, 10000)}
  // API: Process Collage Generation via Tokyo Cloud Run server proxy
  app.post("/api/generate-collage", async (req, res) => {
    try {
@@ -817,7 +858,7 @@ index 10ac9b2..e607162 100644
      const {
        templateAssets,
        sourceAssets,
-@@ -440,12 +419,12 @@ app.post("/api/generate-collage", async (req, res) => {
+@@ -440,12 +424,12 @@ app.post("/api/generate-collage", async (req, res) => {
        `;
      }
  
@@ -825,8 +866,8 @@ index 10ac9b2..e607162 100644
 -
 -    const ai = new GoogleGenAI({ apiKey });
 -    const parts: any[] = [];
-+    if (temperature !== undefined && (typeof temperature !== "number" || !Number.isFinite(temperature))) {
-+      return res.status(400).json({ error: "temperature 必須是數字。", details: { code: "invalid_request" } });
++    if (!Object.prototype.hasOwnProperty.call(OUTPUT_SPECS, String(ratio))) {
++      return res.status(400).json({ error: `不支援的輸出比例「${ratio ?? ""}」。`, details: { code: "invalid_request", appModelId: String(selectedModel ?? "") } });
 +    }
 +    const parts: ImagePart[] = [];
  
@@ -835,7 +876,7 @@ index 10ac9b2..e607162 100644
  
      let nanoBanana2SourceInstruction = "";
      if (isNanoBanana2 && sourceAssets && sourceAssets.length > 0) {
-@@ -720,90 +699,34 @@ app.post("/api/generate-collage", async (req, res) => {
+@@ -720,90 +704,34 @@ app.post("/api/generate-collage", async (req, res) => {
      
      parts.push({ text: finalPrompt });
  
@@ -902,10 +943,10 @@ index 10ac9b2..e607162 100644
 +      appModelId: String(selectedModel ?? ""),
 +      parts,
 +      systemInstruction,
-+      ratio: String(ratio ?? ""),
++      ratio: String(ratio),
 +      temperature,
 +    });
-+    await streamImageResponse(res, async (signal) => ({ rawImageBase64: await runAppImage(prepared, signal) }));
++    await streamImageResponse(res, async (signal) => ({ rawImageBase64: await runAppImage(prepared, signal) }), imageErrorBody);
 +  } catch (error) {
 +    sendImageError(res, "generate-collage", error);
    }
@@ -938,7 +979,7 @@ index 10ac9b2..e607162 100644
      
      const systemInstruction = `
        ROLE: Expert Professional Photo Retoucher.
-@@ -826,16 +749,6 @@ app.post("/api/edit-image", async (req, res) => {
+@@ -826,16 +754,6 @@ app.post("/api/edit-image", async (req, res) => {
        }
      });
  
@@ -955,7 +996,7 @@ index 10ac9b2..e607162 100644
      if (maskBase64) {
        const maskAsset = await urlToAsset(maskBase64);
        parts.push({
-@@ -887,65 +800,30 @@ app.post("/api/edit-image", async (req, res) => {
+@@ -887,65 +805,28 @@ app.post("/api/edit-image", async (req, res) => {
        parts.push({ text: `Global Edit Instruction: ${prompt}. \n\nEnsure the result maintains the high quality and resolution of the original image.` });
      }
  
@@ -1026,37 +1067,23 @@ index 10ac9b2..e607162 100644
 +      parts.push({ inlineData: { data: extraAsset.data, mimeType: extraAsset.mimeType } });
 +    }
 +
-+    if (temperature !== undefined && (typeof temperature !== "number" || !Number.isFinite(temperature))) {
-+      return res.status(400).json({ error: "temperature 必須是數字。", details: { code: "invalid_request" } });
-+    }
 +    const appModelId = String(selectedModel ?? "");
 +    const prepared = prepareAppImage({
 +      appModelId,
 +      parts,
 +      systemInstruction,
-+      ratio: typeof sourceAspect === "string" ? sourceAspect : "1:1",
++      // The input image's "width:height"; needed only by models that cannot keep the input aspect.
++      ratio: typeof sourceAspect === "string" ? sourceAspect : undefined,
 +      keepInputAspect: true,
 +      // Explicit edit temperatures (logo replacement uses 0.5) are validated; otherwise 0.7 where supported.
 +      temperature: temperature ?? (imageModelView(appModelId)?.temperature ? EDIT_TEMPERATURE : undefined),
 +    });
-+    await streamImageResponse(res, async (signal) => ({ rawImageBase64: await runAppImage(prepared, signal) }));
++    await streamImageResponse(res, async (signal) => ({ rawImageBase64: await runAppImage(prepared, signal) }), imageErrorBody);
 +  } catch (error) {
 +    sendImageError(res, "edit-image", error);
    }
  });
  
-@@ -965,9 +843,10 @@ async function startServer() {
-     });
-   }
- 
--  app.listen(PORT, "0.0.0.0", () => {
-+  const server = app.listen(PORT, "0.0.0.0", () => {
-     console.log(`Server listening on port ${PORT}`);
-   });
-+  server.requestTimeout = 420_000;
- }
- 
- startServer();
 ```
 
 

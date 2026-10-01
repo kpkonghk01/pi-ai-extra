@@ -299,6 +299,8 @@ export interface CollageRequest {
   selectedModel: string;
   /** Only for models that accept temperature; the server rejects it for the others. */
   temperature?: number;
+  /** Aborted by the cancel button: the request stream closes and the server stops polling. */
+  signal?: AbortSignal;
 }
 
 /** Generates one collage with the selected model (one attempt, no fallback) and post-processes it to the ratio's size. */
@@ -318,7 +320,7 @@ export const generateCollage = async (request: CollageRequest): Promise<string> 
     titleConfig: request.titleConfig,
     selectedModel: request.selectedModel,
     temperature: request.temperature,
-  });
+  }, request.signal);
 
   // Post-Processing: Resize to strictly requested dimensions and convert to JPEG on the client side
   const dimensions = outputSpec(request.ratio);
@@ -340,6 +342,7 @@ export interface EditRequest {
   sourceAspect?: string;
   /** Only for models that accept temperature; omitted means the server's edit default (0.7) on those models. */
   temperature?: number;
+  signal?: AbortSignal;
 }
 
 /** Edits one image with the selected model (one attempt, no fallback). */
@@ -353,14 +356,15 @@ export const editImage = async (request: EditRequest): Promise<string> => {
     extraImageBase64: request.extraImageBase64 ?? null,
     sourceAspect: request.sourceAspect,
     temperature: request.temperature,
-  });
+  }, request.signal);
 
   // Convert edited image to JPEG as well to match system standard
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
       resizeAndConvertToJpeg(rawImageBase64, img.width, img.height).then(resolve);
     };
+    img.onerror = () => reject(new Error('無法讀取編輯後的圖片（瀏覽器無法解碼伺服器返回的圖片）。'));
     img.src = rawImageBase64;
   });
 };

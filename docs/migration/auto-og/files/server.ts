@@ -5,6 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 import { AppImageError, errorDetails, prepareAppImage, runAppImage, type ImagePart } from "./server/imageClient";
 import { imageModelView, listImageModels } from "./server/imageModels";
 import { streamImageResponse } from "./server/ndjson";
+import { OUTPUT_SPECS } from "./shared/imageOutput";
 
 const app = express();
 const PORT = 3000;
@@ -44,12 +45,16 @@ app.get("/api/image-models", (req, res) => {
 /** Edits keep the previous fixed temperature, sent only to models that accept temperature. */
 const EDIT_TEMPERATURE = 0.7;
 
+/** Error body for both JSON responses and the NDJSON `error` line. */
+function imageErrorBody(error: unknown) {
+  return { error: error instanceof Error ? error.message : String(error), details: errorDetails(error) };
+}
+
 /** Errors found before streaming starts (unknown model, missing key, unsupported option) as JSON. */
 function sendImageError(res: express.Response, route: string, error: unknown) {
   console.error(`[PROXY ERROR] ${route} failed:`, error);
   if (res.headersSent) return;
-  const status = error instanceof AppImageError ? error.httpStatus : 500;
-  res.status(status).json({ error: error instanceof Error ? error.message : String(error), details: errorDetails(error) });
+  res.status(error instanceof AppImageError ? error.httpStatus : 500).json(imageErrorBody(error));
 }
 
 // Helper to extract and format HTML text into clean, structured paragraphs
@@ -419,8 +424,8 @@ app.post("/api/generate-collage", async (req, res) => {
       `;
     }
 
-    if (temperature !== undefined && (typeof temperature !== "number" || !Number.isFinite(temperature))) {
-      return res.status(400).json({ error: "temperature 必須是數字。", details: { code: "invalid_request" } });
+    if (!Object.prototype.hasOwnProperty.call(OUTPUT_SPECS, String(ratio))) {
+      return res.status(400).json({ error: `不支援的輸出比例「${ratio ?? ""}」。`, details: { code: "invalid_request", appModelId: String(selectedModel ?? "") } });
     }
     const parts: ImagePart[] = [];
 
@@ -703,10 +708,10 @@ app.post("/api/generate-collage", async (req, res) => {
       appModelId: String(selectedModel ?? ""),
       parts,
       systemInstruction,
-      ratio: String(ratio ?? ""),
+      ratio: String(ratio),
       temperature,
     });
-    await streamImageResponse(res, async (signal) => ({ rawImageBase64: await runAppImage(prepared, signal) }));
+    await streamImageResponse(res, async (signal) => ({ rawImageBase64: await runAppImage(prepared, signal) }), imageErrorBody);
   } catch (error) {
     sendImageError(res, "generate-collage", error);
   }
@@ -808,20 +813,18 @@ app.post("/api/edit-image", async (req, res) => {
       parts.push({ inlineData: { data: extraAsset.data, mimeType: extraAsset.mimeType } });
     }
 
-    if (temperature !== undefined && (typeof temperature !== "number" || !Number.isFinite(temperature))) {
-      return res.status(400).json({ error: "temperature 必須是數字。", details: { code: "invalid_request" } });
-    }
     const appModelId = String(selectedModel ?? "");
     const prepared = prepareAppImage({
       appModelId,
       parts,
       systemInstruction,
-      ratio: typeof sourceAspect === "string" ? sourceAspect : "1:1",
+      // The input image's "width:height"; needed only by models that cannot keep the input aspect.
+      ratio: typeof sourceAspect === "string" ? sourceAspect : undefined,
       keepInputAspect: true,
       // Explicit edit temperatures (logo replacement uses 0.5) are validated; otherwise 0.7 where supported.
       temperature: temperature ?? (imageModelView(appModelId)?.temperature ? EDIT_TEMPERATURE : undefined),
     });
-    await streamImageResponse(res, async (signal) => ({ rawImageBase64: await runAppImage(prepared, signal) }));
+    await streamImageResponse(res, async (signal) => ({ rawImageBase64: await runAppImage(prepared, signal) }), imageErrorBody);
   } catch (error) {
     sendImageError(res, "edit-image", error);
   }
@@ -843,10 +846,9 @@ async function startServer() {
     });
   }
 
-  const server = app.listen(PORT, "0.0.0.0", () => {
+  app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server listening on port ${PORT}`);
   });
-  server.requestTimeout = 420_000;
 }
 
 startServer();

@@ -8,13 +8,14 @@ Apply this diff. It:
 - removes the unused `@google/genai` import. The browser never calls Gemini.
 - removes the client-side ratio and quality helpers. `shared/imageOutput.ts` is now the single size table.
 - makes `resizeAndConvertToJpeg` centre-crop instead of stretching. Before, 4:5 output was generated as 3:4 and stretched by about 7%.
-- turns `generateCollage` and `editImage` into functions that take **one options object**, and makes them read the NDJSON stream through `postImageRequest`.
+- turns `generateCollage` and `editImage` into functions that take **one options object** (including an optional `signal` for cancelling), and makes them read the NDJSON stream through `postImageRequest`.
+- makes `editImage` fail with a clear error when the browser cannot decode the returned image, instead of waiting forever.
 
 The old 15-argument positional call was misaligned in the manual studio, `App.tsx`: the model, the temperature and the title settings arrived in the wrong parameters. The options object removes that bug.
 
 ```diff
 diff --git a/services/geminiService.ts b/services/geminiService.ts
-index 37269e2..719be82 100644
+index 37269e2..10dab06 100644
 --- a/services/geminiService.ts
 +++ b/services/geminiService.ts
 @@ -1,5 +1,6 @@
@@ -80,7 +81,7 @@ index 37269e2..719be82 100644
  // Helper to fetch article full text from URL
  export const fetchArticleText = async (url: string): Promise<{ title: string; content: string }> => {
    const response = await fetch('/api/fetch-article', {
-@@ -305,105 +282,78 @@ export const generateViralTitles = async (
+@@ -305,112 +282,89 @@ export const generateViralTitles = async (
    return titles;
  };
  
@@ -149,6 +150,8 @@ index 37269e2..719be82 100644
 +  selectedModel: string;
 +  /** Only for models that accept temperature; the server rejects it for the others. */
 +  temperature?: number;
++  /** Aborted by the cancel button: the request stream closes and the server stops polling. */
++  signal?: AbortSignal;
 +}
  
 -  const { rawImageBase64 } = await response.json();
@@ -172,7 +175,7 @@ index 37269e2..719be82 100644
 +    titleConfig: request.titleConfig,
 +    selectedModel: request.selectedModel,
 +    temperature: request.temperature,
-+  });
++  }, request.signal);
  
    // Post-Processing: Resize to strictly requested dimensions and convert to JPEG on the client side
 -  const dimensions = getTargetDimensions(ratio);
@@ -228,6 +231,7 @@ index 37269e2..719be82 100644
 +  sourceAspect?: string;
 +  /** Only for models that accept temperature; omitted means the server's edit default (0.7) on those models. */
 +  temperature?: number;
++  signal?: AbortSignal;
 +}
  
 -  const { rawImageBase64 } = await response.json();
@@ -245,10 +249,20 @@ index 37269e2..719be82 100644
 +    extraImageBase64: request.extraImageBase64 ?? null,
 +    sourceAspect: request.sourceAspect,
 +    temperature: request.temperature,
-+  });
++  }, request.signal);
  
    // Convert edited image to JPEG as well to match system standard
-   return new Promise((resolve) => {
+-  return new Promise((resolve) => {
++  return new Promise((resolve, reject) => {
+     const img = new Image();
+     img.onload = () => {
+       resizeAndConvertToJpeg(rawImageBase64, img.width, img.height).then(resolve);
+     };
++    img.onerror = () => reject(new Error('無法讀取編輯後的圖片（瀏覽器無法解碼伺服器返回的圖片）。'));
+     img.src = rawImageBase64;
+   });
+ };
+\ No newline at end of file
 ```
 
 
@@ -260,10 +274,15 @@ Apply this diff. `trackTransaction` now takes the estimated cost of one request,
 
 ```diff
 diff --git a/services/usageService.ts b/services/usageService.ts
-index 9bff04e..4099630 100644
+index 9bff04e..1b88232 100644
 --- a/services/usageService.ts
 +++ b/services/usageService.ts
-@@ -6,6 +6,8 @@ export interface MonthlyUsageData {
+@@ -1,3 +1,4 @@
++import { USD_TO_HKD } from '../shared/imageModels';
+ 
+ export interface MonthlyUsageData {
+   inputTokens: number;
+@@ -6,6 +7,8 @@ export interface MonthlyUsageData {
    totalCostHKD: number;
    requestCount: number;
    lastUpdated: number;
@@ -272,17 +291,18 @@ index 9bff04e..4099630 100644
  }
  
  export interface UsageHistory {
-@@ -14,9 +16,7 @@ export interface UsageHistory {
+@@ -14,10 +17,7 @@ export interface UsageHistory {
  
  const STORAGE_KEY = 'og_collage_usage_history';
  
 -// Pricing Constants (Aligned with App.tsx estimation)
 -const PRICE_PER_1M_INPUT_TOKENS_USD = 5.00;
 -const PRICE_PER_OUTPUT_IMAGE_USD = 0.134;
+-const HKD_EXCHANGE_RATE = 7.8;
 +// Estimates only: prices come from GET /api/image-models (see shared/imageModels.ts estimateCostUsd).
- const HKD_EXCHANGE_RATE = 7.8;
  
  export const UsageService = {
+   // Get the current YYYY-MM string (e.g., "2023-10")
 @@ -53,53 +53,25 @@ export const UsageService = {
      return history[yearMonth];
    },
@@ -339,7 +359,7 @@ index 9bff04e..4099630 100644
 +      inputTokens: current.inputTokens + inputTokens,
 +      outputImages: current.outputImages + outputImages,
 +      totalCostUSD: current.totalCostUSD + txCostUSD,
-+      totalCostHKD: current.totalCostHKD + txCostUSD * HKD_EXCHANGE_RATE,
++      totalCostHKD: current.totalCostHKD + txCostUSD * USD_TO_HKD,
 +      requestCount: current.requestCount + 1,
 +      lastUpdated: Date.now(),
 +      unpricedImages: (current.unpricedImages ?? 0) + (costUsd === null ? outputImages : 0),
@@ -358,24 +378,27 @@ index 9bff04e..4099630 100644
 ## Step 12: `App.tsx`
 
 Apply this diff. It:
-- **Selector:** replaces the two-option Gemini `<select>` in the top bar with `ImageModelSelector`, fed by `useImageModels()`. Its options are disabled using the reference count of the visible studio: manual uses the selected templates plus the sources; Autopilot reports its own count.
+- **Selector:** replaces the two-option Gemini `<select>` in the top bar with `ImageModelSelector`, fed by `useImageModels()`.
+  - Its options are disabled using the reference count of the visible studio: manual uses the selected templates plus the sources; Autopilot reports its own count.
+  - The red `ImageModelIssue` hint appears under it when the selected model cannot run.
 - **Model state:** stores the selected model as a string id, and resets an unknown id (such as the removed `nano-banana-2-lite`) to `nano-banana-2`.
 - **Temperature:** passes `disabledReason` to `TemperatureControl`, and sends `temperature` only when the model accepts it.
 - **Generate button:** when the selected model cannot take the current images, the button is disabled and `ImageModelIssue` is shown. The model is never switched automatically.
 - **Collage call:** calls `generateCollage` with the options object, which fixes the misaligned arguments.
 - **Cost:** estimates from the selected model's price at each ratio's resolution, and shows "—" when the price is unknown.
+- **Cancel:** the cancel button also aborts the in-flight request, so the server stops polling the provider. A task that was already submitted is still billed.
 - **Errors:**
   - reports errors to the panel, including which image of the batch failed.
   - shows the Google key screen only for a Google 403 / PERMISSION_DENIED, as before.
-  - mounts `<ErrorPanel />` once.
+  - mounts `<ErrorPanel />` once in `App`, outside `AppContent`, so errors stay visible on the login and key screens.
 - **Key leak:** removes the `process.env.API_KEY` check from the browser.
 
 ```diff
 diff --git a/App.tsx b/App.tsx
-index cb1352d..bb7ce81 100644
+index cb1352d..9089369 100644
 --- a/App.tsx
 +++ b/App.tsx
-@@ -9,6 +9,21 @@ import { AutopilotStudio } from './components/AutopilotStudio';
+@@ -9,6 +9,22 @@ import { AutopilotStudio } from './components/AutopilotStudio';
  import { PWAInstallPrompt } from './components/PWAInstallPrompt';
  import { TemperatureControl } from './components/TemperatureControl';
  import { generateCollage, fileToBase64, compressToLimit } from './services/geminiService';
@@ -391,13 +414,14 @@ index cb1352d..bb7ce81 100644
 +  estimateCostUsd,
 +  estimateInputTokens,
 +  modelIssue,
++  temperatureFor,
 +  type ImageModelView,
 +} from './shared/imageModels';
 +import { outputSpec } from './shared/imageOutput';
  import { UsageService, MonthlyUsageData, UsageHistory } from './services/usageService';
  import { HistoryService } from './services/historyService';
  import { auth, signInWithGoogle, signOut } from './services/firebaseService';
-@@ -177,8 +192,12 @@ const HistoryModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOp
+@@ -177,8 +193,14 @@ const HistoryModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOp
  
  interface UsageMeterProps {
    refreshTrigger: number;
@@ -407,12 +431,14 @@ index cb1352d..bb7ce81 100644
 +  setSelectedModel: (model: string) => void;
 +  imageModels: readonly ImageModelView[];
 +  imageModelsLoading: boolean;
++  imageModelsFailed: boolean;
++  onReloadImageModels: () => void;
 +  /** Reference images the current studio will send; incompatible models are disabled. */
 +  referenceCount: number;
    user: User | null;
    onLogout: () => void;
    currentView: 'manual' | 'autopilot';
-@@ -198,7 +217,10 @@ const UsageMeter: React.FC<UsageMeterProps> = ({
+@@ -198,8 +220,14 @@ const UsageMeter: React.FC<UsageMeterProps> = ({
    setCurrentView,
    isManualStudioHighlighted,
    setIsManualStudioHighlighted,
@@ -420,11 +446,15 @@ index cb1352d..bb7ce81 100644
 +  onOpenPWAInstall,
 +  imageModels,
 +  imageModelsLoading,
++  imageModelsFailed,
++  onReloadImageModels,
 +  referenceCount
  }) => {
++    const currentModel = imageModels.find((model) => model.id === selectedModel);
      const [stats, setStats] = useState<MonthlyUsageData | null>(null);
      const [showHistory, setShowHistory] = useState(false);
-@@ -235,6 +257,7 @@ const UsageMeter: React.FC<UsageMeterProps> = ({
+     const currentMonth = UsageService.getCurrentMonthKey();
+@@ -235,6 +263,7 @@ const UsageMeter: React.FC<UsageMeterProps> = ({
                              <span className="text-gray-800">|</span>
                              <span title="Estimated Cost">
                                  <span className="text-gray-500 font-bold">Cost:</span> <span className="font-bold text-yellow-400">{UsageService.formatHKD(stats.totalCostHKD)}</span>
@@ -432,14 +462,21 @@ index cb1352d..bb7ce81 100644
                              </span>
                              <button 
                                  onClick={() => setShowHistory(true)}
-@@ -294,14 +317,14 @@ const UsageMeter: React.FC<UsageMeterProps> = ({
-                         {/* Service Model Selectors (Pull Down Menu) */}
+@@ -291,17 +320,22 @@ const UsageMeter: React.FC<UsageMeterProps> = ({
+                           </button>
+                         </div>
+ 
+-                        {/* Service Model Selectors (Pull Down Menu) */}
++                        {/* Service Model Selectors (Pull Down Menu), with the reason underneath when the selected model cannot run */}
++                        <div className="flex flex-col items-start shrink-0">
                          <div className="flex items-center gap-1.5 bg-gray-950 px-2 py-1 rounded-lg border border-gray-800 shrink-0">
                              <span className="text-gray-400 text-[11px] font-extrabold px-0.5 hidden lg:inline">Model:</span>
 -                            <select
 +                            <ImageModelSelector
 +                                models={imageModels}
 +                                loading={imageModelsLoading}
++                                failed={imageModelsFailed}
++                                onReload={onReloadImageModels}
                                  value={selectedModel}
 -                                onChange={(e) => setSelectedModel(e.target.value as 'nano-banana-pro' | 'nano-banana-2')}
 -                                className="bg-gray-900 text-white text-xs font-bold py-0.5 px-2 rounded border border-gray-700 focus:outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer"
@@ -451,10 +488,12 @@ index cb1352d..bb7ce81 100644
 +                                referenceCount={referenceCount}
 +                                className="bg-gray-900 text-white text-xs font-bold py-0.5 px-2 rounded border border-gray-700 focus:outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer max-w-[16rem]"
 +                            />
++                        </div>
++                        <ImageModelIssue model={currentModel} referenceCount={referenceCount} className="mt-0.5 max-w-[18rem] text-[10px] font-semibold leading-tight text-red-400" />
                          </div>
                          
                          {user && (
-@@ -386,11 +409,6 @@ const AppContent: React.FC = () => {
+@@ -386,11 +420,6 @@ const AppContent: React.FC = () => {
    }, [prompt]);
    
    const [selectedRatios, setSelectedRatios] = useState<AspectRatio[]>(['16:9']);
@@ -466,13 +505,13 @@ index cb1352d..bb7ce81 100644
    const [selectedCount, setSelectedCount] = useState<1 | 2 | 3>(1);
    const [strictFidelity, setStrictFidelity] = useState<boolean>(false);
    const [preserveBackground, setPreserveBackground] = useState<boolean>(false);
-@@ -417,7 +435,15 @@ const AppContent: React.FC = () => {
+@@ -417,7 +446,15 @@ const AppContent: React.FC = () => {
      }
    }, [temperature]);
  
 -  const [selectedModel, setSelectedModel] = useState<'nano-banana-pro' | 'nano-banana-2'>('nano-banana-2');
 +  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_IMAGE_MODEL_ID);
-+  const { models: imageModels, loading: imageModelsLoading } = useImageModels();
++  const { models: imageModels, loading: imageModelsLoading, failed: imageModelsFailed, reload: reloadImageModels } = useImageModels();
 +  const currentImageModel = findImageModel(imageModels, selectedModel);
 +  const [autopilotReferenceCount, setAutopilotReferenceCount] = useState(0);
 +  // Unknown ids (for example a removed model restored from a saved draft) go back to the default.
@@ -483,7 +522,7 @@ index cb1352d..bb7ce81 100644
    
    const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
    const [isHistoryLoaded, setIsHistoryLoaded] = useState(false);
-@@ -479,12 +505,7 @@ const AppContent: React.FC = () => {
+@@ -479,12 +516,7 @@ const AppContent: React.FC = () => {
              const data = await resp.json().catch(() => ({}));
              setHasApiKey(!!data.hasApiKey);
            } else {
@@ -497,7 +536,7 @@ index cb1352d..bb7ce81 100644
            }
          }
        } catch (e) {
-@@ -645,10 +666,14 @@ const AppContent: React.FC = () => {
+@@ -645,10 +677,14 @@ const AppContent: React.FC = () => {
      }));
    };
  
@@ -514,7 +553,7 @@ index cb1352d..bb7ce81 100644
         showToast("授權失敗。請選擇具有啟用計費功能 (Billing Enabled) 的 Google Cloud Project 專案 API 密鑰。", "error");
         setHasApiKey(false); 
      } else {
-@@ -656,41 +681,20 @@ const AppContent: React.FC = () => {
+@@ -656,46 +692,29 @@ const AppContent: React.FC = () => {
      }
    };
  
@@ -565,8 +604,17 @@ index cb1352d..bb7ce81 100644
 +  }, [manualReferenceCount, prompt, selectedRatios, selectedCount, currentImageModel]);
  
    const manualCancelRef = useRef<boolean>(false);
++  /** Aborts the in-flight image request when the user cancels, so the server stops polling. */
++  const manualAbortRef = useRef<AbortController | null>(null);
  
-@@ -713,6 +717,14 @@ const AppContent: React.FC = () => {
+   const startCollage = async () => {
+     manualCancelRef.current = false;
++    const abortController = new AbortController();
++    manualAbortRef.current = abortController;
+     const apiKey = getEnvApiKey();
+     if (!apiKey) {
+       setHasApiKey(false);
+@@ -713,6 +732,14 @@ const AppContent: React.FC = () => {
          showToast("請選擇至少一種圖片比例比例。", "warning");
          return;
      }
@@ -581,7 +629,7 @@ index cb1352d..bb7ce81 100644
      setIsGenerating(true);
      setGeneratingStatus('Preparing assets...');
      try {
-@@ -722,9 +734,9 @@ const AppContent: React.FC = () => {
+@@ -722,9 +749,9 @@ const AppContent: React.FC = () => {
        
        if (manualCancelRef.current) return;
  
@@ -593,7 +641,7 @@ index cb1352d..bb7ce81 100644
  
        const tasks = [];
        for (const ratio of selectedRatios) {
-@@ -741,22 +753,21 @@ const AppContent: React.FC = () => {
+@@ -741,22 +768,22 @@ const AppContent: React.FC = () => {
          const task = tasks[i];
          setGeneratingStatus(`Generating image ${i + 1} of ${tasks.length} (${task.ratio})...`);
          try {
@@ -618,12 +666,13 @@ index cb1352d..bb7ce81 100644
                  selectedModel,
 -                temperature
 -            );
-+                temperature: currentImageModel.temperature ? temperature : undefined,
++                temperature: temperatureFor(currentImageModel, temperature),
++                signal: abortController.signal,
 +            });
  
              if (manualCancelRef.current) {
                showToast('已取消生成工作', 'info');
-@@ -769,9 +780,11 @@ const AppContent: React.FC = () => {
+@@ -769,9 +796,11 @@ const AppContent: React.FC = () => {
              }
  
              // Track Usage on Success
@@ -638,7 +687,7 @@ index cb1352d..bb7ce81 100644
              setUsageUpdateTrigger(prev => prev + 1);
  
              const newImage: GeneratedImage = {
-@@ -783,7 +796,7 @@ const AppContent: React.FC = () => {
+@@ -783,7 +812,7 @@ const AppContent: React.FC = () => {
              setGeneratedImages(prev => [newImage, ...prev]);
          } catch (err) {
              if (!manualCancelRef.current) {
@@ -647,23 +696,19 @@ index cb1352d..bb7ce81 100644
              }
              break;
          }
-@@ -1102,11 +1115,15 @@ const AppContent: React.FC = () => {
- 
-   return (
-     <div className="min-h-screen bg-gray-50 flex flex-col notranslate">
-+      <ErrorPanel />
-       {/* Top Usage Meter with model controls and logout */}
-       <UsageMeter 
+@@ -1107,6 +1136,11 @@ const AppContent: React.FC = () => {
          refreshTrigger={usageUpdateTrigger} 
          selectedModel={selectedModel}
          setSelectedModel={setSelectedModel}
 +        imageModels={imageModels}
 +        imageModelsLoading={imageModelsLoading}
++        imageModelsFailed={imageModelsFailed}
++        onReloadImageModels={reloadImageModels}
 +        referenceCount={activeReferenceCount}
          user={currentUser}
          onLogout={handleLogout}
          currentView={currentView}
-@@ -1141,6 +1158,8 @@ const AppContent: React.FC = () => {
+@@ -1141,6 +1175,8 @@ const AppContent: React.FC = () => {
            onOpenPWAInstall={() => setForceOpenPWAModal(true)}
            imageModel={selectedModel}
            setImageModel={setSelectedModel}
@@ -672,7 +717,7 @@ index cb1352d..bb7ce81 100644
          />
        ) : (
          <div className="flex flex-col md:flex-row flex-1">
-@@ -1353,6 +1372,7 @@ const AppContent: React.FC = () => {
+@@ -1353,6 +1389,7 @@ const AppContent: React.FC = () => {
                          temperature={temperature}
                          onChange={setTemperature}
                          compact
@@ -680,7 +725,7 @@ index cb1352d..bb7ce81 100644
                      />
  
                      <div>
-@@ -1387,17 +1407,19 @@ const AppContent: React.FC = () => {
+@@ -1387,17 +1424,19 @@ const AppContent: React.FC = () => {
                  </div>
                  <div className="flex justify-between items-center pt-2 border-t border-gray-200 mt-2">
                      <span className="text-gray-800 font-bold">Total (HKD):</span>
@@ -703,7 +748,15 @@ index cb1352d..bb7ce81 100644
                      className="flex-1 bg-sky-600 text-white py-3 rounded-lg font-bold shadow-lg hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
                  >
                      {isGenerating ? <Loader2 className="animate-spin" size={20} /> : <ImageIcon size={20} />}
-@@ -1418,6 +1440,7 @@ const AppContent: React.FC = () => {
+@@ -1407,6 +1446,7 @@ const AppContent: React.FC = () => {
+                     <button 
+                         onClick={() => { 
+                             manualCancelRef.current = true;
++                            manualAbortRef.current?.abort();
+                             setIsGenerating(false);
+                             setGeneratingStatus('');
+                             showToast('已取消生成工作', 'info');
+@@ -1418,6 +1458,7 @@ const AppContent: React.FC = () => {
                      </button>
                  )}
              </div>
@@ -711,7 +764,7 @@ index cb1352d..bb7ce81 100644
              {isGenerating && <p className="text-xs text-center text-gray-500 mt-2"><span key={generatingStatus} className="notranslate">{generatingStatus}</span></p>}
            </div>
  
-@@ -1529,6 +1552,7 @@ const AppContent: React.FC = () => {
+@@ -1529,6 +1570,7 @@ const AppContent: React.FC = () => {
                  onClose={() => setEditorOpen(false)}
                  onUpdateImage={updateEditedImage}
                  selectedModel={selectedModel}
@@ -719,24 +772,44 @@ index cb1352d..bb7ce81 100644
              />
            )}
  
+@@ -1595,9 +1637,13 @@ const AppContent: React.FC = () => {
+ 
+ const App: React.FC = () => {
+   return (
+-    <ErrorBoundary>
+-      <AppContent />
+-    </ErrorBoundary>
++    <>
++      <ErrorBoundary>
++        <AppContent />
++      </ErrorBoundary>
++      {/* Outside AppContent so errors stay visible on the login and key screens too. */}
++      <ErrorPanel />
++    </>
+   );
+ };
+ 
 ```
 
 
 ## Step 13: `components/AutopilotStudio.tsx`
 
 Apply this diff. It:
-- **Props:** takes `imageModels` and `onReferenceCountChange`, and reports how many reference images the next run will send. In semi mode that is the templates plus the sources. In full mode it is the templates only.
-- **Before a run:** blocks both run buttons and shows `ImageModelIssue` when the selected model cannot take them.
-- **Page images in full mode:** keeps only as many extracted page images as the model still accepts, up to the existing 5, and says so in a toast. These images come from the article page, not from the user, and the server already kept only 5.
+- **Props:** takes `imageModels` and `onReferenceCountChange`, and reports how many reference images the next run will send. In semi mode that is the templates plus the sources. In full mode it is the templates, plus the current sources when there is no article URL.
+- **Before a run:** disables a run button and shows `ImageModelIssue` when the selected model cannot take that run's images. The full-mode 「僅重新生成圖片」 button uses the semi count.
+- **Page images in full mode:** keeps only as many extracted page images as the model still accepts, up to the existing 5, and says so in a toast. These images come from the article page, not from the user, and the server already kept only 5. When extraction yields nothing, the existing sources are kept, as before.
+- **Re-check before titles:** after step 1, it checks the images that will really be sent and stops with a clear error before title generation if the model cannot take them.
+- **Cancel:** the cancel button also aborts the in-flight image request.
+- **Editor:** passes `modelView` to its own `ImageEditor`, so the mask note and the logo temperature work in Autopilot too.
 - **Generation:** calls `generateCollage` with the options object, sending `temperature` only to models that accept it, and estimates each image's cost.
 - **Errors:** reports errors to the panel for collage, title generation, article fetching and page-image extraction. The existing toasts stay.
 
 ```diff
 diff --git a/components/AutopilotStudio.tsx b/components/AutopilotStudio.tsx
-index a5d324e..213b03a 100644
+index a5d324e..bc75ac0 100644
 --- a/components/AutopilotStudio.tsx
 +++ b/components/AutopilotStudio.tsx
-@@ -57,6 +57,16 @@ import {
+@@ -57,6 +57,19 @@ import {
  import { UsageService } from '../services/usageService';
  import { asyncStorage, compressDataUrlIfNeeded } from '../utils/storage';
  import { TemperatureControl } from './TemperatureControl';
@@ -744,16 +817,19 @@ index a5d324e..213b03a 100644
 +import { findImageModel } from './useImageModels';
 +import { reportError, type ErrorOperation } from '../services/errorReporter';
 +import {
++  DEFAULT_IMAGE_MODEL_ID,
 +  TEMPERATURE_SUPPORT_NOTE,
 +  estimateCostUsd,
++  estimateInputTokens,
 +  modelIssue,
 +  remainingReferenceCapacity,
++  temperatureFor,
 +  type ImageModelView,
 +} from '../shared/imageModels';
  
  const RATIO_OPTIONS: { label: string; value: AspectRatio; desc: string }[] = [
    { label: '16:9 (OG 圖）', value: '16:9', desc: '1200 x 675 px' },
-@@ -128,8 +138,12 @@ interface AutopilotStudioProps {
+@@ -128,8 +141,12 @@ interface AutopilotStudioProps {
    onNavigateToManual?: () => void;
    setIsManualStudioHighlighted?: (val: boolean) => void;
    onOpenPWAInstall?: () => void;
@@ -768,7 +844,7 @@ index a5d324e..213b03a 100644
  }
  
  export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
-@@ -145,16 +159,20 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -145,16 +162,20 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
    setIsManualStudioHighlighted,
    onOpenPWAInstall,
    imageModel: propImageModel,
@@ -783,7 +859,7 @@ index a5d324e..213b03a 100644
    // Model Selections
    const [textModel, setTextModel] = useState<'gemini-3.8-flash' | 'gemini-3.5-flash-lite'>('gemini-3.8-flash');
 -  const [internalImageModel, setInternalImageModel] = useState<'nano-banana-pro' | 'nano-banana-2'>('nano-banana-2');
-+  const [internalImageModel, setInternalImageModel] = useState<string>('nano-banana-2');
++  const [internalImageModel, setInternalImageModel] = useState<string>(DEFAULT_IMAGE_MODEL_ID);
    const imageModel = propImageModel ?? internalImageModel;
    const setImageModel = propSetImageModel ?? setInternalImageModel;
 +  const currentImageModel = findImageModel(imageModels, imageModel);
@@ -791,7 +867,20 @@ index a5d324e..213b03a 100644
  
    // Article Inputs
    const [articleUrl, setArticleUrl] = useState('');
-@@ -748,6 +766,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -290,9 +311,12 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+   const [statusMessage, setStatusMessage] = useState('');
+ 
+   const cancelRef = useRef<boolean>(false);
++  /** Aborts the in-flight image request on cancel, so the server stops polling the provider. */
++  const abortRef = useRef<AbortController | null>(null);
+ 
+   const handleCancelGeneration = () => {
+     cancelRef.current = true;
++    abortRef.current?.abort();
+     setIsProcessing(false);
+     setIsGeneratingTitles(false);
+     setIsExtractingWebImages(false);
+@@ -748,6 +772,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
        showToast(`成功獲取文章內容 (${res.content.length} 字)，並同步啟動自動撈取素材圖片！`, 'success');
        await extractTask;
      } catch (e: any) {
@@ -799,7 +888,7 @@ index a5d324e..213b03a 100644
        showToast(e.message || '無法抓取網址，請確認網址或直接貼上內文', 'error');
      } finally {
        setIsFetchingUrl(false);
-@@ -782,6 +801,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -782,6 +807,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
        showToast('成功生成 5 組爆款病毒標題！', 'success');
      } catch (e: any) {
        if (!cancelRef.current) {
@@ -807,7 +896,7 @@ index a5d324e..213b03a 100644
          showToast(e.message || '生成標題失敗，請稍後再試', 'error');
        }
      } finally {
-@@ -938,6 +958,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -938,6 +964,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
      } catch (e: any) {
        if (!cancelRef.current) {
          setNoSourceMode(true);
@@ -815,14 +904,18 @@ index a5d324e..213b03a 100644
          showToast(e.message || '抓取網頁圖片失敗，請確認網址或直接上載', 'error');
        }
      } finally {
-@@ -945,6 +966,14 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -945,9 +972,23 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
      }
    };
  
-+  // Reference images the next run sends. Full autopilot: templates only (page images are capped to fit).
++  // Reference images the next run sends. Semi: selected templates + sources. Full: templates, plus the
++  // current sources when there is no article URL (with a URL, page images replace them and are capped to fit).
 +  const plannedTemplateCount = selectedTemplateIds.length > 0 ? selectedTemplateIds.length : Math.min(templates.length, 1);
-+  const plannedReferenceCount = autopilotMode === 'full' ? plannedTemplateCount : selectedTemplateIds.length + sources.length;
-+  const currentModelIssue = currentImageModel ? modelIssue(currentImageModel, plannedReferenceCount) : null;
++  const semiReferenceCount = selectedTemplateIds.length + sources.length;
++  const fullReferenceCount = plannedTemplateCount + (articleUrl.trim() ? 0 : sources.length);
++  const plannedReferenceCount = autopilotMode === 'full' ? fullReferenceCount : semiReferenceCount;
++  const semiModelIssue = currentImageModel ? modelIssue(currentImageModel, semiReferenceCount) : null;
++  const fullModelIssue = currentImageModel ? modelIssue(currentImageModel, fullReferenceCount) : null;
 +  useEffect(() => {
 +    onReferenceCountChange?.(plannedReferenceCount);
 +  }, [plannedReferenceCount, onReferenceCountChange]);
@@ -830,11 +923,16 @@ index a5d324e..213b03a 100644
    // Execute Semi-Autopilot Image Generation
    const handleExecuteSemiGeneration = async () => {
      cancelRef.current = false;
-@@ -956,9 +985,15 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
++    const abortController = new AbortController();
++    abortRef.current = abortController;
+     if (selectedTemplateIds.length === 0) {
+       showToast('請至少上載並選取一張樣板圖片 (Style Templates)', 'warning');
+       return;
+@@ -956,9 +997,15 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
        showToast('請先選擇或輸入欲使用的標題組合', 'warning');
        return;
      }
-+    const semiIssue = currentImageModel ? modelIssue(currentImageModel, selectedTemplateIds.length + sources.length) : '圖片模型清單尚未載入';
++    const semiIssue = currentImageModel ? semiModelIssue : '圖片模型清單尚未載入';
 +    if (semiIssue) {
 +      showToast(`目前圖片模型無法使用：${semiIssue}`, 'warning');
 +      return;
@@ -846,7 +944,7 @@ index a5d324e..213b03a 100644
      try {
        const selectedTemplates = templates.filter(t => selectedTemplateIds.includes(t.id));
        const templateB64s = await Promise.all(selectedTemplates.map(t => fileToBase64(t.file)));
-@@ -990,25 +1025,25 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -990,25 +1037,26 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
            break;
          }
          const ratio = selectedRatios[i];
@@ -876,25 +974,26 @@ index a5d324e..213b03a 100644
 -          temperature
 -        );
 +          selectedModel: imageModel,
-+          temperature: currentImageModel?.temperature ? temperature : undefined,
++          temperature: temperatureFor(currentImageModel, temperature),
++          signal: abortController.signal,
 +        });
  
          if (cancelRef.current) {
            showToast('已取消生成工作', 'info');
-@@ -1019,7 +1054,11 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -1019,7 +1067,11 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
            base64Image = await compressToLimit(base64Image, 2 * 1024 * 1024);
          }
  
 -        UsageService.trackTransaction(500, 1, imageModel, '2K');
 +        UsageService.trackTransaction(
-+          500,
++          estimateInputTokens(templateB64s.length + sourceB64s.length, getEffectiveGlobalPrompt().length),
 +          1,
 +          estimateCostUsd(currentImageModel, { inputImages: templateB64s.length + sourceB64s.length, promptChars: getEffectiveGlobalPrompt().length, ratios: [ratio] }),
 +        );
          onUpdateUsage();
  
          const newImage: GeneratedImage = {
-@@ -1036,6 +1075,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -1036,6 +1088,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
        }
      } catch (e: any) {
        if (!cancelRef.current) {
@@ -902,11 +1001,20 @@ index a5d324e..213b03a 100644
          showToast(e.message || '生成圖片失敗', 'error');
        }
      } finally {
-@@ -1055,10 +1095,17 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -1047,6 +1100,8 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+   // Execute Full-Autopilot Pipeline
+   const handleExecuteFullAutopilot = async () => {
+     cancelRef.current = false;
++    const abortController = new AbortController();
++    abortRef.current = abortController;
+     if (templates.length === 0) {
+       showToast('全自動駕駛模式需要至少上載一張樣板圖片 (Style Templates)', 'warning');
+       return;
+@@ -1055,10 +1110,17 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
        showToast('全自動駕駛模式需要文章網址或文章內容', 'warning');
        return;
      }
-+    const fullIssue = currentImageModel ? modelIssue(currentImageModel, plannedTemplateCount) : '圖片模型清單尚未載入';
++    const fullIssue = currentImageModel ? fullModelIssue : '圖片模型清單尚未載入';
 +    if (fullIssue) {
 +      showToast(`目前圖片模型無法使用：${fullIssue}`, 'warning');
 +      return;
@@ -920,35 +1028,43 @@ index a5d324e..213b03a 100644
  
      try {
        // Step 1: Article Fetching & Concurrent Web Image Extraction
-@@ -1111,11 +1158,15 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
-                 console.error('Error converting extracted image:', err);
+@@ -1112,9 +1174,15 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
                }
              }
--            if (newFiles.length > 0) {
+             if (newFiles.length > 0) {
 -              currentSources = newFiles;
 -              setSources(newFiles);
 -              setNoSourceMode(false);
-+            // Page images are not user-provided: use only as many as the selected model still accepts.
-+            const capacity = currentImageModel ? remainingReferenceCapacity(currentImageModel, plannedTemplateCount) : newFiles.length;
-+            const usable = newFiles.slice(0, Math.min(newFiles.length, capacity));
-+            if (usable.length < newFiles.length) {
-+              showToast(`「${currentImageModel?.label}」最多 ${currentImageModel?.referenceLimit.max} 張參考圖，已有 ${plannedTemplateCount} 張樣板：只使用前 ${usable.length} 張網頁圖片。`, 'info');
++              // Page images are not user-provided: use only as many as the selected model still accepts.
++              const capacity = currentImageModel ? remainingReferenceCapacity(currentImageModel, plannedTemplateCount) : newFiles.length;
++              const usable = newFiles.slice(0, Math.min(newFiles.length, capacity));
++              if (usable.length < newFiles.length) {
++                showToast(`「${currentImageModel?.label}」最多 ${currentImageModel?.referenceLimit.max} 張參考圖，已有 ${plannedTemplateCount} 張樣板：只使用前 ${usable.length} 張網頁圖片。`, 'info');
++              }
++              currentSources = usable;
++              setSources(usable);
++              if (usable.length > 0) setNoSourceMode(false);
              }
-+            currentSources = usable;
-+            setSources(usable);
-+            if (usable.length > 0) setNoSourceMode(false);
            }
          } else {
-           console.error('Extract web images error in full autopilot:', imageResult.reason);
-@@ -1129,6 +1180,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -1128,7 +1196,16 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+ 
        // Step 2: Title Generation
        if (cancelRef.current) return;
++      // Re-check with the images that will really be sent (page images, or the existing sources when
++      // extraction found none) before paying for title generation.
++      const sendIssue = currentImageModel ? modelIssue(currentImageModel, plannedTemplateCount + currentSources.length) : null;
++      if (sendIssue) {
++        failedOperation = 'collage';
++        throw new Error(`目前圖片模型「${currentImageModel?.label}」${sendIssue}。請移除部分素材或改選其他模型。`);
++      }
++
        setActiveStep(2);
 +      failedOperation = 'titles';
        setStatusMessage('自動步驟 2/4: Gemini 深度理解文章並創作 5 組爆款標題...');
        const groups = await generateViralTitles(currentContent, textModel, {
          mainMax,
-@@ -1157,6 +1209,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -1157,6 +1234,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
        // Step 4: Generate Image using active Style Templates & extracted/existing Source Images
        if (cancelRef.current) return;
        setActiveStep(4);
@@ -956,7 +1072,7 @@ index a5d324e..213b03a 100644
        
        const selectedTemplates = templates.filter(t => selectedTemplateIds.includes(t.id));
        const activeTemplates = selectedTemplates.length > 0 ? selectedTemplates : [templates[0]];
-@@ -1190,25 +1243,25 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -1190,25 +1268,26 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
            break;
          }
          const ratio = selectedRatios[i];
@@ -986,25 +1102,26 @@ index a5d324e..213b03a 100644
 -          temperature
 -        );
 +          selectedModel: imageModel,
-+          temperature: currentImageModel?.temperature ? temperature : undefined,
++          temperature: temperatureFor(currentImageModel, temperature),
++          signal: abortController.signal,
 +        });
  
          if (cancelRef.current) {
            showToast('已取消生成工作', 'info');
-@@ -1219,7 +1272,11 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -1219,7 +1298,11 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
            base64Image = await compressToLimit(base64Image, 2 * 1024 * 1024);
          }
  
 -        UsageService.trackTransaction(800, 1, imageModel, '2K');
 +        UsageService.trackTransaction(
-+          800,
++          estimateInputTokens(templateB64s.length + sourceB64s.length, getEffectiveGlobalPrompt().length),
 +          1,
 +          estimateCostUsd(currentImageModel, { inputImages: templateB64s.length + sourceB64s.length, promptChars: getEffectiveGlobalPrompt().length, ratios: [ratio] }),
 +        );
          onUpdateUsage();
  
          const newImage: GeneratedImage = {
-@@ -1236,6 +1293,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -1236,6 +1319,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
        }
      } catch (e: any) {
        if (!cancelRef.current) {
@@ -1012,7 +1129,7 @@ index a5d324e..213b03a 100644
          showToast(e.message || '全自動駕駛執行中途出錯，請檢查步驟', 'error');
        }
      } finally {
-@@ -1915,6 +1973,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -1915,6 +1999,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
                <TemperatureControl
                  temperature={temperature}
                  onChange={setTemperature}
@@ -1020,37 +1137,38 @@ index a5d324e..213b03a 100644
                />
              </div>
            </div>
-@@ -2246,7 +2305,8 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -2246,7 +2331,8 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
              ) : autopilotMode === 'semi' ? (
                <button
                  onClick={handleExecuteSemiGeneration}
 -                className="w-full bg-gradient-to-r from-sky-600 to-sky-700 hover:from-sky-700 hover:to-sky-800 text-white font-black py-3.5 px-6 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 text-sm tracking-wide cursor-pointer"
-+                disabled={currentModelIssue !== null}
++                disabled={semiModelIssue !== null}
 +                className="disabled:opacity-50 disabled:cursor-not-allowed w-full bg-gradient-to-r from-sky-600 to-sky-700 hover:from-sky-700 hover:to-sky-800 text-white font-black py-3.5 px-6 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 text-sm tracking-wide cursor-pointer"
                >
                  <ImageIcon size={18} />
                  <span>立刻生成新的 OG 圖片</span>
-@@ -2256,7 +2316,8 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -2256,7 +2342,8 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
                  <button
                    type="button"
                    onClick={handleExecuteFullAutopilot}
 -                  className="flex-1 bg-gradient-to-r from-amber-500 via-sky-600 to-sky-700 hover:from-amber-600 hover:to-sky-800 text-white font-black py-3.5 sm:py-4 px-4 sm:px-6 rounded-xl transition-all shadow-xl flex items-center justify-center gap-2 text-xs sm:text-sm tracking-wide transform hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
-+                  disabled={currentModelIssue !== null}
++                  disabled={fullModelIssue !== null}
 +                  className="disabled:opacity-50 disabled:cursor-not-allowed flex-1 bg-gradient-to-r from-amber-500 via-sky-600 to-sky-700 hover:from-amber-600 hover:to-sky-800 text-white font-black py-3.5 sm:py-4 px-4 sm:px-6 rounded-xl transition-all shadow-xl flex items-center justify-center gap-2 text-xs sm:text-sm tracking-wide transform hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
                  >
                    <Zap size={18} className="text-amber-300 animate-bounce shrink-0" />
                    <span>🚀 一鍵全自動生成</span>
-@@ -2264,7 +2325,8 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -2264,14 +2351,16 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
                  <button
                    type="button"
                    onClick={handleExecuteSemiGeneration}
 -                  className="bg-sky-900 hover:bg-sky-950 text-white font-black py-3.5 sm:py-4 px-4 sm:px-5 rounded-xl border border-sky-400/40 shadow-lg hover:border-amber-400/80 transition-all flex items-center justify-center gap-2 text-xs sm:text-sm cursor-pointer shrink-0 active:scale-[0.99]"
-+                  disabled={currentModelIssue !== null}
+-                  title="使用當前標題與素材重新合成 OG 圖片"
++                  disabled={semiModelIssue !== null}
 +                  className="disabled:opacity-50 disabled:cursor-not-allowed bg-sky-900 hover:bg-sky-950 text-white font-black py-3.5 sm:py-4 px-4 sm:px-5 rounded-xl border border-sky-400/40 shadow-lg hover:border-amber-400/80 transition-all flex items-center justify-center gap-2 text-xs sm:text-sm cursor-pointer shrink-0 active:scale-[0.99]"
-                   title="使用當前標題與素材重新合成 OG 圖片"
++                  title={semiModelIssue ?? '使用當前標題與素材重新合成 OG 圖片'}
                  >
                    <RefreshCw size={16} className="text-amber-400 shrink-0" />
-@@ -2272,6 +2334,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+                   <span>僅重新生成圖片</span>
                  </button>
                </div>
              )}
@@ -1058,6 +1176,14 @@ index a5d324e..213b03a 100644
            </div>
  
            {/* Progress Indicator for Full Autopilot */}
+@@ -3130,6 +3219,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+               setEditingImageItem(null);
+             }}
+             selectedModel={imageModel}
++            modelView={currentImageModel}
+           />
+         );
+       })()}
 ```
 
 
@@ -1072,7 +1198,7 @@ Apply this diff. It:
 
 ```diff
 diff --git a/components/ImageEditor.tsx b/components/ImageEditor.tsx
-index f00cab3..0f2fbd9 100644
+index f00cab3..913f74b 100644
 --- a/components/ImageEditor.tsx
 +++ b/components/ImageEditor.tsx
 @@ -6,12 +6,17 @@ import {
@@ -1080,7 +1206,7 @@ index f00cab3..0f2fbd9 100644
  import { GeneratedImage } from '../types';
  import { editImage } from '../services/geminiService';
 +import { reportError } from '../services/errorReporter';
-+import { MASK_REFERENCE_ONLY_NOTE, type ImageModelView } from '../shared/imageModels';
++import { DEFAULT_IMAGE_MODEL_ID, MASK_REFERENCE_ONLY_NOTE, temperatureFor, type ImageModelView } from '../shared/imageModels';
  
  interface ImageEditorProps {
    image: GeneratedImage;
@@ -1099,7 +1225,7 @@ index f00cab3..0f2fbd9 100644
  ];
  
 -const ImageEditor: React.FC<ImageEditorProps> = ({ image, onClose, onUpdateImage, selectedModel = 'nano-banana-pro' }) => {
-+const ImageEditor: React.FC<ImageEditorProps> = ({ image, onClose, onUpdateImage, selectedModel = 'nano-banana-2', modelView }) => {
++const ImageEditor: React.FC<ImageEditorProps> = ({ image, onClose, onUpdateImage, selectedModel = DEFAULT_IMAGE_MODEL_ID, modelView }) => {
    const [mode, setMode] = useState<'view' | 'prompt' | 'mask' | 'multi-mask' | 'crop' | 'replace-logo'>('view');
    const [prompt, setPrompt] = useState('');
    const [isLoading, setIsLoading] = useState(false);
@@ -1135,7 +1261,7 @@ index f00cab3..0f2fbd9 100644
 +        isMultiMask: false,
 +        selectedModel,
 +        // Logo replacement keeps its lower temperature on models that accept temperature.
-+        temperature: modelView?.temperature ? 0.5 : undefined,
++        temperature: temperatureFor(modelView, 0.5),
 +        extraImageBase64: logoDataUrl,
 +        sourceAspect: sourceAspect(),
 +      });

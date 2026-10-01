@@ -30,11 +30,13 @@
 - `npm run lint`（tsc）和 `npm run build` 通過，`build` / `start` scripts 不變（ESM，`dist/server.mjs`）。
 - 用假的 `GEMINI_API_KEY` build 後搜尋 `dist/`，找不到 key。
 - 用 `node dist/server.mjs` 實際呼叫：
-  - `GET /api/image-models`：9 個 model，上限、temperature 支援和 key 可用性都正確；沒有 `TOAPIS_API_KEY` 時，ToAPIs 的 5 個 model 標示為不可用並附上原因。
+  - `GET /api/image-models`：9 個 model，provider model、上限、接受的圖片格式（Seedream 只接受 PNG / JPEG）、temperature 支援和 key 可用性都正確；沒有 `TOAPIS_API_KEY` 時，ToAPIs 的 5 個 model 標示為不可用並附上原因。
   - collage：Google（無效 key）經 NDJSON 回傳含 provider、model、code 的錯誤；ToAPIs 缺 key 回 503；KIE 帶 temperature 回 400；舊的 `nano-banana-2-lite` 回 400；16 張參考圖對上限 14 張的 model 回 400（不會刪圖）。
-  - edit：Google（無效 key）經 NDJSON 回傳錯誤；KIE 帶 temperature 回 400。送圖順序 base → mask → extra 由 route 程式碼確認。
+  - collage 的輸入檢查：未知比例（例如 `7:3`）回 400；temperature 不是數字回 400。
+  - edit：Google（無效 key）經 NDJSON 回傳錯誤；KIE 帶 temperature 回 400；ToAPIs 缺少原圖比例時回 400，不會當作 1:1 處理。送圖順序 base → mask → extra 由 route 程式碼確認。
 - 各 model 實際送出的比例、解像度、temperature，以及規則放在 `systemInstruction` 還是 prompt 開頭，都已逐一檢查（見下面「用戶會看到的改變」）。
 - NDJSON keep-alive：21 秒的任務在第 10、20 秒各收到一次 ping，第 21 秒完成；client 中途斷線時，server 會停止輪詢。
+- 一致性：`changes.diff` 套用到原始 auto-og 後，結果與 `files/` 逐字相同；三份 prompt 內嵌的 code block 與 `files/`、`changes.diff` 逐字相同。
 
 **未驗證**：UI 沒有在瀏覽器實際操作過，也沒有用真 key 出圖。這兩項要在 AI Studio 按下面的驗證清單完成。
 
@@ -80,10 +82,13 @@
   - 不提供 Grok：collage 的規則併入 prompt 後有 11.6k 至 16.4k 字元，必定超過 Grok 的 8,000 字元上限。
 - **參考圖上限**：
   - 選擇前已超限：上限不夠的 model 變灰，並標示「最多 N 張參考圖，已選 M 張」。
-  - 選擇後再加圖導致超限：不擋加圖，Generate 按鈕變灰並顯示紅字提示，不會自動換 model。
-  - 全自動模式擷取網頁圖：只取 model 還容得下的張數（最多 5 張），並用 toast 告知。
+  - 選擇後再加圖導致超限：不擋加圖，頂部選單下方和 Generate 按鈕旁都顯示紅字提示，Generate 按鈕變灰，不會自動換 model。
+  - 全自動模式擷取網頁圖：只取 model 還容得下的張數（最多 5 張），並用 toast 告知。擷取不到圖片時，照舊沿用現有素材。
+  - 全自動模式在生成標題之前，會用實際要送出的圖片再檢查一次；超限就直接停止並報錯，不會先付費生成標題。
 - **Temperature**：只有 Google 直連的 Nano Banana 2 / Pro 可調。其他 model 的控制項會變灰並說明原因，原本設定的值會保留。
-- **錯誤面板**：平時不顯示。出錯時在右下角出現，蓋在編輯器之上，內容包括 provider、model、code、HTTP status、task id 和批次中的第幾張，並提供「複製錯誤資訊」、收起和關閉。標題生成和讀取文章的錯誤也會進入面板。
+- **錯誤面板**：平時不顯示。出錯時在右下角出現，蓋在編輯器之上，內容包括 provider、model、code、HTTP status、task id 和批次中的第幾張，並提供「複製錯誤資訊」、收起和關閉。標題生成、讀取文章和載入模型清單的錯誤也會進入面板；在登入或選 key 畫面時也看得到。
+- **模型清單載入失敗**：選單會變成「模型清單載入失敗，按此重試」按鈕。
+- **取消**：取消按鈕現在會同時中止進行中的請求，server 隨即停止輪詢 provider（已提交的任務仍會收費）。
 - **不再 fallback**：選哪個 model 就只用哪個，不會再在 Pro、Flash、Lite 之間自動輪試。
 - **比例和解像度**：
   - 送 model 原生支援的比例，否則送最接近的比例。例如 4:5 直接送；300x250 送 5:4，Seedream 則送 4:3；KIE GPT Image 2 在 2K 不支援 4:5，所以送 3:4。
@@ -110,8 +115,13 @@
 
 ## 注意事項
 
-- 已提交給 provider 的任務，即使 client 中途斷線也會照常收費；server 只會停止輪詢。
+- 已提交給 provider 的任務，即使 client 中途斷線或按取消，也會照常收費；server 只會停止輪詢。
 - 每次 request 只送一次，不會自動重送已計費的請求。
+- 長任務的上限由各 package 決定（KIE 10 分鐘、ToAPIs 6 分鐘、Google 5 分鐘）。Node 本身沒有 response timeout，所以 server 不需要另外設定 timeout；60 秒的 proxy idle timeout 由 NDJSON ping 處理。
+- ToAPIs Seedream 預設會加浮水印，這裡固定送 `watermark: false`，與原本 Gemini 出圖一致。
+- 「Authentication Required」選 key 畫面只在 Google 回 403 / PERMISSION_DENIED 時出現（與原本相同）；KIE、ToAPIs 的錯誤只進錯誤面板。
+- Edit 對 Google model 預設送 temperature 0.7；替換 Logo 照舊送 0.5。
+- KIE GPT Image 2 在 2K 不支援 5:4、4:5 等比例。catalogue 只把這點寫在說明文字裡，所以 `server/imageClient.ts` 另外列出，選比例時會避開。
 - 遷移後 Google 也改為把模板、素材圖片放在一段 prompt 加依序排列的參考圖，文字標籤原樣保留（與 open-graph-single 相同的做法）。
 
 ## Rollback

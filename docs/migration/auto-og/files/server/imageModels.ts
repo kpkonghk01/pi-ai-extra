@@ -183,6 +183,8 @@ function toView(entry: RegistryEntry, env: NodeJS.ProcessEnv): ImageModelView {
     description: entry.description,
     provider: entry.provider,
     providerLabel: PROVIDER_LABELS[entry.provider],
+    providerModel: entry.model,
+    acceptedMimeTypes: main ? [...main.referenceImages.acceptedMimeTypes] : [],
     referenceLimit: {
       min: infos.length > 0 ? Math.min(...infos.map((info) => info.referenceImages.min)) : 0,
       max: maxes.includes(null) ? null : Math.max(0, ...maxes.map((max) => max ?? 0)),

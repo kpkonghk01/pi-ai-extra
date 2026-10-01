@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { generateKieImage, isPiAiExtraError, type ImageGenerationResult, type KieImageRequest } from '@hk01/pi-ai-extra-kie';
+import { generateKieImage, isPiAiExtraError, type ImageGenerationResult, type KieImageRequest, type PiAiExtraError } from '@hk01/pi-ai-extra-kie';
 import { generateToapisImage, type ToapisImageRequest } from '@hk01/pi-ai-extra-toapis';
 // The Google 0.2.0 type includes the optional temperature / systemInstruction catalogue fields.
 import { generateGoogleImage, type GoogleImageRequest, type ImageModelInfo } from '@hk01/pi-ai-extra-google';
-import { TEMPERATURE_SUPPORT_NOTE, type ImageProvider } from '../shared/imageModels';
+import { TEMPERATURE_SUPPORT_NOTE, type ImageErrorDetails, type ImageProvider } from '../shared/imageModels';
 import { outputSpec, ratioValue } from '../shared/imageOutput';
 import { findRegistryEntry, providerKey, resolveOperation, secretName } from './imageModels';
 
@@ -24,23 +24,20 @@ export interface AppImageRequest {
   parts: readonly ImagePart[];
   /** Model rules. Sent as systemInstruction where supported, otherwise placed before the prompt. */
   systemInstruction: string;
-  /** App ratio preset ("16:9", "300x250", …) or the input image's "width:height"; decides aspect ratio and resolution. */
-  ratio: string;
+  /**
+   * App ratio preset ("16:9", "300x250", …) or the input image's "width:height". Decides the
+   * resolution, and the aspect ratio unless the input aspect is kept. Required when an aspect
+   * ratio has to be chosen.
+   */
+  ratio: string | undefined;
   /** Edits: keep the input image's aspect where the model can (Google: omit; KIE: "auto"). */
   keepInputAspect?: boolean;
-  temperature?: number | undefined;
+  /** Raw request value; validated here (number, and accepted by the model). */
+  temperature?: unknown;
 }
 
 /** What the UI shows, and users copy into bug reports, for a failed request. */
-export interface AppErrorDetails {
-  appModelId?: string;
-  provider?: string;
-  model?: string;
-  code?: string;
-  status?: number;
-  taskId?: string;
-  providerCode?: string;
-}
+export type AppErrorDetails = ImageErrorDetails;
 
 export class AppImageError extends Error {
   readonly details: AppErrorDetails;
@@ -54,12 +51,22 @@ export class AppImageError extends Error {
   }
 }
 
-/** Details for an API error response. Unknown errors still report their message elsewhere; nothing is hidden. */
+function packageErrorDetails(error: PiAiExtraError, appModelId?: string): AppErrorDetails {
+  return {
+    ...(appModelId ? { appModelId } : {}),
+    provider: error.provider,
+    model: error.model,
+    code: error.code,
+    ...(error.taskId ? { taskId: error.taskId } : {}),
+    ...(error.status !== undefined ? { status: error.status } : {}),
+    ...(error.providerCode ? { providerCode: error.providerCode } : {}),
+  };
+}
+
+/** Details for an API error response. Unknown errors still report their message; nothing is hidden. */
 export function errorDetails(error: unknown): AppErrorDetails {
   if (error instanceof AppImageError) return error.details;
-  if (isPiAiExtraError(error)) {
-    return { provider: error.provider, model: error.model, code: error.code, taskId: error.taskId, status: error.status };
-  }
+  if (isPiAiExtraError(error)) return packageErrorDetails(error);
   return { code: 'unexpected' };
 }
 
@@ -76,20 +83,21 @@ export interface PreparedImageRequest {
   temperature: number | undefined;
 }
 
-/** KIE GPT Image 2 documents ratios that are unavailable at 2K/4K (catalogue notes; the package enforces them). */
+/**
+ * KIE GPT Image 2 ratios that are unavailable at 2K. The catalogue states this only as a note
+ * (the package rejects them), so it is repeated here to pick a ratio the package accepts.
+ */
 const KIE_GPT_UNSUPPORTED_AT: Record<string, readonly string[]> = {
   '2K': ['5:4', '4:5', '3:1', '1:3', '9:21'],
-  '4K': ['1:1', '3:1', '1:3', '9:21'],
 };
 
 /** The model's own ratio for an app preset: an exact match, otherwise the nearest supported ratio. */
-function pickAspectRatio(info: ImageModelInfo, ratio: string, resolution: string | undefined): string | undefined {
+function pickAspectRatio(info: ImageModelInfo, ratio: string, target: number, resolution: string | undefined): string | undefined {
   if (!info.aspectRatio) return undefined;
   const blocked = info.id.startsWith('gpt-image-2-') && resolution ? (KIE_GPT_UNSUPPORTED_AT[resolution] ?? []) : [];
   const candidates = info.aspectRatio.values.filter((value) => value !== 'auto' && !blocked.includes(value));
   if (candidates.includes(ratio)) return ratio;
-  const target = ratioValue(ratio) ?? 1;
-  const distance = (value: string): number => Math.abs(Math.log((ratioValue(value) ?? 1) / target));
+  const distance = (value: string): number => Math.abs(Math.log((ratioValue(value) ?? Number.POSITIVE_INFINITY) / target));
   return [...candidates].sort((a, b) => distance(a) - distance(b))[0];
 }
 
@@ -118,9 +126,22 @@ export function partsToPrompt(parts: readonly ImagePart[]): { prompt: string; re
   return { prompt: lines.join('\n\n'), referenceImages };
 }
 
-function aspectRatioFor(info: ImageModelInfo, request: AppImageRequest, resolution: string | undefined): string | undefined {
+function aspectRatioFor(info: ImageModelInfo, request: AppImageRequest, resolution: string | undefined, base: AppErrorDetails): string | undefined {
   const kept = request.keepInputAspect ? inputAspectValue(info) : null;
-  return kept === null ? pickAspectRatio(info, request.ratio, resolution) : kept;
+  if (kept !== null) return kept;
+  const target = request.ratio === undefined ? undefined : ratioValue(request.ratio);
+  if (target === undefined || !Number.isFinite(target) || target <= 0) {
+    throw new AppImageError(`無法判斷圖片比例（收到「${request.ratio ?? ''}」），無法為 ${info.id} 選擇比例。`, { ...base, code: 'invalid_request' }, { httpStatus: 400 });
+  }
+  return pickAspectRatio(info, request.ratio ?? '', target, resolution);
+}
+
+function validTemperature(value: unknown, base: AppErrorDetails): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new AppImageError('temperature 必須是數字。', { ...base, code: 'invalid_request' }, { httpStatus: 400 });
+  }
+  return value;
 }
 
 /** Validates everything that can fail before a provider is called (HTTP 400 / 503). */
@@ -139,7 +160,8 @@ export function prepareAppImage(request: AppImageRequest): PreparedImageRequest 
   if (!apiKey) {
     throw new AppImageError(`伺服器未設定 ${secretName(entry.provider)}，無法使用 ${entry.label}。`, { ...target, code: 'missing_key' }, { httpStatus: 503 });
   }
-  if (request.temperature !== undefined && !info.temperature) {
+  const temperature = validTemperature(request.temperature, target);
+  if (temperature !== undefined && !info.temperature) {
     throw new AppImageError(`${entry.label} 不支援 Temperature。${TEMPERATURE_SUPPORT_NOTE}`, { ...target, code: 'temperature_unsupported' }, { httpStatus: 400 });
   }
   const { min, max } = info.referenceImages;
@@ -148,7 +170,7 @@ export function prepareAppImage(request: AppImageRequest): PreparedImageRequest 
     throw new AppImageError(`${entry.label} 接受 ${limit}參考圖，這次有 ${referenceImages.length} 張（圖片不會被自動刪減）。`, { ...target, code: 'reference_limit' }, { httpStatus: 400 });
   }
 
-  const wanted = outputSpec(request.ratio).resolution;
+  const wanted = outputSpec(request.ratio ?? '').resolution;
   const resolution = info.resolution?.values.includes(wanted) ? wanted : undefined;
   const separateRules = info.systemInstruction === true;
   return {
@@ -158,9 +180,9 @@ export function prepareAppImage(request: AppImageRequest): PreparedImageRequest 
     prompt: separateRules ? prompt : `${request.systemInstruction.trim()}\n\n${prompt}`,
     systemInstruction: separateRules ? request.systemInstruction : undefined,
     referenceImages,
-    aspectRatio: aspectRatioFor(info, request, resolution),
+    aspectRatio: aspectRatioFor(info, request, resolution, target),
     resolution,
-    temperature: request.temperature,
+    temperature,
   };
 }
 
@@ -179,16 +201,7 @@ function toAppError(error: unknown, appModelId: string): Error {
             ? `${where} 帳戶額度不足`
             : `${where} 生成失敗 [${error.code}]`;
   const detail = error.message.replace(/^\[[^\]]+\]\s*/, '');
-  const details: AppErrorDetails = {
-    appModelId,
-    provider: error.provider,
-    model: error.model,
-    code: error.code,
-    ...(error.taskId ? { taskId: error.taskId } : {}),
-    ...(error.status !== undefined ? { status: error.status } : {}),
-    ...(error.providerCode ? { providerCode: error.providerCode } : {}),
-  };
-  return new AppImageError(`${prefix}：${detail}`, details, { cause: error });
+  return new AppImageError(`${prefix}：${detail}`, packageErrorDetails(error, appModelId), { cause: error });
 }
 
 /** Provider-reported usage, logged per task id for later per-app recording. */

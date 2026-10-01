@@ -37,6 +37,7 @@ declare module "react" {
     type ReactNode = any;
     function useState<S>(initial: S | (() => S)): [S, (value: S | ((previous: S) => S)) => void];
     function useEffect(effect: () => void | (() => void), deps?: readonly unknown[]): void;
+    function useCallback<T extends (...args: never[]) => unknown>(callback: T, deps: readonly unknown[]): T;
   }
   export = React;
 }

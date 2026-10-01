@@ -22,6 +22,17 @@ export interface PriceEstimate {
   inputPerMillionTokensUsd: number;
 }
 
+/** Error fields returned for failed image requests (server/imageClient.ts) and shown by the ErrorPanel. */
+export interface ImageErrorDetails {
+  appModelId?: string;
+  provider?: string;
+  model?: string;
+  code?: string;
+  status?: number;
+  taskId?: string;
+  providerCode?: string;
+}
+
 /** One entry of GET /api/image-models. */
 export interface ImageModelView {
   id: string;
@@ -29,6 +40,10 @@ export interface ImageModelView {
   description: string;
   provider: ImageProvider;
   providerLabel: string;
+  /** Provider model operation used with reference images (KIE GPT Image 2 uses text-to-image without). */
+  providerModel: string;
+  /** Reference image types the model accepts (the app sends JPEG or PNG). */
+  acceptedMimeTypes: string[];
   /** Reference images the model accepts; max null = no documented limit. */
   referenceLimit: { min: number; max: number | null };
   /** Accepted temperature range, or null when the model does not accept temperature. */
@@ -51,6 +66,11 @@ export const TEMPERATURE_SUPPORT_NOTE =
 
 export const MASK_REFERENCE_ONLY_NOTE =
   '此模型以參考圖方式理解遮罩，局部編輯可能影響遮罩以外的範圍；需要精準局部修改時建議使用 Nano Banana 系列。';
+
+/** `value` when the model accepts temperature, otherwise undefined (the server rejects it for the others). */
+export function temperatureFor(model: ImageModelView | undefined, value: number): number | undefined {
+  return model?.temperature ? value : undefined;
+}
 
 /** Why `model` cannot take `referenceCount` reference images, or null when it can. */
 export function referenceIssue(model: ImageModelView, referenceCount: number): string | null {
