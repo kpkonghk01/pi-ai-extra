@@ -35,6 +35,7 @@ export {
   type ImageProgressListener,
   type ImageTokenUsage,
   type ImageUsage,
+  type NumericRangeSpec,
   type PiAiExtraErrorCode,
   type PiAiExtraOperation,
   type ReferenceImageSpec,

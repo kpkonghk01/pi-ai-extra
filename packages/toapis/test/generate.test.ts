@@ -120,6 +120,19 @@ describe("generateToapisImage", () => {
     assert.equal(fake.calls.length, 0);
   });
 
+  it("does not list or accept temperature or a system instruction (undocumented by ToAPIs)", async () => {
+    for (const model of TOAPIS_IMAGE_MODELS) {
+      assert.equal(model.temperature, undefined, model.id);
+      assert.equal(model.systemInstruction, undefined, model.id);
+    }
+    const fake = createFakeFetch(routes());
+    for (const extra of [{ temperature: 0.7 }, { systemInstruction: "rules" }]) {
+      const request = { ...base, model: "gemini-3.1-flash-image-preview", prompt: "p", ...extra } as unknown as ToapisImageRequest;
+      await assert.rejects(generateToapisImage({ ...request, fetch: fake.fetch }), isCode("invalid_request"), JSON.stringify(extra));
+    }
+    assert.equal(fake.calls.length, 0);
+  });
+
   it("imposes no package-side reference cap on GPT Image 2.5 (undocumented)", async () => {
     const fake = createFakeFetch(routes());
     const referenceImages = Array.from({ length: 20 }, (_, index) => `https://cdn.example.com/${index}.png`);

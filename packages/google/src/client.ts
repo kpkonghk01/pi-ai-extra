@@ -33,6 +33,8 @@ export interface GenerateContentInput {
   aspectRatio: string | undefined;
   imageSize: string | undefined;
   safetySettings: readonly GoogleSafetySetting[] | undefined;
+  temperature: number | undefined;
+  systemInstruction: string | undefined;
   headers: Record<string, string>;
   timeoutMs: number;
   maxOutputBytes: number;
@@ -104,16 +106,21 @@ export async function generateContentImages(
   input: GenerateContentInput,
 ): Promise<{ images: ImageBytes[]; responseId: string | undefined; usage: ImageUsage | undefined }> {
   const imageConfig = omitUndefined({ aspectRatio: input.aspectRatio, imageSize: input.imageSize });
-  const body = {
+  const generationConfig = omitUndefined({
+    temperature: input.temperature,
+    imageConfig: Object.keys(imageConfig).length > 0 ? imageConfig : undefined,
+  });
+  const body = omitUndefined({
     contents: [
       {
         role: "user",
         parts: [{ text: input.prompt }, ...input.images.map((image) => ({ inlineData: { mimeType: image.mimeType, data: image.base64 } }))],
       },
     ],
-    generationConfig: Object.keys(imageConfig).length > 0 ? { imageConfig } : {},
-    ...(input.safetySettings && input.safetySettings.length > 0 ? { safetySettings: input.safetySettings } : {}),
-  };
+    systemInstruction: input.systemInstruction === undefined ? undefined : { parts: [{ text: input.systemInstruction }] },
+    generationConfig,
+    safetySettings: input.safetySettings && input.safetySettings.length > 0 ? input.safetySettings : undefined,
+  });
 
   const response = await requestJson(
     ctx,

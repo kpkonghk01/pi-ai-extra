@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { baseRequestShape, option, type ImageModelInfo, type ReferenceImageSpec } from "@hk01/pi-ai-extra-internal";
+import { baseRequestShape, option, type ImageModelInfo, type NumericRangeSpec, type ReferenceImageSpec } from "@hk01/pi-ai-extra-internal";
 import { GOOGLE_PROVIDER_ID } from "./constants.ts";
 
 export type GoogleImageModelId = "gemini-3.1-flash-image" | "gemini-3-pro-image";
@@ -29,6 +29,8 @@ export interface NormalizedGoogleRequest {
   aspectRatio?: string | undefined;
   resolution?: string | undefined;
   safetySettings?: GoogleSafetySetting[] | undefined;
+  temperature?: number | undefined;
+  systemInstruction?: string | undefined;
 }
 
 interface GoogleModelDefinition {
@@ -48,6 +50,9 @@ const HARM_CATEGORIES = [
   "HARM_CATEGORY_CIVIC_INTEGRITY",
 ] as const;
 const THRESHOLDS = ["BLOCK_LOW_AND_ABOVE", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_ONLY_HIGH", "BLOCK_NONE", "OFF"] as const;
+
+/** Gemini `generationConfig.temperature` range (generate-content reference). */
+const TEMPERATURE_RANGE: NumericRangeSpec = { min: 0, max: 2 };
 
 /** Gemini inline request data is limited to about 20 MB. */
 const INLINE_LIMIT_BYTES = 20 * 1024 * 1024;
@@ -86,6 +91,8 @@ function definition(
     background: null,
     outputFormat: null,
     watermark: false,
+    temperature: TEMPERATURE_RANGE,
+    systemInstruction: true,
     notes: [...COMMON_NOTES, ...notes],
   };
   return {
@@ -95,6 +102,11 @@ function definition(
       aspectRatio: z.enum(ratios).optional(),
       resolution: z.enum(sizes).optional(),
       safetySettings: safetySettingsSchema,
+      temperature: z.number().min(TEMPERATURE_RANGE.min).max(TEMPERATURE_RANGE.max).optional(),
+      systemInstruction: z
+        .string()
+        .refine((text) => text.trim().length > 0, { message: "systemInstruction must not be empty" })
+        .optional(),
     }),
   };
 }

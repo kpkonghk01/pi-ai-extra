@@ -69,6 +69,45 @@ describe("generateGoogleImage", () => {
     assert.equal(result.taskId, "resp_1");
   });
 
+  it("sends temperature in generationConfig and the system instruction as a text Content", async () => {
+    const fake = createFakeFetch([{ method: "POST", url: PRO_URL, respond: imageResponse }]);
+    await generateGoogleImage({
+      apiKey: "k",
+      model: "gemini-3-pro-image",
+      prompt: "a poster",
+      temperature: 0.7,
+      systemInstruction: "Follow the template strictly.",
+      fetch: fake.fetch,
+    });
+    assert.deepEqual(bodyOf(fake.calls[0]), {
+      contents: [{ role: "user", parts: [{ text: "a poster" }] }],
+      systemInstruction: { parts: [{ text: "Follow the template strictly." }] },
+      generationConfig: { temperature: 0.7 },
+    });
+  });
+
+  it("omits temperature and the system instruction when unset or undefined, and keeps imageConfig beside temperature", async () => {
+    const fake = createFakeFetch([{ method: "POST", url: FLASH_URL, respond: imageResponse }]);
+    const base = { apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", aspectRatio: "1:1", fetch: fake.fetch } as const;
+    await generateGoogleImage({ ...base, temperature: undefined, systemInstruction: undefined });
+    await generateGoogleImage({ ...base, temperature: 1.2 });
+    const [unset, withTemperature] = fake.calls.map(bodyOf);
+    assert.equal("systemInstruction" in (unset ?? {}), false);
+    assert.deepEqual(unset?.generationConfig, { imageConfig: { aspectRatio: "1:1" } });
+    assert.deepEqual(withTemperature?.generationConfig, { temperature: 1.2, imageConfig: { aspectRatio: "1:1" } });
+  });
+
+  it("rejects temperature outside 0-2 and an empty system instruction before any network call", async () => {
+    const fake = createFakeFetch([{ method: "POST", url: FLASH_URL, respond: imageResponse }]);
+    const base = { apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", fetch: fake.fetch } as const;
+    for (const extra of [{ temperature: -0.1 }, { temperature: 2.1 }, { systemInstruction: "  " }]) {
+      await assert.rejects(generateGoogleImage({ ...base, ...extra }), isCode("invalid_request"), JSON.stringify(extra));
+    }
+    await generateGoogleImage({ ...base, temperature: 2 });
+    await generateGoogleImage({ ...base, temperature: 0 });
+    assert.equal(fake.calls.length, 2);
+  });
+
   it("downloads URL references and sends them inline", async () => {
     const fake = createFakeFetch([
       { method: "GET", url: "https://cdn.example.com/logo.png", respond: () => bytesResponse(PNG_BYTES, "image/png") },
@@ -148,6 +187,13 @@ describe("Google catalogue and pi-ai adapter", () => {
     );
   });
 
+  it("lists temperature (0-2) and system-instruction support for both models", () => {
+    for (const model of GOOGLE_IMAGE_MODELS) {
+      assert.deepEqual(model.temperature, { min: 0, max: 2 }, model.id);
+      assert.equal(model.systemInstruction, true, model.id);
+    }
+  });
+
   it("generates through pi-ai ImagesModels", async () => {
     const fake = createFakeFetch([{ method: "POST", url: FLASH_URL, respond: imageResponse }]);
     const images = createImagesModels();
@@ -157,5 +203,19 @@ describe("Google catalogue and pi-ai adapter", () => {
     const result = await images.generateImages(model, { input: [{ type: "text", text: "p" }] }, { fetch: fake.fetch, metadata: { aspectRatio: "16:9" } });
     assert.equal(result.stopReason, "stop");
     assert.equal(result.output.length, 1);
+  });
+
+  it("passes temperature and the system instruction from pi-ai metadata to Gemini", async () => {
+    const fake = createFakeFetch([{ method: "POST", url: PRO_URL, respond: imageResponse }]);
+    const images = createImagesModels();
+    images.setProvider(createGoogleImagesProvider({ apiKey: "gemini-key" }));
+    const model = images.getModel("google", "gemini-3-pro-image");
+    assert.ok(model);
+    const metadata = { temperature: 0.4, systemInstruction: "Keep the layout." };
+    const result = await images.generateImages(model, { input: [{ type: "text", text: "p" }] }, { fetch: fake.fetch, metadata });
+    assert.equal(result.stopReason, "stop");
+    const body = bodyOf(fake.calls[0]);
+    assert.deepEqual(body.systemInstruction, { parts: [{ text: "Keep the layout." }] });
+    assert.deepEqual(body.generationConfig, { temperature: 0.4 });
   });
 });

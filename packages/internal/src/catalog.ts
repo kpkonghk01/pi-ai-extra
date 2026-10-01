@@ -8,6 +8,12 @@ export interface ImageOptionSpec {
   required: boolean;
 }
 
+/** An inclusive numeric range accepted by an option. */
+export interface NumericRangeSpec {
+  min: number;
+  max: number;
+}
+
 export interface ReferenceImageSpec extends ReferenceImageLimit {
   acceptedMimeTypes: readonly ImageMimeType[];
   /** Largest inline (data URL) reference image, in bytes. */
@@ -28,6 +34,12 @@ export interface ImageModelInfo {
   outputFormat: ImageOptionSpec | null;
   /** Whether the `watermark` boolean option is supported. */
   watermark: boolean;
+  // The next two are optional rather than `| null` (the convention above) because catalogues
+  // released before they existed omit them, and an absent field must read as unsupported.
+  /** Accepted sampling `temperature` range. Absent: the model does not accept temperature. */
+  temperature?: NumericRangeSpec;
+  /** Present when a `systemInstruction` is accepted. Absent: it is not. */
+  systemInstruction?: true;
   /** Documented cross-field constraints, as human-readable notes. */
   notes: readonly string[];
 }
