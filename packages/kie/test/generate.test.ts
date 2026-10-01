@@ -142,6 +142,19 @@ describe("generateKieImage", () => {
     assert.equal(fake.calls.length, 0);
   });
 
+  it("does not list or accept temperature or a system instruction (undocumented by KIE)", async () => {
+    for (const model of KIE_IMAGE_MODELS) {
+      assert.equal(model.temperature, undefined, model.id);
+      assert.equal(model.systemInstruction, undefined, model.id);
+    }
+    const fake = createFakeFetch(kieRoutes());
+    for (const extra of [{ temperature: 0.7 }, { systemInstruction: "rules" }]) {
+      const request = { ...base, model: "nano-banana-2", prompt: "x", ...extra } as unknown as KieImageRequest;
+      await assert.rejects(generateKieImage({ ...request, fetch: fake.fetch }), isCode("invalid_request"), JSON.stringify(extra));
+    }
+    assert.equal(fake.calls.length, 0);
+  });
+
   it("treats undefined-valued options as unset but still rejects misspelled keys with values", async () => {
     const fake = createFakeFetch(kieRoutes());
     const request = { ...base, model: "gpt-image-2-image-to-image", prompt: "x", referenceImages: ["https://cdn.example.com/a.png"], outputFormat: undefined, resolution: undefined };

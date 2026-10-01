@@ -1,5 +1,5 @@
 export { abortedError, sleep, throwIfAborted } from "./abort.ts";
-export { option, type ImageModelInfo, type ImageOptionSpec, type ReferenceImageSpec } from "./catalog.ts";
+export { option, type ImageModelInfo, type ImageOptionSpec, type NumericRangeSpec, type ReferenceImageSpec } from "./catalog.ts";
 export {
   contextError,
   createOperationContext,
