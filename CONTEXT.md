@@ -44,6 +44,10 @@ A versioned `.tgz` package attached to a GitHub Release. It is the consumer-inst
 
 The usage and billing a provider reported for one task or request: credits, USD cost, billing status, token counts and provider duration. It contains only provider-reported, validated values; absent values are omitted, never estimated or set to zero.
 
+## Cost estimate
+
+A consumer application's own projected price per generated image, taken from a price table the application maintains. It is shown before or after generation as an estimate only. It is never a usage record, is never reconciled with provider billing, and may be unknown for a model.
+
 ## Billing status
 
 A provider's settlement state for a task's charge (`pending`, `settled`, `refunded`). A `pending` amount may still change, so spend is recorded once per task id and replaced by later lookups rather than summed.

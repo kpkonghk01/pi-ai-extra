@@ -1,0 +1,2748 @@
+diff --git a/App.tsx b/App.tsx
+index cb1352d..9089369 100644
+--- a/App.tsx
++++ b/App.tsx
+@@ -9,6 +9,22 @@ import { AutopilotStudio } from './components/AutopilotStudio';
+ import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+ import { TemperatureControl } from './components/TemperatureControl';
+ import { generateCollage, fileToBase64, compressToLimit } from './services/geminiService';
++import { ErrorPanel } from './components/ErrorPanel';
++import { ImageModelIssue, ImageModelSelector } from './components/ImageModelSelector';
++import { findImageModel, useImageModels } from './components/useImageModels';
++import { ImageRequestError } from './services/imageApi';
++import { reportError } from './services/errorReporter';
++import {
++  DEFAULT_IMAGE_MODEL_ID,
++  TEMPERATURE_SUPPORT_NOTE,
++  USD_TO_HKD,
++  estimateCostUsd,
++  estimateInputTokens,
++  modelIssue,
++  temperatureFor,
++  type ImageModelView,
++} from './shared/imageModels';
++import { outputSpec } from './shared/imageOutput';
+ import { UsageService, MonthlyUsageData, UsageHistory } from './services/usageService';
+ import { HistoryService } from './services/historyService';
+ import { auth, signInWithGoogle, signOut } from './services/firebaseService';
+@@ -177,8 +193,14 @@ const HistoryModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOp
+ 
+ interface UsageMeterProps {
+   refreshTrigger: number;
+-  selectedModel: 'nano-banana-pro' | 'nano-banana-2';
+-  setSelectedModel: (model: 'nano-banana-pro' | 'nano-banana-2') => void;
++  selectedModel: string;
++  setSelectedModel: (model: string) => void;
++  imageModels: readonly ImageModelView[];
++  imageModelsLoading: boolean;
++  imageModelsFailed: boolean;
++  onReloadImageModels: () => void;
++  /** Reference images the current studio will send; incompatible models are disabled. */
++  referenceCount: number;
+   user: User | null;
+   onLogout: () => void;
+   currentView: 'manual' | 'autopilot';
+@@ -198,8 +220,14 @@ const UsageMeter: React.FC<UsageMeterProps> = ({
+   setCurrentView,
+   isManualStudioHighlighted,
+   setIsManualStudioHighlighted,
+-  onOpenPWAInstall
++  onOpenPWAInstall,
++  imageModels,
++  imageModelsLoading,
++  imageModelsFailed,
++  onReloadImageModels,
++  referenceCount
+ }) => {
++    const currentModel = imageModels.find((model) => model.id === selectedModel);
+     const [stats, setStats] = useState<MonthlyUsageData | null>(null);
+     const [showHistory, setShowHistory] = useState(false);
+     const currentMonth = UsageService.getCurrentMonthKey();
+@@ -235,6 +263,7 @@ const UsageMeter: React.FC<UsageMeterProps> = ({
+                             <span className="text-gray-800">|</span>
+                             <span title="Estimated Cost">
+                                 <span className="text-gray-500 font-bold">Cost:</span> <span className="font-bold text-yellow-400">{UsageService.formatHKD(stats.totalCostHKD)}</span>
++                                {stats.unpricedImages ? <span className="text-gray-500" title="未有單價的模型生成的圖片，未計入費用"> (+{stats.unpricedImages} 張未計價)</span> : null}
+                             </span>
+                             <button 
+                                 onClick={() => setShowHistory(true)}
+@@ -291,17 +320,22 @@ const UsageMeter: React.FC<UsageMeterProps> = ({
+                           </button>
+                         </div>
+ 
+-                        {/* Service Model Selectors (Pull Down Menu) */}
++                        {/* Service Model Selectors (Pull Down Menu), with the reason underneath when the selected model cannot run */}
++                        <div className="flex flex-col items-start shrink-0">
+                         <div className="flex items-center gap-1.5 bg-gray-950 px-2 py-1 rounded-lg border border-gray-800 shrink-0">
+                             <span className="text-gray-400 text-[11px] font-extrabold px-0.5 hidden lg:inline">Model:</span>
+-                            <select
++                            <ImageModelSelector
++                                models={imageModels}
++                                loading={imageModelsLoading}
++                                failed={imageModelsFailed}
++                                onReload={onReloadImageModels}
+                                 value={selectedModel}
+-                                onChange={(e) => setSelectedModel(e.target.value as 'nano-banana-pro' | 'nano-banana-2')}
+-                                className="bg-gray-900 text-white text-xs font-bold py-0.5 px-2 rounded border border-gray-700 focus:outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer"
+-                            >
+-                                <option value="nano-banana-pro">Pro 思考 (nano-banana-pro)</option>
+-                                <option value="nano-banana-2">2代平衡 (nano-banana-2)</option>
+-                            </select>
++                                onChange={setSelectedModel}
++                                referenceCount={referenceCount}
++                                className="bg-gray-900 text-white text-xs font-bold py-0.5 px-2 rounded border border-gray-700 focus:outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer max-w-[16rem]"
++                            />
++                        </div>
++                        <ImageModelIssue model={currentModel} referenceCount={referenceCount} className="mt-0.5 max-w-[18rem] text-[10px] font-semibold leading-tight text-red-400" />
+                         </div>
+                         
+                         {user && (
+@@ -386,11 +420,6 @@ const AppContent: React.FC = () => {
+   }, [prompt]);
+   
+   const [selectedRatios, setSelectedRatios] = useState<AspectRatio[]>(['16:9']);
+-  const selectedQuality = useMemo<ImageQuality>(() => {
+-    const currentRatio = selectedRatios[0] || '16:9';
+-    const opt = RATIO_OPTIONS.find(o => o.value === currentRatio);
+-    return opt ? opt.quality : '1K';
+-  }, [selectedRatios]);
+   const [selectedCount, setSelectedCount] = useState<1 | 2 | 3>(1);
+   const [strictFidelity, setStrictFidelity] = useState<boolean>(false);
+   const [preserveBackground, setPreserveBackground] = useState<boolean>(false);
+@@ -417,7 +446,15 @@ const AppContent: React.FC = () => {
+     }
+   }, [temperature]);
+ 
+-  const [selectedModel, setSelectedModel] = useState<'nano-banana-pro' | 'nano-banana-2'>('nano-banana-2');
++  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_IMAGE_MODEL_ID);
++  const { models: imageModels, loading: imageModelsLoading, failed: imageModelsFailed, reload: reloadImageModels } = useImageModels();
++  const currentImageModel = findImageModel(imageModels, selectedModel);
++  const [autopilotReferenceCount, setAutopilotReferenceCount] = useState(0);
++  // Unknown ids (for example a removed model restored from a saved draft) go back to the default.
++  useEffect(() => {
++    if (!imageModelsLoading && imageModels.length > 0 && !currentImageModel) setSelectedModel(DEFAULT_IMAGE_MODEL_ID);
++  }, [imageModelsLoading, imageModels, currentImageModel]);
++  const temperatureDisabledReason = currentImageModel && !currentImageModel.temperature ? TEMPERATURE_SUPPORT_NOTE : null;
+   
+   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
+   const [isHistoryLoaded, setIsHistoryLoaded] = useState(false);
+@@ -479,12 +516,7 @@ const AppContent: React.FC = () => {
+             const data = await resp.json().catch(() => ({}));
+             setHasApiKey(!!data.hasApiKey);
+           } else {
+-            // Fallback to define env check
+-            try {
+-              setHasApiKey(!!process.env.API_KEY);
+-            } catch (e) {
+-              setHasApiKey(false);
+-            }
++            setHasApiKey(false);
+           }
+         }
+       } catch (e) {
+@@ -645,10 +677,14 @@ const AppContent: React.FC = () => {
+     }));
+   };
+ 
+-  const handleApiError = (error: any) => {
++  const handleApiError = (error: any, context: Record<string, string | number | undefined> = {}) => {
+     console.error("API Error:", error);
++    reportError(error, 'collage', context);
+     const msg = error?.message || '';
+-    if (msg.includes('403') || msg.includes('PERMISSION_DENIED') || msg.includes('Requested entity was not found')) {
++    const details = error instanceof ImageRequestError ? error.details : {};
++    // Same trigger as before the migration (403 / PERMISSION_DENIED), now limited to Google errors.
++    const keyPermissionProblem = details.status === 403 || msg.includes('PERMISSION_DENIED') || msg.includes('Requested entity was not found');
++    if (keyPermissionProblem && (details.provider === 'google' || !details.provider)) {
+        showToast("授權失敗。請選擇具有啟用計費功能 (Billing Enabled) 的 Google Cloud Project 專案 API 密鑰。", "error");
+        setHasApiKey(false); 
+     } else {
+@@ -656,46 +692,29 @@ const AppContent: React.FC = () => {
+     }
+   };
+ 
+-  const activeRatio = selectedRatios[0] || '16:9';
+-  const activeOption = RATIO_OPTIONS.find(o => o.value === activeRatio);
+-  const activeQuality = activeOption ? activeOption.quality : '1K';
++  const manualReferenceCount = selectedTemplateIds.length + sources.length;
++  const activeReferenceCount = currentView === 'manual' ? manualReferenceCount : autopilotReferenceCount;
++  const manualModelIssue = currentImageModel ? modelIssue(currentImageModel, manualReferenceCount) : null;
+ 
+   const estimatedCost = useMemo(() => {
+-    const INPUT_IMAGE_TOKENS = 258;
+-    const INPUT_TEXT_TOKEN_RATIO = 0.25; 
+-    const PRICE_PER_1M_INPUT_TOKENS_USD = 5.00; 
+-    
+-    // Dynamic output image price based on model and selected ratio quality
+-    let PRICE_PER_OUTPUT_IMAGE_USD = 0.134;
+-    if (selectedModel === 'nano-banana-2-lite') {
+-      PRICE_PER_OUTPUT_IMAGE_USD = activeQuality === '1K' ? 0.034 : 0.050;
+-    } else if (selectedModel === 'nano-banana-2') {
+-      PRICE_PER_OUTPUT_IMAGE_USD = activeQuality === '1K' ? 0.067 : 0.101;
+-    } else {
+-      PRICE_PER_OUTPUT_IMAGE_USD = 0.134;
+-    }
+-    
+-    const HKD_EXCHANGE_RATE = 7.8;
+-    const numInputImages = selectedTemplateIds.length + sources.length;
+-    const inputImageTokens = numInputImages * INPUT_IMAGE_TOKENS;
+-    const inputTextTokens = prompt.length * INPUT_TEXT_TOKEN_RATIO;
+-    const totalInputTokens = inputImageTokens + inputTextTokens;
+-    const numOutputImages = selectedRatios.length * selectedCount;
+-    const inputCostUSD = (totalInputTokens / 1000000) * PRICE_PER_1M_INPUT_TOKENS_USD;
+-    const outputCostUSD = numOutputImages * PRICE_PER_OUTPUT_IMAGE_USD;
+-    const totalUSD = inputCostUSD + outputCostUSD;
+-    const totalHKD = totalUSD * HKD_EXCHANGE_RATE;
++    const plannedRatios = selectedRatios.flatMap((ratio) => Array.from({ length: selectedCount }, () => ratio));
++    const inputTokens = estimateInputTokens(manualReferenceCount, prompt.length);
++    const totalUSD = estimateCostUsd(currentImageModel, { inputImages: manualReferenceCount, promptChars: prompt.length, ratios: plannedRatios });
+     return {
+-        totalHKD: totalHKD.toFixed(2),
+-        inputTokens: Math.ceil(totalInputTokens),
+-        outputCount: numOutputImages
++        totalHKD: totalUSD === null ? null : (totalUSD * USD_TO_HKD).toFixed(2),
++        inputTokens,
++        outputCount: plannedRatios.length
+     };
+-  }, [templates, selectedTemplateIds, sources, prompt, selectedRatios, selectedCount, selectedModel, activeQuality]);
++  }, [manualReferenceCount, prompt, selectedRatios, selectedCount, currentImageModel]);
+ 
+   const manualCancelRef = useRef<boolean>(false);
++  /** Aborts the in-flight image request when the user cancels, so the server stops polling. */
++  const manualAbortRef = useRef<AbortController | null>(null);
+ 
+   const startCollage = async () => {
+     manualCancelRef.current = false;
++    const abortController = new AbortController();
++    manualAbortRef.current = abortController;
+     const apiKey = getEnvApiKey();
+     if (!apiKey) {
+       setHasApiKey(false);
+@@ -713,6 +732,14 @@ const AppContent: React.FC = () => {
+         showToast("請選擇至少一種圖片比例比例。", "warning");
+         return;
+     }
++    if (!currentImageModel) {
++        showToast("圖片模型清單尚未載入，請稍後再試。", "warning");
++        return;
++    }
++    if (manualModelIssue) {
++        showToast(`目前模型「${currentImageModel.label}」${manualModelIssue}。`, "warning");
++        return;
++    }
+     setIsGenerating(true);
+     setGeneratingStatus('Preparing assets...');
+     try {
+@@ -722,9 +749,9 @@ const AppContent: React.FC = () => {
+       
+       if (manualCancelRef.current) return;
+ 
+-      // Calculate tokens per single request for usage tracking
++      // Estimated tokens per single request for usage tracking
+       const totalInputImages = selectedTemplates.length + sources.length;
+-      const estimatedInputTokensPerReq = UsageService.calculateEstimatedTokens(totalInputImages, prompt.length);
++      const estimatedInputTokensPerReq = estimateInputTokens(totalInputImages, prompt.length);
+ 
+       const tasks = [];
+       for (const ratio of selectedRatios) {
+@@ -741,22 +768,22 @@ const AppContent: React.FC = () => {
+         const task = tasks[i];
+         setGeneratingStatus(`Generating image ${i + 1} of ${tasks.length} (${task.ratio})...`);
+         try {
+-            let base64Image = await generateCollage(
+-                templateB64s,
+-                sourcesB64,
++            let base64Image = await generateCollage({
++                templateAssets: templateB64s,
++                sourceAssets: sourcesB64,
+                 prompt,
+-                task.ratio,
+-                selectedQuality,
++                ratio: task.ratio,
+                 strictFidelity,
+                 preserveBackground,
+                 removeBackground,
+                 copyLogo,
+                 prohibitLogo,
+                 eraseText,
+-                titles,
++                titleConfig: titles,
+                 selectedModel,
+-                temperature
+-            );
++                temperature: temperatureFor(currentImageModel, temperature),
++                signal: abortController.signal,
++            });
+ 
+             if (manualCancelRef.current) {
+               showToast('已取消生成工作', 'info');
+@@ -769,9 +796,11 @@ const AppContent: React.FC = () => {
+             }
+ 
+             // Track Usage on Success
+-            const activeOpt = RATIO_OPTIONS.find(o => o.value === task.ratio);
+-            const activeQual = activeOpt ? activeOpt.quality : '1K';
+-            UsageService.trackTransaction(estimatedInputTokensPerReq, 1, selectedModel, activeQual);
++            UsageService.trackTransaction(
++                estimatedInputTokensPerReq,
++                1,
++                estimateCostUsd(currentImageModel, { inputImages: totalInputImages, promptChars: prompt.length, ratios: [task.ratio] }),
++            );
+             setUsageUpdateTrigger(prev => prev + 1);
+ 
+             const newImage: GeneratedImage = {
+@@ -783,7 +812,7 @@ const AppContent: React.FC = () => {
+             setGeneratedImages(prev => [newImage, ...prev]);
+         } catch (err) {
+             if (!manualCancelRef.current) {
+-              handleApiError(err);
++              handleApiError(err, { 批次: `第 ${i + 1}/${tasks.length} 張 (${task.ratio})`, 解像度: outputSpec(task.ratio).resolution });
+             }
+             break;
+         }
+@@ -1107,6 +1136,11 @@ const AppContent: React.FC = () => {
+         refreshTrigger={usageUpdateTrigger} 
+         selectedModel={selectedModel}
+         setSelectedModel={setSelectedModel}
++        imageModels={imageModels}
++        imageModelsLoading={imageModelsLoading}
++        imageModelsFailed={imageModelsFailed}
++        onReloadImageModels={reloadImageModels}
++        referenceCount={activeReferenceCount}
+         user={currentUser}
+         onLogout={handleLogout}
+         currentView={currentView}
+@@ -1141,6 +1175,8 @@ const AppContent: React.FC = () => {
+           onOpenPWAInstall={() => setForceOpenPWAModal(true)}
+           imageModel={selectedModel}
+           setImageModel={setSelectedModel}
++          imageModels={imageModels}
++          onReferenceCountChange={setAutopilotReferenceCount}
+         />
+       ) : (
+         <div className="flex flex-col md:flex-row flex-1">
+@@ -1353,6 +1389,7 @@ const AppContent: React.FC = () => {
+                         temperature={temperature}
+                         onChange={setTemperature}
+                         compact
++                        disabledReason={temperatureDisabledReason}
+                     />
+ 
+                     <div>
+@@ -1387,17 +1424,19 @@ const AppContent: React.FC = () => {
+                 </div>
+                 <div className="flex justify-between items-center pt-2 border-t border-gray-200 mt-2">
+                     <span className="text-gray-800 font-bold">Total (HKD):</span>
+-                    <span className="font-mono text-red-600 font-bold text-sm">HK${estimatedCost.totalHKD}</span>
++                    <span className="font-mono text-red-600 font-bold text-sm">{estimatedCost.totalHKD === null ? '—' : `HK$${estimatedCost.totalHKD}`}</span>
+                 </div>
+                 <p className="text-[10px] text-gray-400 mt-1 italic text-right">
+-                    *Estimate: ${selectedModel === 'nano-banana-2-lite' ? (activeQuality === '1K' ? '0.034' : '0.050') : (selectedModel === 'nano-banana-2' ? (activeQuality === '1K' ? '0.067' : '0.101') : '0.134')} USD/image ({selectedModel === 'nano-banana-2-lite' ? 'Lite簡易快速' : (selectedModel === 'nano-banana-2' ? '2代平衡' : 'Pro思考')} - {activeQuality})
++                    {currentImageModel?.price
++                      ? `*Estimate: ${currentImageModel.label}，每張 1K $${currentImageModel.price.perImageUsd['1K']} / 2K $${currentImageModel.price.perImageUsd['2K']} USD`
++                      : `*${currentImageModel?.label ?? '此模型'} 未有已核實的單價，預估以「—」表示`}
+                 </p>
+             </div>
+ 
+             <div className="flex gap-3 sticky bottom-0 bg-white pt-4 pb-2 border-t border-gray-100">
+                 <button 
+                     onClick={startCollage}
+-                    disabled={isGenerating}
++                    disabled={isGenerating || !currentImageModel || manualModelIssue !== null}
+                     className="flex-1 bg-sky-600 text-white py-3 rounded-lg font-bold shadow-lg hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
+                 >
+                     {isGenerating ? <Loader2 className="animate-spin" size={20} /> : <ImageIcon size={20} />}
+@@ -1407,6 +1446,7 @@ const AppContent: React.FC = () => {
+                     <button 
+                         onClick={() => { 
+                             manualCancelRef.current = true;
++                            manualAbortRef.current?.abort();
+                             setIsGenerating(false);
+                             setGeneratingStatus('');
+                             showToast('已取消生成工作', 'info');
+@@ -1418,6 +1458,7 @@ const AppContent: React.FC = () => {
+                     </button>
+                 )}
+             </div>
++            <ImageModelIssue model={currentImageModel} referenceCount={manualReferenceCount} />
+             {isGenerating && <p className="text-xs text-center text-gray-500 mt-2"><span key={generatingStatus} className="notranslate">{generatingStatus}</span></p>}
+           </div>
+ 
+@@ -1529,6 +1570,7 @@ const AppContent: React.FC = () => {
+                 onClose={() => setEditorOpen(false)}
+                 onUpdateImage={updateEditedImage}
+                 selectedModel={selectedModel}
++                modelView={currentImageModel}
+             />
+           )}
+ 
+@@ -1595,9 +1637,13 @@ const AppContent: React.FC = () => {
+ 
+ const App: React.FC = () => {
+   return (
+-    <ErrorBoundary>
+-      <AppContent />
+-    </ErrorBoundary>
++    <>
++      <ErrorBoundary>
++        <AppContent />
++      </ErrorBoundary>
++      {/* Outside AppContent so errors stay visible on the login and key screens too. */}
++      <ErrorPanel />
++    </>
+   );
+ };
+ 
+diff --git a/components/AutopilotStudio.tsx b/components/AutopilotStudio.tsx
+index a5d324e..bc75ac0 100644
+--- a/components/AutopilotStudio.tsx
++++ b/components/AutopilotStudio.tsx
+@@ -57,6 +57,19 @@ import {
+ import { UsageService } from '../services/usageService';
+ import { asyncStorage, compressDataUrlIfNeeded } from '../utils/storage';
+ import { TemperatureControl } from './TemperatureControl';
++import { ImageModelIssue } from './ImageModelSelector';
++import { findImageModel } from './useImageModels';
++import { reportError, type ErrorOperation } from '../services/errorReporter';
++import {
++  DEFAULT_IMAGE_MODEL_ID,
++  TEMPERATURE_SUPPORT_NOTE,
++  estimateCostUsd,
++  estimateInputTokens,
++  modelIssue,
++  remainingReferenceCapacity,
++  temperatureFor,
++  type ImageModelView,
++} from '../shared/imageModels';
+ 
+ const RATIO_OPTIONS: { label: string; value: AspectRatio; desc: string }[] = [
+   { label: '16:9 (OG 圖）', value: '16:9', desc: '1200 x 675 px' },
+@@ -128,8 +141,12 @@ interface AutopilotStudioProps {
+   onNavigateToManual?: () => void;
+   setIsManualStudioHighlighted?: (val: boolean) => void;
+   onOpenPWAInstall?: () => void;
+-  imageModel?: 'nano-banana-pro' | 'nano-banana-2';
+-  setImageModel?: (model: 'nano-banana-pro' | 'nano-banana-2') => void;
++  imageModel?: string;
++  setImageModel?: (model: string) => void;
++  /** From GET /api/image-models (loaded once by App). */
++  imageModels?: readonly ImageModelView[];
++  /** Reports the reference images the next run will send, so the top-bar selector can disable models. */
++  onReferenceCountChange?: (count: number) => void;
+ }
+ 
+ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+@@ -145,16 +162,20 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+   setIsManualStudioHighlighted,
+   onOpenPWAInstall,
+   imageModel: propImageModel,
+-  setImageModel: propSetImageModel
++  setImageModel: propSetImageModel,
++  imageModels = [],
++  onReferenceCountChange
+ }) => {
+   // Autopilot Mode: 'semi' | 'full'
+   const [autopilotMode, setAutopilotMode] = useState<'semi' | 'full'>('semi');
+ 
+   // Model Selections
+   const [textModel, setTextModel] = useState<'gemini-3.8-flash' | 'gemini-3.5-flash-lite'>('gemini-3.8-flash');
+-  const [internalImageModel, setInternalImageModel] = useState<'nano-banana-pro' | 'nano-banana-2'>('nano-banana-2');
++  const [internalImageModel, setInternalImageModel] = useState<string>(DEFAULT_IMAGE_MODEL_ID);
+   const imageModel = propImageModel ?? internalImageModel;
+   const setImageModel = propSetImageModel ?? setInternalImageModel;
++  const currentImageModel = findImageModel(imageModels, imageModel);
++  const temperatureDisabledReason = currentImageModel && !currentImageModel.temperature ? TEMPERATURE_SUPPORT_NOTE : null;
+ 
+   // Article Inputs
+   const [articleUrl, setArticleUrl] = useState('');
+@@ -290,9 +311,12 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+   const [statusMessage, setStatusMessage] = useState('');
+ 
+   const cancelRef = useRef<boolean>(false);
++  /** Aborts the in-flight image request on cancel, so the server stops polling the provider. */
++  const abortRef = useRef<AbortController | null>(null);
+ 
+   const handleCancelGeneration = () => {
+     cancelRef.current = true;
++    abortRef.current?.abort();
+     setIsProcessing(false);
+     setIsGeneratingTitles(false);
+     setIsExtractingWebImages(false);
+@@ -748,6 +772,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+       showToast(`成功獲取文章內容 (${res.content.length} 字)，並同步啟動自動撈取素材圖片！`, 'success');
+       await extractTask;
+     } catch (e: any) {
++      reportError(e, 'article');
+       showToast(e.message || '無法抓取網址，請確認網址或直接貼上內文', 'error');
+     } finally {
+       setIsFetchingUrl(false);
+@@ -782,6 +807,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+       showToast('成功生成 5 組爆款病毒標題！', 'success');
+     } catch (e: any) {
+       if (!cancelRef.current) {
++        reportError(e, 'titles');
+         showToast(e.message || '生成標題失敗，請稍後再試', 'error');
+       }
+     } finally {
+@@ -938,6 +964,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+     } catch (e: any) {
+       if (!cancelRef.current) {
+         setNoSourceMode(true);
++        reportError(e, 'page-images');
+         showToast(e.message || '抓取網頁圖片失敗，請確認網址或直接上載', 'error');
+       }
+     } finally {
+@@ -945,9 +972,23 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+     }
+   };
+ 
++  // Reference images the next run sends. Semi: selected templates + sources. Full: templates, plus the
++  // current sources when there is no article URL (with a URL, page images replace them and are capped to fit).
++  const plannedTemplateCount = selectedTemplateIds.length > 0 ? selectedTemplateIds.length : Math.min(templates.length, 1);
++  const semiReferenceCount = selectedTemplateIds.length + sources.length;
++  const fullReferenceCount = plannedTemplateCount + (articleUrl.trim() ? 0 : sources.length);
++  const plannedReferenceCount = autopilotMode === 'full' ? fullReferenceCount : semiReferenceCount;
++  const semiModelIssue = currentImageModel ? modelIssue(currentImageModel, semiReferenceCount) : null;
++  const fullModelIssue = currentImageModel ? modelIssue(currentImageModel, fullReferenceCount) : null;
++  useEffect(() => {
++    onReferenceCountChange?.(plannedReferenceCount);
++  }, [plannedReferenceCount, onReferenceCountChange]);
++
+   // Execute Semi-Autopilot Image Generation
+   const handleExecuteSemiGeneration = async () => {
+     cancelRef.current = false;
++    const abortController = new AbortController();
++    abortRef.current = abortController;
+     if (selectedTemplateIds.length === 0) {
+       showToast('請至少上載並選取一張樣板圖片 (Style Templates)', 'warning');
+       return;
+@@ -956,9 +997,15 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+       showToast('請先選擇或輸入欲使用的標題組合', 'warning');
+       return;
+     }
++    const semiIssue = currentImageModel ? semiModelIssue : '圖片模型清單尚未載入';
++    if (semiIssue) {
++      showToast(`目前圖片模型無法使用：${semiIssue}`, 'warning');
++      return;
++    }
+ 
+     setIsProcessing(true);
+     setStatusMessage('正在合成圖片...');
++    let attempt = '';
+     try {
+       const selectedTemplates = templates.filter(t => selectedTemplateIds.includes(t.id));
+       const templateB64s = await Promise.all(selectedTemplates.map(t => fileToBase64(t.file)));
+@@ -990,25 +1037,26 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+           break;
+         }
+         const ratio = selectedRatios[i];
++        attempt = `第 ${i + 1}/${selectedRatios.length} 張 (${ratio})`;
+         setStatusMessage(`正在合成 ${ratio} 圖片 (${i + 1}/${selectedRatios.length})...`);
+ 
+-        let base64Image = await generateCollage(
+-          templateB64s,
+-          sourceB64s,
+-          getEffectiveGlobalPrompt(),
++        let base64Image = await generateCollage({
++          templateAssets: templateB64s,
++          sourceAssets: sourceB64s,
++          prompt: getEffectiveGlobalPrompt(),
+           ratio,
+-          '2K',
+           strictFidelity,
+-          false,
++          preserveBackground: false,
+           removeBackground,
+           copyLogo,
+           prohibitLogo,
+           prohibitPretrainedLogo,
+           eraseText,
+           titleConfig,
+-          imageModel,
+-          temperature
+-        );
++          selectedModel: imageModel,
++          temperature: temperatureFor(currentImageModel, temperature),
++          signal: abortController.signal,
++        });
+ 
+         if (cancelRef.current) {
+           showToast('已取消生成工作', 'info');
+@@ -1019,7 +1067,11 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+           base64Image = await compressToLimit(base64Image, 2 * 1024 * 1024);
+         }
+ 
+-        UsageService.trackTransaction(500, 1, imageModel, '2K');
++        UsageService.trackTransaction(
++          estimateInputTokens(templateB64s.length + sourceB64s.length, getEffectiveGlobalPrompt().length),
++          1,
++          estimateCostUsd(currentImageModel, { inputImages: templateB64s.length + sourceB64s.length, promptChars: getEffectiveGlobalPrompt().length, ratios: [ratio] }),
++        );
+         onUpdateUsage();
+ 
+         const newImage: GeneratedImage = {
+@@ -1036,6 +1088,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+       }
+     } catch (e: any) {
+       if (!cancelRef.current) {
++        reportError(e, 'collage', { 批次: attempt || undefined });
+         showToast(e.message || '生成圖片失敗', 'error');
+       }
+     } finally {
+@@ -1047,6 +1100,8 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+   // Execute Full-Autopilot Pipeline
+   const handleExecuteFullAutopilot = async () => {
+     cancelRef.current = false;
++    const abortController = new AbortController();
++    abortRef.current = abortController;
+     if (templates.length === 0) {
+       showToast('全自動駕駛模式需要至少上載一張樣板圖片 (Style Templates)', 'warning');
+       return;
+@@ -1055,10 +1110,17 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+       showToast('全自動駕駛模式需要文章網址或文章內容', 'warning');
+       return;
+     }
++    const fullIssue = currentImageModel ? fullModelIssue : '圖片模型清單尚未載入';
++    if (fullIssue) {
++      showToast(`目前圖片模型無法使用：${fullIssue}`, 'warning');
++      return;
++    }
+ 
+     setIsProcessing(true);
+     let currentContent = articleContent;
+     let currentSources = [...sources];
++    let failedOperation: ErrorOperation = 'article';
++    let attempt = '';
+ 
+     try {
+       // Step 1: Article Fetching & Concurrent Web Image Extraction
+@@ -1112,9 +1174,15 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+               }
+             }
+             if (newFiles.length > 0) {
+-              currentSources = newFiles;
+-              setSources(newFiles);
+-              setNoSourceMode(false);
++              // Page images are not user-provided: use only as many as the selected model still accepts.
++              const capacity = currentImageModel ? remainingReferenceCapacity(currentImageModel, plannedTemplateCount) : newFiles.length;
++              const usable = newFiles.slice(0, Math.min(newFiles.length, capacity));
++              if (usable.length < newFiles.length) {
++                showToast(`「${currentImageModel?.label}」最多 ${currentImageModel?.referenceLimit.max} 張參考圖，已有 ${plannedTemplateCount} 張樣板：只使用前 ${usable.length} 張網頁圖片。`, 'info');
++              }
++              currentSources = usable;
++              setSources(usable);
++              if (usable.length > 0) setNoSourceMode(false);
+             }
+           }
+         } else {
+@@ -1128,7 +1196,16 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+ 
+       // Step 2: Title Generation
+       if (cancelRef.current) return;
++      // Re-check with the images that will really be sent (page images, or the existing sources when
++      // extraction found none) before paying for title generation.
++      const sendIssue = currentImageModel ? modelIssue(currentImageModel, plannedTemplateCount + currentSources.length) : null;
++      if (sendIssue) {
++        failedOperation = 'collage';
++        throw new Error(`目前圖片模型「${currentImageModel?.label}」${sendIssue}。請移除部分素材或改選其他模型。`);
++      }
++
+       setActiveStep(2);
++      failedOperation = 'titles';
+       setStatusMessage('自動步驟 2/4: Gemini 深度理解文章並創作 5 組爆款標題...');
+       const groups = await generateViralTitles(currentContent, textModel, {
+         mainMax,
+@@ -1157,6 +1234,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+       // Step 4: Generate Image using active Style Templates & extracted/existing Source Images
+       if (cancelRef.current) return;
+       setActiveStep(4);
++      failedOperation = 'collage';
+       
+       const selectedTemplates = templates.filter(t => selectedTemplateIds.includes(t.id));
+       const activeTemplates = selectedTemplates.length > 0 ? selectedTemplates : [templates[0]];
+@@ -1190,25 +1268,26 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+           break;
+         }
+         const ratio = selectedRatios[i];
++        attempt = `第 ${i + 1}/${selectedRatios.length} 張 (${ratio})`;
+         setStatusMessage(`自動步驟 4/4: 配合風格樣板合成 ${ratio} Open Graph 圖片 (${i + 1}/${selectedRatios.length})...`);
+ 
+-        let base64Image = await generateCollage(
+-          templateB64s,
+-          sourceB64s,
+-          getEffectiveGlobalPrompt(),
++        let base64Image = await generateCollage({
++          templateAssets: templateB64s,
++          sourceAssets: sourceB64s,
++          prompt: getEffectiveGlobalPrompt(),
+           ratio,
+-          '2K',
+           strictFidelity,
+-          false,
++          preserveBackground: false,
+           removeBackground,
+           copyLogo,
+           prohibitLogo,
+           prohibitPretrainedLogo,
+           eraseText,
+           titleConfig,
+-          imageModel,
+-          temperature
+-        );
++          selectedModel: imageModel,
++          temperature: temperatureFor(currentImageModel, temperature),
++          signal: abortController.signal,
++        });
+ 
+         if (cancelRef.current) {
+           showToast('已取消生成工作', 'info');
+@@ -1219,7 +1298,11 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+           base64Image = await compressToLimit(base64Image, 2 * 1024 * 1024);
+         }
+ 
+-        UsageService.trackTransaction(800, 1, imageModel, '2K');
++        UsageService.trackTransaction(
++          estimateInputTokens(templateB64s.length + sourceB64s.length, getEffectiveGlobalPrompt().length),
++          1,
++          estimateCostUsd(currentImageModel, { inputImages: templateB64s.length + sourceB64s.length, promptChars: getEffectiveGlobalPrompt().length, ratios: [ratio] }),
++        );
+         onUpdateUsage();
+ 
+         const newImage: GeneratedImage = {
+@@ -1236,6 +1319,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+       }
+     } catch (e: any) {
+       if (!cancelRef.current) {
++        reportError(e, failedOperation, { 模式: '全自動', 批次: failedOperation === 'collage' ? attempt || undefined : undefined });
+         showToast(e.message || '全自動駕駛執行中途出錯，請檢查步驟', 'error');
+       }
+     } finally {
+@@ -1915,6 +1999,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+               <TemperatureControl
+                 temperature={temperature}
+                 onChange={setTemperature}
++                disabledReason={temperatureDisabledReason}
+               />
+             </div>
+           </div>
+@@ -2246,7 +2331,8 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+             ) : autopilotMode === 'semi' ? (
+               <button
+                 onClick={handleExecuteSemiGeneration}
+-                className="w-full bg-gradient-to-r from-sky-600 to-sky-700 hover:from-sky-700 hover:to-sky-800 text-white font-black py-3.5 px-6 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 text-sm tracking-wide cursor-pointer"
++                disabled={semiModelIssue !== null}
++                className="disabled:opacity-50 disabled:cursor-not-allowed w-full bg-gradient-to-r from-sky-600 to-sky-700 hover:from-sky-700 hover:to-sky-800 text-white font-black py-3.5 px-6 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 text-sm tracking-wide cursor-pointer"
+               >
+                 <ImageIcon size={18} />
+                 <span>立刻生成新的 OG 圖片</span>
+@@ -2256,7 +2342,8 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+                 <button
+                   type="button"
+                   onClick={handleExecuteFullAutopilot}
+-                  className="flex-1 bg-gradient-to-r from-amber-500 via-sky-600 to-sky-700 hover:from-amber-600 hover:to-sky-800 text-white font-black py-3.5 sm:py-4 px-4 sm:px-6 rounded-xl transition-all shadow-xl flex items-center justify-center gap-2 text-xs sm:text-sm tracking-wide transform hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
++                  disabled={fullModelIssue !== null}
++                  className="disabled:opacity-50 disabled:cursor-not-allowed flex-1 bg-gradient-to-r from-amber-500 via-sky-600 to-sky-700 hover:from-amber-600 hover:to-sky-800 text-white font-black py-3.5 sm:py-4 px-4 sm:px-6 rounded-xl transition-all shadow-xl flex items-center justify-center gap-2 text-xs sm:text-sm tracking-wide transform hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                 >
+                   <Zap size={18} className="text-amber-300 animate-bounce shrink-0" />
+                   <span>🚀 一鍵全自動生成</span>
+@@ -2264,14 +2351,16 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+                 <button
+                   type="button"
+                   onClick={handleExecuteSemiGeneration}
+-                  className="bg-sky-900 hover:bg-sky-950 text-white font-black py-3.5 sm:py-4 px-4 sm:px-5 rounded-xl border border-sky-400/40 shadow-lg hover:border-amber-400/80 transition-all flex items-center justify-center gap-2 text-xs sm:text-sm cursor-pointer shrink-0 active:scale-[0.99]"
+-                  title="使用當前標題與素材重新合成 OG 圖片"
++                  disabled={semiModelIssue !== null}
++                  className="disabled:opacity-50 disabled:cursor-not-allowed bg-sky-900 hover:bg-sky-950 text-white font-black py-3.5 sm:py-4 px-4 sm:px-5 rounded-xl border border-sky-400/40 shadow-lg hover:border-amber-400/80 transition-all flex items-center justify-center gap-2 text-xs sm:text-sm cursor-pointer shrink-0 active:scale-[0.99]"
++                  title={semiModelIssue ?? '使用當前標題與素材重新合成 OG 圖片'}
+                 >
+                   <RefreshCw size={16} className="text-amber-400 shrink-0" />
+                   <span>僅重新生成圖片</span>
+                 </button>
+               </div>
+             )}
++            <ImageModelIssue model={currentImageModel} referenceCount={plannedReferenceCount} />
+           </div>
+ 
+           {/* Progress Indicator for Full Autopilot */}
+@@ -3130,6 +3219,7 @@ export const AutopilotStudio: React.FC<AutopilotStudioProps> = ({
+               setEditingImageItem(null);
+             }}
+             selectedModel={imageModel}
++            modelView={currentImageModel}
+           />
+         );
+       })()}
+diff --git a/components/ErrorPanel.tsx b/components/ErrorPanel.tsx
+new file mode 100644
+index 0000000..8cda8c2
+--- /dev/null
++++ b/components/ErrorPanel.tsx
+@@ -0,0 +1,87 @@
++import React, { useEffect, useState } from 'react';
++import { AlertTriangle, ChevronDown, Copy, X } from 'lucide-react';
++import { formatErrorReport, operationLabel, subscribeErrors, type ErrorEntry } from '../services/errorReporter';
++
++/** Copies text, falling back to a hidden textarea where the Clipboard API is blocked (some iframes). */
++async function copyText(text: string): Promise<boolean> {
++  try {
++    await navigator.clipboard.writeText(text);
++    return true;
++  } catch {
++    const area = document.createElement('textarea');
++    area.value = text;
++    area.style.position = 'fixed';
++    area.style.opacity = '0';
++    document.body.appendChild(area);
++    area.select();
++    const copied = document.execCommand('copy');
++    area.remove();
++    return copied;
++  }
++}
++
++/**
++ * Hidden until a server error is reported. Shows the latest error with provider/model, code,
++ * status and task id, and copies a plain-text report. A new error re-opens the panel.
++ */
++export const ErrorPanel: React.FC = () => {
++  const [entry, setEntry] = useState<ErrorEntry | null>(null);
++  const [collapsed, setCollapsed] = useState(false);
++  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
++
++  useEffect(
++    () =>
++      subscribeErrors((next) => {
++        setEntry(next);
++        setCollapsed(false);
++        setCopyState('idle');
++      }),
++    [],
++  );
++
++  if (!entry) return null;
++  const report = formatErrorReport(entry);
++  const where = [entry.details.provider, entry.details.model].filter(Boolean).join('/');
++
++  if (collapsed) {
++    return (
++      <button
++        type="button"
++        onClick={() => setCollapsed(false)}
++        className="fixed bottom-4 right-4 z-[9999] flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1.5 text-xs font-bold text-white shadow-lg notranslate"
++      >
++        <AlertTriangle size={14} /> 錯誤資訊
++      </button>
++    );
++  }
++
++  return (
++    <div role="alert" className="fixed bottom-4 right-4 z-[9999] w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-red-300 bg-white text-sm shadow-2xl notranslate">
++      <div className="flex items-center justify-between gap-2 rounded-t-xl bg-red-50 px-3 py-2">
++        <span className="flex items-center gap-1.5 font-bold text-red-700">
++          <AlertTriangle size={16} /> {operationLabel(entry.operation)}失敗{where ? `（${where}）` : ''}
++        </span>
++        <span className="flex items-center gap-1">
++          <button type="button" onClick={() => setCollapsed(true)} title="收起" className="rounded p-1 text-gray-500 hover:bg-red-100">
++            <ChevronDown size={16} />
++          </button>
++          <button type="button" onClick={() => setEntry(null)} title="關閉" className="rounded p-1 text-gray-500 hover:bg-red-100">
++            <X size={16} />
++          </button>
++        </span>
++      </div>
++      <div className="space-y-2 px-3 py-2">
++        <p className="break-words text-gray-800">{entry.message}</p>
++        <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-gray-50 p-2 text-[11px] text-gray-600 select-all">{report}</pre>
++        <button
++          type="button"
++          onClick={async () => setCopyState((await copyText(report)) ? 'copied' : 'failed')}
++          className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700"
++        >
++          <Copy size={14} />
++          {copyState === 'copied' ? '已複製' : copyState === 'failed' ? '複製失敗，請手動選取上方文字' : '複製錯誤資訊'}
++        </button>
++      </div>
++    </div>
++  );
++};
+diff --git a/components/ImageEditor.tsx b/components/ImageEditor.tsx
+index f00cab3..913f74b 100644
+--- a/components/ImageEditor.tsx
++++ b/components/ImageEditor.tsx
+@@ -6,12 +6,17 @@ import {
+ } from 'lucide-react';
+ import { GeneratedImage } from '../types';
+ import { editImage } from '../services/geminiService';
++import { reportError } from '../services/errorReporter';
++import { DEFAULT_IMAGE_MODEL_ID, MASK_REFERENCE_ONLY_NOTE, temperatureFor, type ImageModelView } from '../shared/imageModels';
+ 
+ interface ImageEditorProps {
+   image: GeneratedImage;
+   onClose: () => void;
+   onUpdateImage: (newImageUrl: string) => void;
+-  selectedModel?: 'nano-banana-pro' | 'nano-banana-2' | 'nano-banana-2-lite';
++  /** App image model id from GET /api/image-models. */
++  selectedModel?: string;
++  /** Catalogue view of selectedModel: temperature support and mask-editing note. */
++  modelView?: ImageModelView;
+ }
+ 
+ interface EditPoint {
+@@ -41,7 +46,7 @@ const PROMPT_TEMPLATES = [
+   "Make it look like a Oil Painting"
+ ];
+ 
+-const ImageEditor: React.FC<ImageEditorProps> = ({ image, onClose, onUpdateImage, selectedModel = 'nano-banana-pro' }) => {
++const ImageEditor: React.FC<ImageEditorProps> = ({ image, onClose, onUpdateImage, selectedModel = DEFAULT_IMAGE_MODEL_ID, modelView }) => {
+   const [mode, setMode] = useState<'view' | 'prompt' | 'mask' | 'multi-mask' | 'crop' | 'replace-logo'>('view');
+   const [prompt, setPrompt] = useState('');
+   const [isLoading, setIsLoading] = useState(false);
+@@ -92,6 +97,11 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ image, onClose, onUpdateImage
+   // Refs
+   const canvasRef = useRef<HTMLCanvasElement>(null);
+   const imageRef = useRef<HTMLImageElement>(null);
++  // "width:height" of the image being edited, so models that cannot keep the input aspect use the nearest ratio.
++  const sourceAspect = (): string | undefined => {
++    const img = imageRef.current;
++    return img && img.naturalWidth && img.naturalHeight ? `${img.naturalWidth}:${img.naturalHeight}` : undefined;
++  };
+   const [isDrawing, setIsDrawing] = useState(false);
+ 
+   // Sync local state if parent image updates
+@@ -602,15 +612,17 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ image, onClose, onUpdateImage
+ 
+     setIsLoading(true);
+     try {
+-      const newImageData = await editImage(
+-        previewUrl,
+-        maskData,
+-        promptText,
+-        false,
+-        selectedModel as 'nano-banana-pro' | 'nano-banana-2' | 'nano-banana-2-lite',
+-        0.5,
+-        logoDataUrl
+-      );
++      const newImageData = await editImage({
++        imageUrl: previewUrl,
++        maskBase64: maskData,
++        prompt: promptText,
++        isMultiMask: false,
++        selectedModel,
++        // Logo replacement keeps its lower temperature on models that accept temperature.
++        temperature: temperatureFor(modelView, 0.5),
++        extraImageBase64: logoDataUrl,
++        sourceAspect: sourceAspect(),
++      });
+       setPreviewUrl(newImageData);
+       setMode('view');
+       if (canvasRef.current) {
+@@ -619,6 +631,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ image, onClose, onUpdateImage
+       }
+     } catch (e: any) {
+       console.error(e);
++      reportError(e, 'edit', { 動作: '替換 Logo' });
+       const msg = e.message || 'AI 處理超時或出錯';
+       setEditorError(`AI 替換 Logo 失敗: ${msg}。您可以改用「⚡ 即時套用 Logo」直接進行高解析無損替換。`);
+     } finally {
+@@ -696,7 +709,14 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ image, onClose, onUpdateImage
+             finalPrompt = JSON.stringify(instructions);
+         }
+ 
+-        const newImageData = await editImage(previewUrl, maskData, finalPrompt, isMulti, selectedModel as 'nano-banana-pro' | 'nano-banana-2' | 'nano-banana-2-lite');
++        const newImageData = await editImage({
++            imageUrl: previewUrl,
++            maskBase64: maskData,
++            prompt: finalPrompt,
++            isMultiMask: isMulti,
++            selectedModel,
++            sourceAspect: sourceAspect(),
++        });
+         setPreviewUrl(newImageData);
+         
+         // Reset Logic
+@@ -722,6 +742,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ image, onClose, onUpdateImage
+ 
+     } catch (e: any) {
+         console.error(e);
++        reportError(e, 'edit', { 動作: isMulti ? '多色遮罩編輯' : '遮罩／指令編輯' });
+         const msg = e.message || 'Unknown error';
+         setEditorError(`Failed to edit image: ${msg}`);
+     } finally {
+@@ -847,6 +868,11 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ image, onClose, onUpdateImage
+         </div>
+       </div>
+ 
++      {modelView?.maskEditing === 'reference-only' && (
++        <div className="bg-gray-900 border-b border-gray-800 text-gray-400 px-6 py-1.5 text-[11px]">
++          {modelView.label}：{MASK_REFERENCE_ONLY_NOTE}
++        </div>
++      )}
+       {editorError && (
+         <div className="bg-red-950 border-b border-red-800 text-red-200 px-6 py-2.5 flex items-center justify-between gap-3 z-50">
+           <div className="flex items-center gap-2 text-xs font-semibold">
+diff --git a/components/ImageModelSelector.tsx b/components/ImageModelSelector.tsx
+new file mode 100644
+index 0000000..97a8b89
+--- /dev/null
++++ b/components/ImageModelSelector.tsx
+@@ -0,0 +1,75 @@
++import React from 'react';
++import { modelIssue, PROVIDER_ORDER, type ImageModelView } from '../shared/imageModels';
++
++interface ImageModelSelectorProps {
++  models: readonly ImageModelView[];
++  value: string;
++  onChange: (id: string) => void;
++  /** Reference images the next request will send; options that cannot take them are disabled. */
++  referenceCount: number;
++  loading?: boolean;
++  /** The model list failed to load; show a retry button instead of an empty list. */
++  failed?: boolean;
++  onReload?: () => void;
++  className?: string;
++}
++
++/**
++ * Image model picker grouped by provider (Google, KIE, ToAPIs). Models without a server key or
++ * with a lower reference-image limit stay visible but disabled, with the reason in the label.
++ */
++export const ImageModelSelector: React.FC<ImageModelSelectorProps> = ({ models, value, onChange, referenceCount, loading, failed, onReload, className }) => {
++  if (failed && models.length === 0) {
++    return (
++      <button type="button" onClick={onReload} className={className} title="重新載入圖片模型清單">
++        模型清單載入失敗，按此重試
++      </button>
++    );
++  }
++  if (loading && models.length === 0) {
++    return (
++      <select disabled className={className} value="">
++        <option value="">載入模型中…</option>
++      </select>
++    );
++  }
++  return (
++    <select value={value} onChange={(event) => onChange(event.target.value)} className={className} title="圖片生成模型">
++      {PROVIDER_ORDER.map((provider) => {
++        const group = models.filter((model) => model.provider === provider);
++        if (group.length === 0) return null;
++        return (
++          <optgroup key={provider} label={group[0]?.providerLabel ?? provider}>
++            {group.map((model) => {
++              const issue = modelIssue(model, referenceCount);
++              return (
++                <option key={model.id} value={model.id} disabled={issue !== null && model.id !== value}>
++                  {issue ? `${model.label}（${issue}）` : model.label}
++                </option>
++              );
++            })}
++          </optgroup>
++        );
++      })}
++    </select>
++  );
++};
++
++interface ImageModelIssueProps {
++  model: ImageModelView | undefined;
++  referenceCount: number;
++  className?: string;
++}
++
++/** Red hint shown near the Generate button when the selected model cannot run as configured. */
++export const ImageModelIssue: React.FC<ImageModelIssueProps> = ({ model, referenceCount, className }) => {
++  if (!model) return null;
++  const issue = modelIssue(model, referenceCount);
++  if (!issue) return null;
++  const fix = model.available ? '請移除部分圖片，或改選其他模型。' : '請改選其他模型，或請管理員設定金鑰。';
++  return (
++    <p role="status" className={className ?? 'mt-2 text-xs font-semibold text-red-600'}>
++      目前模型「{model.label}」{issue}。{fix}
++    </p>
++  );
++};
+diff --git a/components/TemperatureControl.tsx b/components/TemperatureControl.tsx
+index 0af96b8..505963e 100644
+--- a/components/TemperatureControl.tsx
++++ b/components/TemperatureControl.tsx
+@@ -5,13 +5,17 @@ interface TemperatureControlProps {
+   temperature: number;
+   onChange: (value: number) => void;
+   compact?: boolean;
++  /** Shown instead of enabling the control when the selected model does not accept temperature. */
++  disabledReason?: string | null;
+ }
+ 
+ export const TemperatureControl: React.FC<TemperatureControlProps> = ({
+   temperature,
+   onChange,
+   compact = false,
++  disabledReason = null,
+ }) => {
++  const disabled = disabledReason !== null;
+   const [showTooltip, setShowTooltip] = useState(false);
+ 
+   // Quick preset values
+@@ -30,7 +34,7 @@ export const TemperatureControl: React.FC<TemperatureControlProps> = ({
+   const activeLabel = getActivePreset();
+ 
+   return (
+-    <div className={`bg-gray-50/70 border border-gray-200 rounded-2xl ${compact ? 'p-3 space-y-2' : 'p-4 space-y-3'} transition-all`}>
++    <div className={`bg-gray-50/70 border border-gray-200 rounded-2xl ${compact ? 'p-3 space-y-2' : 'p-4 space-y-3'} transition-all`} aria-disabled={disabled}>
+       {/* Header */}
+       <div className="flex items-center justify-between">
+         <div className="flex items-center gap-2">
+@@ -111,8 +115,14 @@ export const TemperatureControl: React.FC<TemperatureControlProps> = ({
+         </div>
+       </div>
+ 
+-      {/* Range Slider */}
+-      <div className="space-y-1.5">
++      {disabled && (
++        <p role="note" className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
++          {disabledReason}（已保留目前設定，切回支援的模型時會沿用）
++        </p>
++      )}
++
++      {/* Range Slider (the value is kept while disabled) */}
++      <fieldset disabled={disabled} className={`space-y-1.5 ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
+         <input
+           type="range"
+           min="0.1"
+@@ -150,7 +160,7 @@ export const TemperatureControl: React.FC<TemperatureControlProps> = ({
+             );
+           })}
+         </div>
+-      </div>
++      </fieldset>
+     </div>
+   );
+ };
+diff --git a/components/useImageModels.ts b/components/useImageModels.ts
+new file mode 100644
+index 0000000..a3bf143
+--- /dev/null
++++ b/components/useImageModels.ts
+@@ -0,0 +1,45 @@
++import { useCallback, useEffect, useState } from 'react';
++import { fetchImageModels } from '../services/imageApi';
++import { reportError } from '../services/errorReporter';
++import type { ImageModelView } from '../shared/imageModels';
++
++interface ImageModelsState {
++  models: ImageModelView[];
++  loading: boolean;
++  /** True after a failed load; reload() tries again. */
++  failed: boolean;
++}
++
++/** One shared request per page load. A failed load is reported to the ErrorPanel and can be retried. */
++let pending: Promise<ImageModelView[]> | null = null;
++
++export function useImageModels(): ImageModelsState & { reload: () => void } {
++  const [state, setState] = useState<ImageModelsState>({ models: [], loading: true, failed: false });
++  const [attempt, setAttempt] = useState(0);
++  useEffect(() => {
++    let active = true;
++    pending ??= fetchImageModels();
++    pending.then(
++      (models) => {
++        if (active) setState({ models, loading: false, failed: false });
++      },
++      (error: unknown) => {
++        pending = null;
++        reportError(error, 'image-models');
++        if (active) setState({ models: [], loading: false, failed: true });
++      },
++    );
++    return () => {
++      active = false;
++    };
++  }, [attempt]);
++  const reload = useCallback(() => {
++    setState((previous) => ({ ...previous, loading: true, failed: false }));
++    setAttempt((value) => value + 1);
++  }, []);
++  return { ...state, reload };
++}
++
++export function findImageModel(models: readonly ImageModelView[], id: string): ImageModelView | undefined {
++  return models.find((model) => model.id === id);
++}
+diff --git a/server.ts b/server.ts
+index 10ac9b2..abe6d32 100644
+--- a/server.ts
++++ b/server.ts
+@@ -2,6 +2,10 @@ import express from "express";
+ import path from "path";
+ import { createServer as createViteServer } from "vite";
+ import { GoogleGenAI } from "@google/genai";
++import { AppImageError, errorDetails, prepareAppImage, runAppImage, type ImagePart } from "./server/imageClient";
++import { imageModelView, listImageModels } from "./server/imageModels";
++import { streamImageResponse } from "./server/ndjson";
++import { OUTPUT_SPECS } from "./shared/imageOutput";
+ 
+ const app = express();
+ const PORT = 3000;
+@@ -27,47 +31,32 @@ const urlToAsset = async (url: string) => {
+   };
+ };
+ 
+-const mapRatioToSupported = (ratio: string): string => {
+-  switch (ratio) {
+-    case "2:3": return "3:4"; 
+-    case "3:2": return "4:3";
+-    case "4:5": return "3:4";
+-    case "300x250": return "4:3";
+-    case "320x250": return "4:3";
+-    case "300x300": return "1:1";
+-    default: return ratio;
+-  }
+-};
+-
+-const mapQualityToSize = (quality: string): string => {
+-  return "2K"; 
+-};
+-
+-const buildImageConfig = (modelName: string, ratio?: string, quality?: string, temperature?: number) => {
+-  const config: any = {};
+-  if (ratio) {
+-    config.aspectRatio = mapRatioToSupported(ratio);
+-  }
+-  const isLite = modelName.toLowerCase().includes("lite");
+-  if (!isLite) {
+-    if (quality) {
+-      config.imageSize = mapQualityToSize(quality);
+-    } else {
+-      config.imageSize = "1K";
+-    }
+-  }
+-  if (typeof temperature === "number" && !isNaN(temperature)) {
+-    config.temperature = temperature;
+-  }
+-  return config;
+-};
+-
+ // API: Check config if api key is present on the server
+ app.get("/api/config", (req, res) => {
+   const hasKey = !!(process.env.GEMINI_API_KEY || process.env.API_KEY);
+   res.json({ hasApiKey: hasKey });
+ });
+ 
++// API: Image models for the selector, with limits from the pi-ai-extra catalogues and key availability
++app.get("/api/image-models", (req, res) => {
++  res.json({ models: listImageModels() });
++});
++
++/** Edits keep the previous fixed temperature, sent only to models that accept temperature. */
++const EDIT_TEMPERATURE = 0.7;
++
++/** Error body for both JSON responses and the NDJSON `error` line. */
++function imageErrorBody(error: unknown) {
++  return { error: error instanceof Error ? error.message : String(error), details: errorDetails(error) };
++}
++
++/** Errors found before streaming starts (unknown model, missing key, unsupported option) as JSON. */
++function sendImageError(res: express.Response, route: string, error: unknown) {
++  console.error(`[PROXY ERROR] ${route} failed:`, error);
++  if (res.headersSent) return;
++  res.status(error instanceof AppImageError ? error.httpStatus : 500).json(imageErrorBody(error));
++}
++
+ // Helper to extract and format HTML text into clean, structured paragraphs
+ function parseHtmlToStructuredParagraphs(html: string): string {
+   // 1. Remove non-article script/style/nav/header/footer/iframe/comment blocks
+@@ -405,11 +394,6 @@ ${articleText.slice(0, 10000)}
+ // API: Process Collage Generation via Tokyo Cloud Run server proxy
+ app.post("/api/generate-collage", async (req, res) => {
+   try {
+-    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+-    if (!apiKey) {
+-      return res.status(401).json({ error: "Missing backend Gemini API Key" });
+-    }
+-
+     const {
+       templateAssets,
+       sourceAssets,
+@@ -440,12 +424,12 @@ app.post("/api/generate-collage", async (req, res) => {
+       `;
+     }
+ 
+-    const tempVal = typeof temperature === 'number' && !isNaN(temperature) ? temperature : 0.7;
+-
+-    const ai = new GoogleGenAI({ apiKey });
+-    const parts: any[] = [];
++    if (!Object.prototype.hasOwnProperty.call(OUTPUT_SPECS, String(ratio))) {
++      return res.status(400).json({ error: `不支援的輸出比例「${ratio ?? ""}」。`, details: { code: "invalid_request", appModelId: String(selectedModel ?? "") } });
++    }
++    const parts: ImagePart[] = [];
+ 
+-    const isNanoBanana2 = selectedModel === "nano-banana-2" || selectedModel === "nano-banana-2-lite";
++    const isNanoBanana2 = imageModelView(String(selectedModel ?? ""))?.promptProfile === "nano-banana-2";
+ 
+     let nanoBanana2SourceInstruction = "";
+     if (isNanoBanana2 && sourceAssets && sourceAssets.length > 0) {
+@@ -720,90 +704,34 @@ app.post("/api/generate-collage", async (req, res) => {
+     
+     parts.push({ text: finalPrompt });
+ 
+-    const models = selectedModel === "nano-banana-2-lite"
+-      ? ["gemini-3.1-flash-lite-image", "gemini-3.1-flash-image"]
+-      : (selectedModel === "nano-banana-2"
+-        ? ["gemini-3.1-flash-image", "gemini-3-pro-image"]
+-        : ["gemini-3-pro-image", "gemini-3.1-flash-image"]);
+-
+-    let rawImageBase64: string | null = null;
+-    let lastError: any = null;
+-
+-    for (const modelName of models) {
+-      try {
+-        console.log(`[PROXY] Attempting collage generation with model: ${modelName}`);
+-        const response = await ai.models.generateContent({
+-          model: modelName,
+-          contents: { parts },
+-          config: {
+-            temperature: tempVal,
+-            systemInstruction: systemInstruction,
+-            imageConfig: buildImageConfig(modelName, ratio, quality, tempVal)
+-          }
+-        });
+-
+-        for (const part of response.candidates?.[0]?.content?.parts || []) {
+-          if (part.inlineData) {
+-            rawImageBase64 = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+-            break;
+-          }
+-        }
+-
+-        if (rawImageBase64) {
+-          break;
+-        }
+-
+-        const textPart = response.candidates?.[0]?.content?.parts?.find(p => p.text);
+-        const finishReason = response.candidates?.[0]?.finishReason;
+-        let errorMsg = `Model ${modelName} returned no image.`;
+-        if (textPart?.text) {
+-          errorMsg += ` Refusal: ${textPart.text.slice(0, 200)}`;
+-        }
+-        if (finishReason && finishReason !== "STOP") {
+-          errorMsg += ` Finish Reason: ${finishReason}`;
+-        }
+-        lastError = new Error(errorMsg);
+-
+-      } catch (err: any) {
+-        console.warn(`[PROXY] Model ${modelName} failed:`, err);
+-        lastError = err;
+-      }
+-    }
+-
+-    if (!rawImageBase64) {
+-      const errorMsg = lastError?.message || lastError?.toString() || "Unknown reason";
+-      return res.status(500).json({ error: errorMsg });
+-    }
+-
+-    return res.json({ rawImageBase64 });
+-  } catch (error: any) {
+-    console.error("[PROXY ERROR] generate-collage failed:", error);
+-    return res.status(500).json({ error: error?.message || error?.toString() });
++    const prepared = prepareAppImage({
++      appModelId: String(selectedModel ?? ""),
++      parts,
++      systemInstruction,
++      ratio: String(ratio),
++      temperature,
++    });
++    await streamImageResponse(res, async (signal) => ({ rawImageBase64: await runAppImage(prepared, signal) }), imageErrorBody);
++  } catch (error) {
++    sendImageError(res, "generate-collage", error);
+   }
+ });
+ 
+ // API: Process Local Mask-based/Reflective Image Editing via Tokyo Cloud Run server proxy
+ app.post("/api/edit-image", async (req, res) => {
+   try {
+-    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+-    if (!apiKey) {
+-      return res.status(401).json({ error: "Missing backend Gemini API Key" });
+-    }
+-
+     const {
+       imageUrl,
+       maskBase64,
+       prompt,
+       isMultiMask,
+       selectedModel,
++      sourceAspect,
+       temperature,
+       extraImageBase64
+     } = req.body;
+ 
+-    const tempVal = typeof temperature === 'number' && !isNaN(temperature) ? temperature : 0.7;
+-
+-    const ai = new GoogleGenAI({ apiKey });
+-    const parts: any[] = [];
++    const parts: ImagePart[] = [];
+     
+     const systemInstruction = `
+       ROLE: Expert Professional Photo Retoucher.
+@@ -826,16 +754,6 @@ app.post("/api/edit-image", async (req, res) => {
+       }
+     });
+ 
+-    if (extraImageBase64) {
+-      const extraAsset = await urlToAsset(extraImageBase64);
+-      parts.push({
+-        inlineData: {
+-          data: extraAsset.data,
+-          mimeType: extraAsset.mimeType
+-        }
+-      });
+-    }
+-
+     if (maskBase64) {
+       const maskAsset = await urlToAsset(maskBase64);
+       parts.push({
+@@ -887,65 +805,28 @@ app.post("/api/edit-image", async (req, res) => {
+       parts.push({ text: `Global Edit Instruction: ${prompt}. \n\nEnsure the result maintains the high quality and resolution of the original image.` });
+     }
+ 
+-    const models = selectedModel === "nano-banana-2-lite"
+-      ? ["gemini-3.1-flash-lite-image", "gemini-3.1-flash-image"]
+-      : (selectedModel === "nano-banana-2"
+-        ? ["gemini-3.1-flash-image", "gemini-3-pro-image"]
+-        : ["gemini-3-pro-image", "gemini-3.1-flash-image"]);
+-
+-    let rawImageBase64: string | null = null;
+-    let lastError: any = null;
+-
+-    for (const modelName of models) {
+-      try {
+-        console.log(`[PROXY] Attempting edit layout with model: ${modelName}`);
+-        const response = await ai.models.generateContent({
+-          model: modelName,
+-          contents: { parts },
+-          config: {
+-            temperature: tempVal,
+-            systemInstruction,
+-            imageConfig: buildImageConfig(modelName, undefined, undefined, tempVal)
+-          }
+-        });
+-
+-        for (const part of response.candidates?.[0]?.content?.parts || []) {
+-          if (part.inlineData) {
+-            rawImageBase64 = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+-            break;
+-          }
+-        }
+-
+-        if (rawImageBase64) {
+-          break;
+-        }
+-
+-        const textOutput = response.candidates?.[0]?.content?.parts?.find(p => p.text)?.text;
+-        const finishReason = response.candidates?.[0]?.finishReason;
+-        let errorMsg = `Model ${modelName} returned no image in edit.`;
+-        if (textOutput) {
+-          errorMsg += ` Refusal/Text: ${textOutput.slice(0, 200)}`;
+-        }
+-        if (finishReason && finishReason !== "STOP") {
+-          errorMsg += ` Finish Reason: ${finishReason}`;
+-        }
+-        lastError = new Error(errorMsg);
+-
+-      } catch (err: any) {
+-        console.warn(`[PROXY] Model ${modelName} edit failed:`, err);
+-        lastError = err;
+-      }
+-    }
+-
+-    if (!rawImageBase64) {
+-      const errorMsg = lastError?.message || lastError?.toString() || "Unknown reason";
+-      return res.status(500).json({ error: errorMsg });
+-    }
+-
+-    return res.json({ rawImageBase64 });
+-  } catch (error: any) {
+-    console.error("[PROXY ERROR] edit-image failed:", error);
+-    return res.status(500).json({ error: error?.message || error?.toString() });
++    // Fixed reference order: Image 1 base, Image 2 mask (when present), then the extra reference.
++    if (extraImageBase64) {
++      const extraAsset = await urlToAsset(extraImageBase64);
++      const extraIndex = maskBase64 ? 3 : 2;
++      parts.push({ text: `Image ${extraIndex}: Additional reference asset supplied by the user for the requested change. Use it only as a visual reference; it is not a mask.` });
++      parts.push({ inlineData: { data: extraAsset.data, mimeType: extraAsset.mimeType } });
++    }
++
++    const appModelId = String(selectedModel ?? "");
++    const prepared = prepareAppImage({
++      appModelId,
++      parts,
++      systemInstruction,
++      // The input image's "width:height"; needed only by models that cannot keep the input aspect.
++      ratio: typeof sourceAspect === "string" ? sourceAspect : undefined,
++      keepInputAspect: true,
++      // Explicit edit temperatures (logo replacement uses 0.5) are validated; otherwise 0.7 where supported.
++      temperature: temperature ?? (imageModelView(appModelId)?.temperature ? EDIT_TEMPERATURE : undefined),
++    });
++    await streamImageResponse(res, async (signal) => ({ rawImageBase64: await runAppImage(prepared, signal) }), imageErrorBody);
++  } catch (error) {
++    sendImageError(res, "edit-image", error);
+   }
+ });
+ 
+diff --git a/server/imageClient.ts b/server/imageClient.ts
+new file mode 100644
+index 0000000..fb55c69
+--- /dev/null
++++ b/server/imageClient.ts
+@@ -0,0 +1,255 @@
++import { randomUUID } from 'node:crypto';
++import { generateKieImage, isPiAiExtraError, type ImageGenerationResult, type KieImageRequest, type PiAiExtraError } from '@hk01/pi-ai-extra-kie';
++import { generateToapisImage, type ToapisImageRequest } from '@hk01/pi-ai-extra-toapis';
++// The Google 0.2.0 type includes the optional temperature / systemInstruction catalogue fields.
++import { generateGoogleImage, type GoogleImageRequest, type ImageModelInfo } from '@hk01/pi-ai-extra-google';
++import { TEMPERATURE_SUPPORT_NOTE, type ImageErrorDetails, type ImageProvider } from '../shared/imageModels';
++import { outputSpec, ratioValue } from '../shared/imageOutput';
++import { findRegistryEntry, providerKey, resolveOperation, secretName } from './imageModels';
++
++/**
++ * The only place this app talks to image providers. Each request goes to exactly the
++ * provider/model the user selected: no model or provider fallback, no cross-provider
++ * uploads, reference images are never dropped, and a billed submission is never re-sent.
++ */
++
++export interface ImagePart {
++  text?: string;
++  inlineData?: { data: string; mimeType: string };
++}
++
++export interface AppImageRequest {
++  appModelId: string;
++  /** Gemini-style parts in order: text labels and inline images. */
++  parts: readonly ImagePart[];
++  /** Model rules. Sent as systemInstruction where supported, otherwise placed before the prompt. */
++  systemInstruction: string;
++  /**
++   * App ratio preset ("16:9", "300x250", …) or the input image's "width:height". Decides the
++   * resolution, and the aspect ratio unless the input aspect is kept. Required when an aspect
++   * ratio has to be chosen.
++   */
++  ratio: string | undefined;
++  /** Edits: keep the input image's aspect where the model can (Google: omit; KIE: "auto"). */
++  keepInputAspect?: boolean;
++  /** Raw request value; validated here (number, and accepted by the model). */
++  temperature?: unknown;
++}
++
++/** What the UI shows, and users copy into bug reports, for a failed request. */
++export type AppErrorDetails = ImageErrorDetails;
++
++export class AppImageError extends Error {
++  readonly details: AppErrorDetails;
++  /** HTTP status when the error is found before any provider call. */
++  readonly httpStatus: number;
++  constructor(message: string, details: AppErrorDetails = {}, options: { httpStatus?: number; cause?: unknown } = {}) {
++    super(message, { cause: options.cause });
++    this.name = 'AppImageError';
++    this.details = details;
++    this.httpStatus = options.httpStatus ?? 500;
++  }
++}
++
++function packageErrorDetails(error: PiAiExtraError, appModelId?: string): AppErrorDetails {
++  return {
++    ...(appModelId ? { appModelId } : {}),
++    provider: error.provider,
++    model: error.model,
++    code: error.code,
++    ...(error.taskId ? { taskId: error.taskId } : {}),
++    ...(error.status !== undefined ? { status: error.status } : {}),
++    ...(error.providerCode ? { providerCode: error.providerCode } : {}),
++  };
++}
++
++/** Details for an API error response. Unknown errors still report their message; nothing is hidden. */
++export function errorDetails(error: unknown): AppErrorDetails {
++  if (error instanceof AppImageError) return error.details;
++  if (isPiAiExtraError(error)) return packageErrorDetails(error);
++  return { code: 'unexpected' };
++}
++
++export interface PreparedImageRequest {
++  appModelId: string;
++  provider: ImageProvider;
++  info: ImageModelInfo;
++  apiKey: string;
++  prompt: string;
++  systemInstruction: string | undefined;
++  referenceImages: string[];
++  aspectRatio: string | undefined;
++  resolution: string | undefined;
++  temperature: number | undefined;
++}
++
++/**
++ * KIE GPT Image 2 ratios that are unavailable at 2K. The catalogue states this only as a note
++ * (the package rejects them), so it is repeated here to pick a ratio the package accepts.
++ */
++const KIE_GPT_UNSUPPORTED_AT: Record<string, readonly string[]> = {
++  '2K': ['5:4', '4:5', '3:1', '1:3', '9:21'],
++};
++
++/** The model's own ratio for an app preset: an exact match, otherwise the nearest supported ratio. */
++function pickAspectRatio(info: ImageModelInfo, ratio: string, target: number, resolution: string | undefined): string | undefined {
++  if (!info.aspectRatio) return undefined;
++  const blocked = info.id.startsWith('gpt-image-2-') && resolution ? (KIE_GPT_UNSUPPORTED_AT[resolution] ?? []) : [];
++  const candidates = info.aspectRatio.values.filter((value) => value !== 'auto' && !blocked.includes(value));
++  if (candidates.includes(ratio)) return ratio;
++  const distance = (value: string): number => Math.abs(Math.log((ratioValue(value) ?? Number.POSITIVE_INFINITY) / target));
++  return [...candidates].sort((a, b) => distance(a) - distance(b))[0];
++}
++
++/**
++ * The aspect value that keeps the input image's aspect: "auto" where offered, omitted where the
++ * model matches the input by default (Gemini), or null when the model cannot keep it.
++ */
++function inputAspectValue(info: ImageModelInfo): string | undefined | null {
++  if (!info.aspectRatio) return undefined;
++  if (info.aspectRatio.values.includes('auto')) return 'auto';
++  return info.aspectRatio.default === null && !info.aspectRatio.required ? undefined : null;
++}
++
++/** Gemini-style interleaved parts → one prompt with numbered image markers, images kept in order. */
++export function partsToPrompt(parts: readonly ImagePart[]): { prompt: string; referenceImages: string[] } {
++  const referenceImages: string[] = [];
++  const lines: string[] = [];
++  for (const part of parts) {
++    if (part.inlineData) {
++      referenceImages.push(`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`);
++      lines.push(`[Reference image ${referenceImages.length}]`);
++    } else if (part.text) {
++      lines.push(part.text);
++    }
++  }
++  return { prompt: lines.join('\n\n'), referenceImages };
++}
++
++function aspectRatioFor(info: ImageModelInfo, request: AppImageRequest, resolution: string | undefined, base: AppErrorDetails): string | undefined {
++  const kept = request.keepInputAspect ? inputAspectValue(info) : null;
++  if (kept !== null) return kept;
++  const target = request.ratio === undefined ? undefined : ratioValue(request.ratio);
++  if (target === undefined || !Number.isFinite(target) || target <= 0) {
++    throw new AppImageError(`無法判斷圖片比例（收到「${request.ratio ?? ''}」），無法為 ${info.id} 選擇比例。`, { ...base, code: 'invalid_request' }, { httpStatus: 400 });
++  }
++  return pickAspectRatio(info, request.ratio ?? '', target, resolution);
++}
++
++function validTemperature(value: unknown, base: AppErrorDetails): number | undefined {
++  if (value === undefined) return undefined;
++  if (typeof value !== 'number' || !Number.isFinite(value)) {
++    throw new AppImageError('temperature 必須是數字。', { ...base, code: 'invalid_request' }, { httpStatus: 400 });
++  }
++  return value;
++}
++
++/** Validates everything that can fail before a provider is called (HTTP 400 / 503). */
++export function prepareAppImage(request: AppImageRequest): PreparedImageRequest {
++  const entry = findRegistryEntry(request.appModelId);
++  if (!entry) {
++    throw new AppImageError(`不支援的圖片模型「${request.appModelId}」，請在模型選單重新選擇。`, { code: 'unsupported_model', appModelId: request.appModelId }, { httpStatus: 400 });
++  }
++  const base = { appModelId: entry.id, provider: entry.provider };
++  const { prompt, referenceImages } = partsToPrompt(request.parts);
++  const info = resolveOperation(entry, referenceImages.length);
++  if (!info) throw new AppImageError(`已安裝的 ${entry.provider} 套件不包含 ${entry.model}。`, { ...base, code: 'unsupported_model' });
++  const target = { ...base, model: info.id };
++
++  const apiKey = providerKey(entry.provider);
++  if (!apiKey) {
++    throw new AppImageError(`伺服器未設定 ${secretName(entry.provider)}，無法使用 ${entry.label}。`, { ...target, code: 'missing_key' }, { httpStatus: 503 });
++  }
++  const temperature = validTemperature(request.temperature, target);
++  if (temperature !== undefined && !info.temperature) {
++    throw new AppImageError(`${entry.label} 不支援 Temperature。${TEMPERATURE_SUPPORT_NOTE}`, { ...target, code: 'temperature_unsupported' }, { httpStatus: 400 });
++  }
++  const { min, max } = info.referenceImages;
++  if (referenceImages.length < min || (max !== null && referenceImages.length > max)) {
++    const limit = max === null ? `至少 ${min} 張` : `${min}–${max} 張`;
++    throw new AppImageError(`${entry.label} 接受 ${limit}參考圖，這次有 ${referenceImages.length} 張（圖片不會被自動刪減）。`, { ...target, code: 'reference_limit' }, { httpStatus: 400 });
++  }
++
++  const wanted = outputSpec(request.ratio ?? '').resolution;
++  const resolution = info.resolution?.values.includes(wanted) ? wanted : undefined;
++  const separateRules = info.systemInstruction === true;
++  return {
++    ...target,
++    info,
++    apiKey,
++    prompt: separateRules ? prompt : `${request.systemInstruction.trim()}\n\n${prompt}`,
++    systemInstruction: separateRules ? request.systemInstruction : undefined,
++    referenceImages,
++    aspectRatio: aspectRatioFor(info, request, resolution, target),
++    resolution,
++    temperature,
++  };
++}
++
++/** Turns a package error into a user-facing message that keeps provider/model and the error code. */
++function toAppError(error: unknown, appModelId: string): Error {
++  if (error instanceof AppImageError || !isPiAiExtraError(error)) return error instanceof Error ? error : new Error(String(error));
++  const where = `${error.provider}/${error.model}`;
++  const prefix =
++    error.code === 'content_blocked'
++      ? `內容未通過 ${where} 安全審查`
++      : error.code === 'reference_limit'
++        ? `參考圖片數量超出 ${where} 的上限（圖片不會被自動刪減）`
++        : error.code === 'auth'
++          ? `${where} 金鑰無效或未授權，請檢查 Secrets`
++          : error.code === 'insufficient_credits'
++            ? `${where} 帳戶額度不足`
++            : `${where} 生成失敗 [${error.code}]`;
++  const detail = error.message.replace(/^\[[^\]]+\]\s*/, '');
++  return new AppImageError(`${prefix}：${detail}`, packageErrorDetails(error, appModelId), { cause: error });
++}
++
++/** Provider-reported usage, logged per task id for later per-app recording. */
++function logUsage(result: ImageGenerationResult, appModelId: string, clientBusinessId: string | undefined): void {
++  console.info(
++    `[usage] app=auto-og model=${appModelId} ${result.provider}/${result.model} task=${result.taskId ?? '-'} ref=${clientBusinessId ?? '-'} elapsedMs=${result.elapsedMs} usage=${JSON.stringify(result.usage ?? null)}`,
++  );
++}
++
++async function callProvider(prepared: PreparedImageRequest, signal: AbortSignal | undefined, clientBusinessId: string | undefined): Promise<ImageGenerationResult> {
++  const common = {
++    apiKey: prepared.apiKey,
++    model: prepared.info.id,
++    prompt: prepared.prompt,
++    referenceImages: prepared.referenceImages,
++    aspectRatio: prepared.aspectRatio,
++    resolution: prepared.resolution,
++    signal,
++  };
++  if (prepared.provider === 'google') {
++    return generateGoogleImage({ ...common, temperature: prepared.temperature, systemInstruction: prepared.systemInstruction } as GoogleImageRequest);
++  }
++  if (prepared.provider === 'kie') return generateKieImage(common as KieImageRequest);
++  return generateToapisImage({
++    ...common,
++    clientBusinessId,
++    watermark: prepared.info.watermark ? false : undefined,
++  } as ToapisImageRequest);
++}
++
++/** Generates or edits one image with the prepared provider/model and returns it as a data URL. */
++export async function runAppImage(prepared: PreparedImageRequest, signal?: AbortSignal): Promise<string> {
++  const clientBusinessId = prepared.provider === 'toapis' ? `auto-og:${randomUUID()}` : undefined;
++  try {
++    const result = await callProvider(prepared, signal, clientBusinessId);
++    logUsage(result, prepared.appModelId, clientBusinessId);
++    const image = result.images[0];
++    if (!image) {
++      throw new AppImageError(`${result.provider}/${result.model} 沒有返回圖片。`, {
++        appModelId: prepared.appModelId,
++        provider: result.provider,
++        model: result.model,
++        code: 'no_output',
++        ...(result.taskId ? { taskId: result.taskId } : {}),
++      });
++    }
++    return image.dataUrl;
++  } catch (error) {
++    throw toAppError(error, prepared.appModelId);
++  }
++}
+diff --git a/server/imageModels.ts b/server/imageModels.ts
+new file mode 100644
+index 0000000..b94b042
+--- /dev/null
++++ b/server/imageModels.ts
+@@ -0,0 +1,213 @@
++import { KIE_IMAGE_MODELS } from '@hk01/pi-ai-extra-kie';
++import { TOAPIS_IMAGE_MODELS } from '@hk01/pi-ai-extra-toapis';
++// The Google 0.2.0 type includes the optional temperature / systemInstruction catalogue fields.
++import { GOOGLE_IMAGE_MODELS, type ImageModelInfo } from '@hk01/pi-ai-extra-google';
++import type { ImageModelView, ImageProvider, MaskEditing, PriceEstimate, PromptProfile } from '../shared/imageModels';
++
++/**
++ * The image models this app offers, and how each maps to a provider model operation.
++ * Limits and capabilities come from the package catalogues, never from this file.
++ */
++interface RegistryEntry {
++  id: string;
++  label: string;
++  description: string;
++  provider: ImageProvider;
++  /** Provider operation used with reference images (and without, unless textOnlyModel is set). */
++  model: string;
++  /** Provider text-to-image operation used when a request has no reference images. */
++  textOnlyModel?: string;
++  promptProfile: PromptProfile;
++  /** "supported": Gemini-family models, which this app has always used for mask edits. */
++  maskEditing: MaskEditing;
++  /** Verified list prices only (Google pricing page 2026-10-01, ToAPIs GPT Image 2.5 doc 2026-09-09). */
++  price: PriceEstimate | null;
++}
++
++const REGISTRY: readonly RegistryEntry[] = [
++  {
++    id: 'nano-banana-2',
++    label: 'Nano Banana 2（2代平衡）',
++    description: 'Google 直連 Gemini 3.1 Flash Image，速度快，適合一般拼貼。',
++    provider: 'google',
++    model: 'gemini-3.1-flash-image',
++    promptProfile: 'nano-banana-2',
++    maskEditing: 'supported',
++    price: { perImageUsd: { '1K': 0.067, '2K': 0.101 }, inputPerMillionTokensUsd: 0.5 },
++  },
++  {
++    id: 'nano-banana-pro',
++    label: 'Nano Banana Pro（Pro 思考）',
++    description: 'Google 直連 Gemini 3 Pro Image，細節更豐富，適合高要求圖片。',
++    provider: 'google',
++    model: 'gemini-3-pro-image',
++    promptProfile: 'default',
++    maskEditing: 'supported',
++    price: { perImageUsd: { '1K': 0.134, '2K': 0.134 }, inputPerMillionTokensUsd: 2 },
++  },
++  {
++    id: 'kie-nano-banana-2',
++    label: 'Nano Banana 2 (KIE)',
++    description: 'KIE 提供的 Gemini 3.1 Flash Image。',
++    provider: 'kie',
++    model: 'nano-banana-2',
++    promptProfile: 'nano-banana-2',
++    maskEditing: 'supported',
++    price: null,
++  },
++  {
++    id: 'kie-gpt-image-2',
++    label: 'GPT Image 2 (KIE)',
++    description: 'KIE 提供的 GPT Image 2；有參考圖時使用 image-to-image。',
++    provider: 'kie',
++    model: 'gpt-image-2-image-to-image',
++    textOnlyModel: 'gpt-image-2-text-to-image',
++    promptProfile: 'default',
++    maskEditing: 'reference-only',
++    price: null,
++  },
++  {
++    id: 'gemini-3.1-flash-image-preview',
++    label: 'Nano Banana 2 Preview (ToAPIs)',
++    description: 'ToAPIs 提供的 Gemini 3.1 Flash Image Preview。',
++    provider: 'toapis',
++    model: 'gemini-3.1-flash-image-preview',
++    promptProfile: 'nano-banana-2',
++    maskEditing: 'supported',
++    price: null,
++  },
++  {
++    id: 'gpt-image-2',
++    label: 'GPT Image 2 (ToAPIs)',
++    description: 'ToAPIs 提供的 GPT Image 2。',
++    provider: 'toapis',
++    model: 'gpt-image-2',
++    promptProfile: 'default',
++    maskEditing: 'reference-only',
++    price: null,
++  },
++  {
++    id: 'gpt-image-2.5-flare',
++    label: 'GPT Image 2.5 Flare (ToAPIs)',
++    description: 'ToAPIs 提供的 GPT Image 2.5 Flare。',
++    provider: 'toapis',
++    model: 'gpt-image-2.5-flare',
++    promptProfile: 'default',
++    maskEditing: 'reference-only',
++    price: { perImageUsd: { '1K': 0.015, '2K': 0.02 }, inputPerMillionTokensUsd: 0 },
++  },
++  {
++    id: 'gpt-image-2.5-sunburst',
++    label: 'GPT Image 2.5 Sunburst (ToAPIs)',
++    description: 'ToAPIs 提供的 GPT Image 2.5 Sunburst。',
++    provider: 'toapis',
++    model: 'gpt-image-2.5-sunburst',
++    promptProfile: 'default',
++    maskEditing: 'reference-only',
++    price: { perImageUsd: { '1K': 0.015, '2K': 0.02 }, inputPerMillionTokensUsd: 0 },
++  },
++  {
++    id: 'doubao-seedream-5-0-pro',
++    label: 'Seedream 5.0 Pro (ToAPIs)',
++    description: 'ToAPIs 提供的 ByteDance Seedream 5.0 Pro。',
++    provider: 'toapis',
++    model: 'doubao-seedream-5-0-pro',
++    promptProfile: 'default',
++    maskEditing: 'reference-only',
++    price: null,
++  },
++];
++
++const PROVIDER_LABELS: Record<ImageProvider, string> = { google: 'Google Gemini', kie: 'KIE 提供', toapis: 'ToAPIs 提供' };
++const CATALOGUES: Record<ImageProvider, readonly ImageModelInfo[]> = {
++  google: GOOGLE_IMAGE_MODELS,
++  kie: KIE_IMAGE_MODELS,
++  toapis: TOAPIS_IMAGE_MODELS,
++};
++/** Google also accepts API_KEY, like the title and article routes. */
++const SECRET_NAMES: Record<ImageProvider, readonly string[]> = {
++  google: ['GEMINI_API_KEY', 'API_KEY'],
++  kie: ['KIE_API_KEY'],
++  toapis: ['TOAPIS_API_KEY'],
++};
++
++export interface ResolvedOperation {
++  entry: RegistryEntry;
++  info: ImageModelInfo;
++}
++
++export function findRegistryEntry(appModelId: string): RegistryEntry | undefined {
++  return REGISTRY.find((entry) => entry.id === appModelId);
++}
++
++function catalogueInfo(provider: ImageProvider, model: string): ImageModelInfo | undefined {
++  return CATALOGUES[provider].find((info) => info.id === model);
++}
++
++/** The provider operation for this request: text-to-image without references when the model has one. */
++export function resolveOperation(entry: RegistryEntry, referenceCount: number): ImageModelInfo | undefined {
++  const model = referenceCount === 0 && entry.textOnlyModel ? entry.textOnlyModel : entry.model;
++  return catalogueInfo(entry.provider, model);
++}
++
++/** The server-side key for a provider, or undefined when none is configured. */
++export function providerKey(provider: ImageProvider, env: NodeJS.ProcessEnv = process.env): string | undefined {
++  for (const name of SECRET_NAMES[provider]) {
++    const value = env[name]?.trim();
++    if (value) return value;
++  }
++  return undefined;
++}
++
++export function secretName(provider: ImageProvider): string {
++  return SECRET_NAMES[provider][0] ?? provider;
++}
++
++function operationInfos(entry: RegistryEntry): ImageModelInfo[] {
++  const models = entry.textOnlyModel ? [entry.textOnlyModel, entry.model] : [entry.model];
++  return models.flatMap((model) => {
++    const info = catalogueInfo(entry.provider, model);
++    return info ? [info] : [];
++  });
++}
++
++function toView(entry: RegistryEntry, env: NodeJS.ProcessEnv): ImageModelView {
++  const infos = operationInfos(entry);
++  const main = catalogueInfo(entry.provider, entry.model);
++  const maxes = infos.map((info) => info.referenceImages.max);
++  const missingFromPackage = infos.length === 0 || !main;
++  const hasKey = providerKey(entry.provider, env) !== undefined;
++  return {
++    id: entry.id,
++    label: entry.label,
++    description: entry.description,
++    provider: entry.provider,
++    providerLabel: PROVIDER_LABELS[entry.provider],
++    providerModel: entry.model,
++    acceptedMimeTypes: main ? [...main.referenceImages.acceptedMimeTypes] : [],
++    referenceLimit: {
++      min: infos.length > 0 ? Math.min(...infos.map((info) => info.referenceImages.min)) : 0,
++      max: maxes.includes(null) ? null : Math.max(0, ...maxes.map((max) => max ?? 0)),
++    },
++    temperature: main?.temperature ? { min: main.temperature.min, max: main.temperature.max } : null,
++    promptProfile: entry.promptProfile,
++    maskEditing: entry.maskEditing,
++    price: entry.price,
++    available: hasKey && !missingFromPackage,
++    unavailableReason: missingFromPackage
++      ? `已安裝的 ${entry.provider} 套件不包含 ${entry.model}`
++      : hasKey
++        ? null
++        : `伺服器未設定 ${secretName(entry.provider)}`,
++  };
++}
++
++/** Body of GET /api/image-models: every offered model, in selector order. */
++export function listImageModels(env: NodeJS.ProcessEnv = process.env): ImageModelView[] {
++  return REGISTRY.map((entry) => toView(entry, env));
++}
++
++export function imageModelView(appModelId: string, env: NodeJS.ProcessEnv = process.env): ImageModelView | undefined {
++  const entry = findRegistryEntry(appModelId);
++  return entry ? toView(entry, env) : undefined;
++}
+diff --git a/server/ndjson.ts b/server/ndjson.ts
+new file mode 100644
+index 0000000..c4ded28
+--- /dev/null
++++ b/server/ndjson.ts
+@@ -0,0 +1,43 @@
++import type { Response } from 'express';
++
++/** Keeps the connection busy so proxies with a 60-second idle timeout do not cut long image tasks. */
++const PING_INTERVAL_MS = 10_000;
++
++/**
++ * Streams one image request as NDJSON: a `start` line, a `ping` line every 10 s, then a single
++ * `complete` line (`rawImageBase64`) or `error` line (`error`, `details`).
++ * When the client disconnects, `signal` aborts so provider polling stops; a task that was
++ * already submitted is still billed by the provider.
++ */
++export async function streamImageResponse(
++  res: Response,
++  work: (signal: AbortSignal) => Promise<{ rawImageBase64: string }>,
++  describeError: (error: unknown) => { error: string; details: object },
++): Promise<void> {
++  const abort = new AbortController();
++  res.on('close', () => {
++    if (!res.writableEnded) abort.abort();
++  });
++  res.status(200);
++  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
++  res.setHeader('Cache-Control', 'no-cache, no-transform');
++  res.setHeader('X-Accel-Buffering', 'no');
++  res.flushHeaders();
++
++  const write = (event: object): void => {
++    if (!res.writableEnded && !res.destroyed) res.write(`${JSON.stringify(event)}\n`);
++  };
++  const startedAt = Date.now();
++  write({ type: 'start' });
++  const timer = setInterval(() => write({ type: 'ping', elapsedSec: Math.round((Date.now() - startedAt) / 1000) }), PING_INTERVAL_MS);
++  try {
++    const result = await work(abort.signal);
++    write({ type: 'complete', ...result });
++  } catch (error) {
++    console.error('[image] request failed:', error);
++    write({ type: 'error', ...describeError(error) });
++  } finally {
++    clearInterval(timer);
++    if (!res.writableEnded) res.end();
++  }
++}
+diff --git a/services/errorReporter.ts b/services/errorReporter.ts
+new file mode 100644
+index 0000000..bf1b2f2
+--- /dev/null
++++ b/services/errorReporter.ts
+@@ -0,0 +1,82 @@
++import { ImageRequestError } from './imageApi';
++import type { ImageErrorDetails } from '../shared/imageModels';
++
++/**
++ * Collects server errors for the ErrorPanel so users can copy an exact report.
++ * Any component can call reportError(); the panel shows the latest one.
++ */
++
++export type ErrorOperation = 'collage' | 'edit' | 'titles' | 'article' | 'page-images' | 'image-models';
++
++export interface ErrorEntry {
++  id: number;
++  at: string;
++  operation: ErrorOperation;
++  message: string;
++  details: ImageErrorDetails;
++  httpStatus: number | undefined;
++  /** Extra facts such as "第 2/4 張 (16:9)". */
++  context: Readonly<Record<string, string>>;
++}
++
++const OPERATION_LABELS: Record<ErrorOperation, string> = {
++  collage: '拼貼生成',
++  edit: '圖片編輯',
++  titles: '標題生成',
++  article: '讀取文章',
++  'page-images': '擷取網頁圖片',
++  'image-models': '載入圖片模型清單',
++};
++
++type Listener = (entry: ErrorEntry) => void;
++const listeners = new Set<Listener>();
++let nextId = 1;
++/** Latest error, replayed to a panel that mounts after it was reported. */
++let latest: ErrorEntry | null = null;
++
++export function operationLabel(operation: ErrorOperation): string {
++  return OPERATION_LABELS[operation];
++}
++
++export function reportError(error: unknown, operation: ErrorOperation, context: Record<string, string | number | undefined> = {}): ErrorEntry {
++  const entry: ErrorEntry = {
++    id: nextId++,
++    at: new Date().toISOString(),
++    operation,
++    message: error instanceof Error ? error.message : String(error),
++    details: error instanceof ImageRequestError ? error.details : {},
++    httpStatus: error instanceof ImageRequestError ? error.httpStatus : undefined,
++    context: Object.fromEntries(Object.entries(context).flatMap(([key, value]) => (value === undefined ? [] : [[key, String(value)]]))),
++  };
++  latest = entry;
++  listeners.forEach((listener) => listener(entry));
++  return entry;
++}
++
++export function subscribeErrors(listener: Listener): () => void {
++  listeners.add(listener);
++  if (latest) listener(latest);
++  return () => {
++    listeners.delete(listener);
++  };
++}
++
++/** Plain-text report for bug reports: everything the panel shows, one fact per line. */
++export function formatErrorReport(entry: ErrorEntry): string {
++  const { details } = entry;
++  const lines = [
++    `操作: ${operationLabel(entry.operation)}`,
++    `時間: ${entry.at}`,
++    details.appModelId ? `App model: ${details.appModelId}` : '',
++    details.provider || details.model ? `Provider/model: ${details.provider ?? '-'}/${details.model ?? '-'}` : '',
++    details.code ? `Error code: ${details.code}` : '',
++    details.status !== undefined ? `Provider HTTP status: ${details.status}` : '',
++    entry.httpStatus !== undefined ? `App HTTP status: ${entry.httpStatus}` : '',
++    details.providerCode ? `Provider code: ${details.providerCode}` : '',
++    details.taskId ? `Task id: ${details.taskId}` : '',
++    ...Object.entries(entry.context).map(([key, value]) => `${key}: ${value}`),
++    `訊息: ${entry.message}`,
++    `頁面: ${typeof location === 'undefined' ? '-' : location.href}`,
++  ];
++  return lines.filter(Boolean).join('\n');
++}
+diff --git a/services/geminiService.ts b/services/geminiService.ts
+index 37269e2..10dab06 100644
+--- a/services/geminiService.ts
++++ b/services/geminiService.ts
+@@ -1,5 +1,6 @@
+-import { GoogleGenAI } from "@google/genai";
+-import { AspectRatio, ImageQuality, TitleConfig, ImageAsset, TitleConfigItem } from "../types";
++import { AspectRatio, TitleConfig, ImageAsset, TitleConfigItem } from "../types";
++import { outputSpec } from "../shared/imageOutput";
++import { postImageRequest } from "./imageApi";
+ 
+ // Helper to convert File to Base64 with resizing to prevent 413 errors
+ export const fileToBase64 = (file: File): Promise<ImageAsset> => {
+@@ -79,9 +80,14 @@ export const resizeAndConvertToJpeg = (dataUrl: string, targetWidth: number, tar
+       // Draw background white (for transparency handling if any)
+       ctx.fillStyle = '#FFFFFF';
+       ctx.fillRect(0, 0, targetWidth, targetHeight);
+-      
+-      // Draw image stretch to fit strict dimensions
+-      ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
++
++      // Centre-crop to the target ratio, then scale (never stretch: models may return a nearby ratio)
++      const scale = Math.max(targetWidth / img.width, targetHeight / img.height);
++      const cropW = targetWidth / scale;
++      const cropH = targetHeight / scale;
++      ctx.imageSmoothingEnabled = true;
++      ctx.imageSmoothingQuality = 'high';
++      ctx.drawImage(img, (img.width - cropW) / 2, (img.height - cropH) / 2, cropW, cropH, 0, 0, targetWidth, targetHeight);
+       
+       // Force JPEG quality 0.9
+       resolve(canvas.toDataURL('image/jpeg', 0.9));
+@@ -202,35 +208,6 @@ const urlToAsset = async (url: string): Promise<ImageAsset> => {
+     return fileToBase64(new File([blob], "temp", { type: blob.type }));
+ };
+ 
+-const mapRatioToSupported = (ratio: AspectRatio): string => {
+-  switch (ratio) {
+-    case '4:5': return '3:4';
+-    case '300x250': return '4:3';
+-    case '320x250': return '4:3';
+-    case '300x300': return '1:1';
+-    default: return ratio;
+-  }
+-};
+-
+-const getTargetDimensions = (ratio: AspectRatio): { width: number, height: number } => {
+-  switch (ratio) {
+-    case '16:9': return { width: 1200, height: 675 };
+-    case '4:5': return { width: 1600, height: 2000 };
+-    case '9:16': return { width: 1080, height: 1920 };
+-    case '1:1': return { width: 1080, height: 1080 };
+-    case '300x250': return { width: 300, height: 250 };
+-    case '320x250': return { width: 300, height: 250 };
+-    case '300x300': return { width: 300, height: 300 };
+-    default: return { width: 1024, height: 1024 };
+-  }
+-};
+-
+-// We ignore the quality param effectively because we are doing post-process resizing to high res
+-const mapQualityToSize = (quality: ImageQuality): string => {
+-  // Request '2K' from Gemini to ensure we have enough pixels to downscale nicely to 1600/1800
+-  return '2K'; 
+-};
+-
+ // Helper to fetch article full text from URL
+ export const fetchArticleText = async (url: string): Promise<{ title: string; content: string }> => {
+   const response = await fetch('/api/fetch-article', {
+@@ -305,112 +282,89 @@ export const generateViralTitles = async (
+   return titles;
+ };
+ 
+-export const generateCollage = async (
+-  templateAssets: ImageAsset[],
+-  sourceAssets: ImageAsset[],
+-  prompt: string,
+-  ratio: AspectRatio,
+-  quality: ImageQuality,
+-  strictFidelity: boolean = false,
+-  preserveBackground: boolean = false,
+-  removeBackground: boolean = false,
+-  copyLogo: boolean = false,
+-  prohibitLogo: boolean = true,
+-  prohibitPretrainedLogo: boolean = true,
+-  eraseText: boolean = true,
+-  titleConfig?: TitleConfig,
+-  selectedModel: 'nano-banana-pro' | 'nano-banana-2' | 'nano-banana-2-lite' = 'nano-banana-pro',
+-  temperature: number = 0.7
+-): Promise<string> => {
+-  const payload = {
+-    templateAssets,
+-    sourceAssets,
+-    prompt,
+-    ratio,
+-    quality,
+-    strictFidelity,
+-    preserveBackground,
+-    removeBackground,
+-    copyLogo,
+-    prohibitLogo,
+-    prohibitPretrainedLogo,
+-    eraseText,
+-    titleConfig,
+-    selectedModel,
+-    temperature
+-  };
+-
+-  const response = await fetch('/api/generate-collage', {
+-    method: 'POST',
+-    headers: {
+-      'Content-Type': 'application/json'
+-    },
+-    body: JSON.stringify(payload)
+-  });
+-
+-  if (!response.ok) {
+-    const data = await response.json().catch(() => ({}));
+-    const errorMsg = data.error || `Server returned status ${response.status}: ${response.statusText}`;
+-    throw new Error(errorMsg);
+-  }
++export interface CollageRequest {
++  templateAssets: ImageAsset[];
++  sourceAssets: ImageAsset[];
++  prompt: string;
++  ratio: AspectRatio;
++  strictFidelity?: boolean;
++  preserveBackground?: boolean;
++  removeBackground?: boolean;
++  copyLogo?: boolean;
++  prohibitLogo?: boolean;
++  prohibitPretrainedLogo?: boolean;
++  eraseText?: boolean;
++  titleConfig?: TitleConfig;
++  /** App image model id from GET /api/image-models. */
++  selectedModel: string;
++  /** Only for models that accept temperature; the server rejects it for the others. */
++  temperature?: number;
++  /** Aborted by the cancel button: the request stream closes and the server stops polling. */
++  signal?: AbortSignal;
++}
+ 
+-  const { rawImageBase64 } = await response.json();
+-  if (!rawImageBase64) {
+-    throw new Error("No image was returned from server collage generation.");
+-  }
++/** Generates one collage with the selected model (one attempt, no fallback) and post-processes it to the ratio's size. */
++export const generateCollage = async (request: CollageRequest): Promise<string> => {
++  const rawImageBase64 = await postImageRequest('/api/generate-collage', {
++    templateAssets: request.templateAssets,
++    sourceAssets: request.sourceAssets,
++    prompt: request.prompt,
++    ratio: request.ratio,
++    strictFidelity: request.strictFidelity ?? false,
++    preserveBackground: request.preserveBackground ?? false,
++    removeBackground: request.removeBackground ?? false,
++    copyLogo: request.copyLogo ?? false,
++    prohibitLogo: request.prohibitLogo ?? true,
++    prohibitPretrainedLogo: request.prohibitPretrainedLogo ?? true,
++    eraseText: request.eraseText ?? true,
++    titleConfig: request.titleConfig,
++    selectedModel: request.selectedModel,
++    temperature: request.temperature,
++  }, request.signal);
+ 
+   // Post-Processing: Resize to strictly requested dimensions and convert to JPEG on the client side
+-  const dimensions = getTargetDimensions(ratio);
+-  if (ratio === '300x250' || ratio === '320x250') {
++  const dimensions = outputSpec(request.ratio);
++  if (request.ratio === '300x250' || request.ratio === '320x250') {
+     return await cropAndResizeFor300x250(rawImageBase64, dimensions.width, dimensions.height);
+   }
+   return await resizeAndConvertToJpeg(rawImageBase64, dimensions.width, dimensions.height);
+ };
+ 
+-export const editImage = async (
+-  imageUrl: string,
+-  maskBase64: string | null,
+-  prompt: string,
+-  isMultiMask: boolean = false,
+-  selectedModel: 'nano-banana-pro' | 'nano-banana-2' | 'nano-banana-2-lite' = 'nano-banana-pro',
+-  temperature: number = 0.7,
+-  extraImageBase64?: string | null
+-): Promise<string> => {
+-  const payload = {
+-    imageUrl,
+-    maskBase64,
+-    prompt,
+-    isMultiMask,
+-    selectedModel,
+-    temperature,
+-    extraImageBase64
+-  };
+-
+-  const response = await fetch('/api/edit-image', {
+-    method: 'POST',
+-    headers: {
+-      'Content-Type': 'application/json'
+-    },
+-    body: JSON.stringify(payload)
+-  });
+-
+-  if (!response.ok) {
+-    const data = await response.json().catch(() => ({}));
+-    const errorMsg = data.error || `Server returned status ${response.status}: ${response.statusText}`;
+-    throw new Error(errorMsg);
+-  }
++export interface EditRequest {
++  imageUrl: string;
++  maskBase64: string | null;
++  prompt: string;
++  isMultiMask?: boolean;
++  /** App image model id from GET /api/image-models. */
++  selectedModel: string;
++  extraImageBase64?: string | null;
++  /** "width:height" of the image being edited, so models without "keep input aspect" use the nearest ratio. */
++  sourceAspect?: string;
++  /** Only for models that accept temperature; omitted means the server's edit default (0.7) on those models. */
++  temperature?: number;
++  signal?: AbortSignal;
++}
+ 
+-  const { rawImageBase64 } = await response.json();
+-  if (!rawImageBase64) {
+-    throw new Error("No image was returned from server image editing.");
+-  }
++/** Edits one image with the selected model (one attempt, no fallback). */
++export const editImage = async (request: EditRequest): Promise<string> => {
++  const rawImageBase64 = await postImageRequest('/api/edit-image', {
++    imageUrl: request.imageUrl,
++    maskBase64: request.maskBase64,
++    prompt: request.prompt,
++    isMultiMask: request.isMultiMask ?? false,
++    selectedModel: request.selectedModel,
++    extraImageBase64: request.extraImageBase64 ?? null,
++    sourceAspect: request.sourceAspect,
++    temperature: request.temperature,
++  }, request.signal);
+ 
+   // Convert edited image to JPEG as well to match system standard
+-  return new Promise((resolve) => {
++  return new Promise((resolve, reject) => {
+     const img = new Image();
+     img.onload = () => {
+       resizeAndConvertToJpeg(rawImageBase64, img.width, img.height).then(resolve);
+     };
++    img.onerror = () => reject(new Error('無法讀取編輯後的圖片（瀏覽器無法解碼伺服器返回的圖片）。'));
+     img.src = rawImageBase64;
+   });
+ };
+\ No newline at end of file
+diff --git a/services/imageApi.ts b/services/imageApi.ts
+new file mode 100644
+index 0000000..4a76dad
+--- /dev/null
++++ b/services/imageApi.ts
+@@ -0,0 +1,98 @@
++import type { ImageErrorDetails, ImageModelView } from '../shared/imageModels';
++
++export type { ImageErrorDetails };
++
++export class ImageRequestError extends Error {
++  readonly details: ImageErrorDetails;
++  /** HTTP status of the response, when the server rejected the request before streaming. */
++  readonly httpStatus: number | undefined;
++  constructor(message: string, details: ImageErrorDetails = {}, httpStatus?: number) {
++    super(message);
++    this.name = 'ImageRequestError';
++    this.details = details;
++    this.httpStatus = httpStatus;
++  }
++}
++
++interface StreamEvent {
++  type?: string;
++  rawImageBase64?: string;
++  error?: string;
++  details?: ImageErrorDetails;
++}
++
++/** Handles one NDJSON line; returns the image for `complete`, throws for `error`, ignores start/ping. */
++function handleLine(line: string, ignored: string[]): string | undefined {
++  const trimmed = line.trim();
++  if (!trimmed) return undefined;
++  let event: StreamEvent;
++  try {
++    event = JSON.parse(trimmed);
++  } catch {
++    // Not one of the server's JSON lines (for example proxy padding); reported if no result follows.
++    ignored.push(trimmed.slice(0, 200));
++    return undefined;
++  }
++  if (event.type === 'error') throw new ImageRequestError(event.error || '生成失敗', event.details ?? {});
++  if (event.type !== 'complete') return undefined;
++  if (!event.rawImageBase64) throw new ImageRequestError('伺服器沒有返回圖片。', { code: 'no_output' });
++  return event.rawImageBase64;
++}
++
++/**
++ * POSTs an image request and reads the server's NDJSON stream (start, ping…, complete | error).
++ * Resolves with the raw image data URL. One attempt only: billed requests are never re-sent.
++ * Aborting `signal` (the cancel buttons) closes the stream, so the server stops polling the provider;
++ * the abort error is rethrown as is so callers can treat it as a cancellation.
++ */
++export async function postImageRequest(url: string, payload: unknown, signal?: AbortSignal): Promise<string> {
++  let response: Response;
++  try {
++    response = await fetch(url, {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
++      body: JSON.stringify(payload),
++      signal,
++    });
++  } catch (error) {
++    if (signal?.aborted) throw error;
++    throw new ImageRequestError(`無法連線到伺服器：${error instanceof Error ? error.message : String(error)}`, { code: 'network' });
++  }
++  if (!response.ok) {
++    const data = await response.json().catch(() => ({}));
++    throw new ImageRequestError(data.error || `伺服器回應 ${response.status} ${response.statusText}`, data.details ?? {}, response.status);
++  }
++  if (!response.body) throw new ImageRequestError('伺服器沒有返回內容。', { code: 'invalid_response' });
++
++  const reader = response.body.getReader();
++  const decoder = new TextDecoder();
++  const ignored: string[] = [];
++  let buffer = '';
++  for (;;) {
++    const { done, value } = await reader.read();
++    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
++    const lines = buffer.split('\n');
++    buffer = lines.pop() ?? '';
++    for (const line of lines) {
++      const image = handleLine(line, ignored);
++      if (image) {
++        reader.cancel().catch(() => undefined);
++        return image;
++      }
++    }
++    if (done) break;
++  }
++  const last = handleLine(buffer, ignored);
++  if (last) return last;
++  const extra = ignored.length > 0 ? `（收到 ${ignored.length} 行無法解析的內容，例如：${ignored[0]}）` : '';
++  throw new ImageRequestError(`連線在完成前中斷，沒有收到結果${extra}。`, { code: 'stream_ended' });
++}
++
++export async function fetchImageModels(): Promise<ImageModelView[]> {
++  const response = await fetch('/api/image-models');
++  if (!response.ok) throw new ImageRequestError(`無法載入圖片模型清單（HTTP ${response.status}）。`, { code: 'models_unavailable' }, response.status);
++  const data: unknown = await response.json().catch(() => null);
++  const models = (data as { models?: unknown } | null)?.models;
++  if (!Array.isArray(models)) throw new ImageRequestError('圖片模型清單格式不正確。', { code: 'invalid_response' });
++  return models as ImageModelView[];
++}
+diff --git a/services/usageService.ts b/services/usageService.ts
+index 9bff04e..1b88232 100644
+--- a/services/usageService.ts
++++ b/services/usageService.ts
+@@ -1,3 +1,4 @@
++import { USD_TO_HKD } from '../shared/imageModels';
+ 
+ export interface MonthlyUsageData {
+   inputTokens: number;
+@@ -6,6 +7,8 @@ export interface MonthlyUsageData {
+   totalCostHKD: number;
+   requestCount: number;
+   lastUpdated: number;
++  /** Images from models without a known price; not included in the cost totals. */
++  unpricedImages?: number;
+ }
+ 
+ export interface UsageHistory {
+@@ -14,10 +17,7 @@ export interface UsageHistory {
+ 
+ const STORAGE_KEY = 'og_collage_usage_history';
+ 
+-// Pricing Constants (Aligned with App.tsx estimation)
+-const PRICE_PER_1M_INPUT_TOKENS_USD = 5.00;
+-const PRICE_PER_OUTPUT_IMAGE_USD = 0.134;
+-const HKD_EXCHANGE_RATE = 7.8;
++// Estimates only: prices come from GET /api/image-models (see shared/imageModels.ts estimateCostUsd).
+ 
+ export const UsageService = {
+   // Get the current YYYY-MM string (e.g., "2023-10")
+@@ -53,53 +53,25 @@ export const UsageService = {
+     return history[yearMonth];
+   },
+ 
+-  // Record a transaction
+-  trackTransaction: (
+-    inputTokens: number, 
+-    outputImages: number, 
+-    selectedModel: 'nano-banana-pro' | 'nano-banana-2' | 'nano-banana-2-lite' = 'nano-banana-pro',
+-    quality: '1K' | '2K' = '1K'
+-  ) => {
++  // Record an estimated transaction. costUsd is null when the model's price is unknown.
++  trackTransaction: (inputTokens: number, outputImages: number, costUsd: number | null) => {
+     const history = UsageService.getHistory();
+     const currentKey = UsageService.getCurrentMonthKey();
+-    
+-    // Initialize if needed
+-    if (!history[currentKey]) {
+-      history[currentKey] = {
+-        inputTokens: 0,
+-        outputImages: 0,
+-        totalCostUSD: 0,
+-        totalCostHKD: 0,
+-        requestCount: 0,
+-        lastUpdated: Date.now()
+-      };
+-    }
+-
+-    // Calculate Costs for this specific transaction based on the model selected and quality
+-    let pricePerImage = 0.134;
+-    if (selectedModel === 'nano-banana-2-lite') {
+-      pricePerImage = quality === '1K' ? 0.034 : 0.050;
+-    } else if (selectedModel === 'nano-banana-2') {
+-      pricePerImage = quality === '1K' ? 0.067 : 0.101;
+-    } else {
+-      pricePerImage = 0.134;
+-    }
+-    const inputCost = (inputTokens / 1000000) * PRICE_PER_1M_INPUT_TOKENS_USD;
+-    const outputCost = outputImages * pricePerImage;
+-    const totalTxCostUSD = inputCost + outputCost;
+-    const totalTxCostHKD = totalTxCostUSD * HKD_EXCHANGE_RATE;
+-
+-    // Update Accumulators
+-    history[currentKey].inputTokens += inputTokens;
+-    history[currentKey].outputImages += outputImages;
+-    history[currentKey].totalCostUSD += totalTxCostUSD;
+-    history[currentKey].totalCostHKD += totalTxCostHKD;
+-    history[currentKey].requestCount += 1;
+-    history[currentKey].lastUpdated = Date.now();
++    const current = history[currentKey] ?? UsageService.getMonthData(currentKey);
++    const txCostUSD = costUsd ?? 0;
++    const updated: MonthlyUsageData = {
++      ...current,
++      inputTokens: current.inputTokens + inputTokens,
++      outputImages: current.outputImages + outputImages,
++      totalCostUSD: current.totalCostUSD + txCostUSD,
++      totalCostHKD: current.totalCostHKD + txCostUSD * USD_TO_HKD,
++      requestCount: current.requestCount + 1,
++      lastUpdated: Date.now(),
++      unpricedImages: (current.unpricedImages ?? 0) + (costUsd === null ? outputImages : 0),
++    };
+ 
+-    // Save
+     try {
+-      localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
++      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...history, [currentKey]: updated }));
+     } catch (e) {
+       console.error("Failed to save usage history", e);
+     }
+diff --git a/shared/imageModels.ts b/shared/imageModels.ts
+new file mode 100644
+index 0000000..190d190
+--- /dev/null
++++ b/shared/imageModels.ts
+@@ -0,0 +1,111 @@
++import { outputSpec, type OutputResolution } from './imageOutput';
++
++/**
++ * Image model types and pure helpers shared by the server (server/imageModels.ts builds
++ * the list) and the browser (selector, temperature control, estimates). No provider
++ * package is imported here, so this file is safe in the browser bundle.
++ */
++
++export type ImageProvider = 'google' | 'kie' | 'toapis';
++
++/** Selects prompt wording tuned for a model family (see server.ts collage route). */
++export type PromptProfile = 'nano-banana-2' | 'default';
++
++/** How well a model follows a colour-stroke mask that is sent as a reference image. */
++export type MaskEditing = 'supported' | 'reference-only';
++
++/** App-maintained price estimate; never a provider-reported usage record. */
++export interface PriceEstimate {
++  /** USD per generated image, by requested resolution. */
++  perImageUsd: Record<OutputResolution, number>;
++  /** USD per 1M input tokens; 0 when the per-image price already includes input. */
++  inputPerMillionTokensUsd: number;
++}
++
++/** Error fields returned for failed image requests (server/imageClient.ts) and shown by the ErrorPanel. */
++export interface ImageErrorDetails {
++  appModelId?: string;
++  provider?: string;
++  model?: string;
++  code?: string;
++  status?: number;
++  taskId?: string;
++  providerCode?: string;
++}
++
++/** One entry of GET /api/image-models. */
++export interface ImageModelView {
++  id: string;
++  label: string;
++  description: string;
++  provider: ImageProvider;
++  providerLabel: string;
++  /** Provider model operation used with reference images (KIE GPT Image 2 uses text-to-image without). */
++  providerModel: string;
++  /** Reference image types the model accepts (the app sends JPEG or PNG). */
++  acceptedMimeTypes: string[];
++  /** Reference images the model accepts; max null = no documented limit. */
++  referenceLimit: { min: number; max: number | null };
++  /** Accepted temperature range, or null when the model does not accept temperature. */
++  temperature: { min: number; max: number } | null;
++  promptProfile: PromptProfile;
++  maskEditing: MaskEditing;
++  /** Null when no verified price is known; the UI shows "—". */
++  price: PriceEstimate | null;
++  /** False when the server has no key for this provider. */
++  available: boolean;
++  unavailableReason: string | null;
++}
++
++export const DEFAULT_IMAGE_MODEL_ID = 'nano-banana-2';
++export const PROVIDER_ORDER: readonly ImageProvider[] = ['google', 'kie', 'toapis'];
++export const USD_TO_HKD = 7.8;
++
++export const TEMPERATURE_SUPPORT_NOTE =
++  'Temperature 只適用於 Google Gemini 直連的 Nano Banana 2 / Pro；KIE、ToAPIs 的模型（包括它們提供的 Nano Banana）不支援此設定。';
++
++export const MASK_REFERENCE_ONLY_NOTE =
++  '此模型以參考圖方式理解遮罩，局部編輯可能影響遮罩以外的範圍；需要精準局部修改時建議使用 Nano Banana 系列。';
++
++/** `value` when the model accepts temperature, otherwise undefined (the server rejects it for the others). */
++export function temperatureFor(model: ImageModelView | undefined, value: number): number | undefined {
++  return model?.temperature ? value : undefined;
++}
++
++/** Why `model` cannot take `referenceCount` reference images, or null when it can. */
++export function referenceIssue(model: ImageModelView, referenceCount: number): string | null {
++  const { min, max } = model.referenceLimit;
++  if (max !== null && referenceCount > max) return `最多 ${max} 張參考圖，已選 ${referenceCount} 張`;
++  if (referenceCount < min) return `至少需要 ${min} 張參考圖，已選 ${referenceCount} 張`;
++  return null;
++}
++
++/** Why `model` cannot be used right now (missing key or too many images), or null. */
++export function modelIssue(model: ImageModelView, referenceCount: number): string | null {
++  if (!model.available) return model.unavailableReason ?? '此模型目前不可用';
++  return referenceIssue(model, referenceCount);
++}
++
++/** Reference images that still fit after `used` are taken (Infinity when there is no limit). */
++export function remainingReferenceCapacity(model: ImageModelView, used: number): number {
++  return model.referenceLimit.max === null ? Number.POSITIVE_INFINITY : Math.max(0, model.referenceLimit.max - used);
++}
++
++/** Rough input token count used by the estimates (same constants as before the migration). */
++export function estimateInputTokens(inputImages: number, promptChars: number): number {
++  return Math.ceil(inputImages * 258 + promptChars * 0.25);
++}
++
++/**
++ * Estimated USD for one request per entry of `ratios`, or null when the model's price is unknown.
++ * Each output image is its own request, so input tokens are counted once per image.
++ */
++export function estimateCostUsd(
++  model: ImageModelView | undefined,
++  input: { inputImages: number; promptChars: number; ratios: readonly string[] },
++): number | null {
++  const price = model?.price;
++  if (!price) return null;
++  const inputCost = (estimateInputTokens(input.inputImages, input.promptChars) / 1_000_000) * price.inputPerMillionTokensUsd;
++  return input.ratios.reduce((sum, ratio) => sum + inputCost + price.perImageUsd[outputSpec(ratio).resolution], 0);
++}
+diff --git a/shared/imageOutput.ts b/shared/imageOutput.ts
+new file mode 100644
+index 0000000..8a56582
+--- /dev/null
++++ b/shared/imageOutput.ts
+@@ -0,0 +1,37 @@
++import type { AspectRatio } from '../types';
++
++/**
++ * Final output size for each ratio preset, and the generation resolution that covers it.
++ * Shared by the server (what to request) and the browser (post-processing and estimates).
++ */
++export type OutputResolution = '1K' | '2K';
++
++export interface OutputSpec {
++  width: number;
++  height: number;
++  resolution: OutputResolution;
++}
++
++export const OUTPUT_SPECS: Record<AspectRatio, OutputSpec> = {
++  '16:9': { width: 1200, height: 675, resolution: '1K' },
++  '4:5': { width: 1600, height: 2000, resolution: '2K' },
++  '9:16': { width: 1080, height: 1920, resolution: '2K' },
++  '1:1': { width: 1080, height: 1080, resolution: '1K' },
++  '300x250': { width: 300, height: 250, resolution: '1K' },
++  '320x250': { width: 320, height: 250, resolution: '1K' },
++  '300x300': { width: 300, height: 300, resolution: '1K' },
++};
++
++const FALLBACK_SPEC: OutputSpec = { width: 1024, height: 1024, resolution: '1K' };
++
++export function outputSpec(ratio: string): OutputSpec {
++  return OUTPUT_SPECS[ratio as AspectRatio] ?? FALLBACK_SPEC;
++}
++
++/** Width / height of a preset ("300x250") or a ratio ("16:9"); undefined when unparseable. */
++export function ratioValue(ratio: string): number | undefined {
++  const preset = OUTPUT_SPECS[ratio as AspectRatio];
++  if (preset) return preset.width / preset.height;
++  const match = /^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/.exec(ratio);
++  return match ? Number(match[1]) / Number(match[2]) : undefined;
++}
+diff --git a/vite.config.ts b/vite.config.ts
+index ee5fb8d..f82d472 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -1,19 +1,15 @@
+ import path from 'path';
+-import { defineConfig, loadEnv } from 'vite';
++import { defineConfig } from 'vite';
+ import react from '@vitejs/plugin-react';
+ 
+-export default defineConfig(({ mode }) => {
+-    const env = loadEnv(mode, '.', '');
++export default defineConfig(() => {
+     return {
+       server: {
+         port: 3000,
+         host: '0.0.0.0',
+       },
+       plugins: [react()],
+-      define: {
+-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+-      },
++      // No `define` for API keys: provider keys stay on the server (server.ts reads process.env).
+       resolve: {
+         alias: {
+           '@': path.resolve(__dirname, '.'),
