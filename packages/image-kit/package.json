@@ -1,0 +1,86 @@
+{
+  "name": "@hk01/pi-ai-extra-image-kit",
+  "version": "0.1.0",
+  "description": "Image client for AI Studio apps on top of the pi-ai-extra provider packages: model list, validation, NDJSON streaming, browser reader and React UI",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.cts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./server": {
+      "import": {
+        "types": "./dist/server.d.mts",
+        "default": "./dist/server.mjs"
+      },
+      "require": {
+        "types": "./dist/server.d.cts",
+        "default": "./dist/server.cjs"
+      }
+    },
+    "./browser": {
+      "import": {
+        "types": "./dist/browser.d.mts",
+        "default": "./dist/browser.mjs"
+      },
+      "require": {
+        "types": "./dist/browser.d.cts",
+        "default": "./dist/browser.cjs"
+      }
+    },
+    "./react": {
+      "import": {
+        "types": "./dist/react.d.mts",
+        "default": "./dist/react.mjs"
+      },
+      "require": {
+        "types": "./dist/react.d.cts",
+        "default": "./dist/react.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "check": "tsc --noEmit -p .",
+    "test": "pnpm --filter \"@hk01/pi-ai-extra-image-kit^...\" run build && node --test \"test/**/*.test.ts\"",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\""
+  },
+  "peerDependencies": {
+    "@hk01/pi-ai-extra-google": ">=0.2.0 <1.0.0",
+    "@hk01/pi-ai-extra-kie": ">=0.1.0 <1.0.0",
+    "@hk01/pi-ai-extra-toapis": ">=0.1.0 <1.0.0",
+    "react": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@hk01/pi-ai-extra-google": "workspace:*",
+    "@hk01/pi-ai-extra-internal": "workspace:*",
+    "@hk01/pi-ai-extra-kie": "workspace:*",
+    "@hk01/pi-ai-extra-toapis": "workspace:*",
+    "@types/react": "19.2.18",
+    "react": "19.2.4"
+  }
+}

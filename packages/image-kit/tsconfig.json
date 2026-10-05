@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    // Type-check against the provider packages' sources, so `check` does not need a build.
+    // At run time (tests, consumers) they resolve to their built entries.
+    "paths": {
+      "@hk01/pi-ai-extra-google": ["../google/src/index.ts"],
+      "@hk01/pi-ai-extra-kie": ["../kie/src/index.ts"],
+      "@hk01/pi-ai-extra-toapis": ["../toapis/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "tsdown.config.ts"]
+}
