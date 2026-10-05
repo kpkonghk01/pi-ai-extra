@@ -1,6 +1,6 @@
 # pi-ai-extra
 
-Server-only extensions to [`@earendil-works/pi-ai`](https://www.npmjs.com/package/@earendil-works/pi-ai) for KIE, ToAPIs and Gemini image generation, plus KIE, ToAPIs and Gemini chat providers. Three independently installable packages, delivered as GitHub Release `.tgz` files (no npm registry), for Node.js 22.19 or later:
+Server-only extensions to [`@earendil-works/pi-ai`](https://www.npmjs.com/package/@earendil-works/pi-ai) for KIE, ToAPIs and Gemini image generation, plus KIE, ToAPIs and Gemini chat providers. Three independently installable provider packages, delivered as GitHub Release `.tgz` files (no npm registry), for Node.js 22.19 or later:
 
 | Package | Image models | Chat (pi-ai `Models`) |
 | --- | --- | --- |
@@ -17,6 +17,8 @@ Each package has two entry points:
 
 The `/pi-ai` subpath is ESM-only because pi-ai itself is ESM-only; a CommonJS server that does not use pi-ai can `require()` the main entry.
 
+A fourth package, [`@hk01/pi-ai-extra-image-kit`](packages/image-kit/README.md), is the image client for Google AI Studio apps built on the three provider packages (their peer dependencies): the app's model list, request validation, NDJSON streaming, a browser reader and React UI (model selector, error panel). Only its `/server` entry imports the provider packages; its `/browser` and `/react` entries run in the browser and never hold keys or provider code ([ADR 0006](docs/adr/0006-image-kit-package.md)).
+
 Non-negotiable behaviour (see [ADR 0003](docs/adr/0003-explicit-provider-execution.md)):
 
 - API keys are passed explicitly from server-side configuration. The packages never read environment variables and must not be bundled into browser code.
@@ -31,6 +33,7 @@ Install the exact release asset on the server (build) side and pin the full URL:
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.1.0/hk01-pi-ai-extra-kie-0.1.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.1.0/hk01-pi-ai-extra-toapis-0.1.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.2.0/hk01-pi-ai-extra-google-0.2.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/image-kit-v0.1.0/hk01-pi-ai-extra-image-kit-0.1.0.tgz   # optional, needs all three
 ```
 
 npm works the same way (`npm install <url>`). Upgrade or roll back by changing the URL. `zod@4.6.5` is installed automatically; install `@earendil-works/pi-ai@0.87.1` only if you use the `/pi-ai` subpath.
@@ -221,7 +224,7 @@ Pass `cacheRetention` explicitly: when it is omitted, pi-ai falls back to the `P
 6. **Usage.** Log `result.taskId` and `result.usage` per request. Send a unique `clientBusinessId` on ToAPIs requests. Re-read ToAPIs tasks whose `billingStatus` is `pending` with `getToapisTask()`, and keep one record per task id.
 7. **Upgrade / rollback.** Change the release URL in `package.json` to the new (or previous) version and redeploy. Released assets are never replaced, so a URL always installs the same bytes.
 
-A worked migration of `open-graph-single`, with paste-ready files verified against its CommonJS production build, is in [docs/migration/open-graph-single](docs/migration/open-graph-single/README.md).
+A worked migration of `open-graph-single`, with paste-ready files verified against its CommonJS production build, is in [docs/migration/open-graph-single](docs/migration/open-graph-single/README.md). [docs/migration/infocard](docs/migration/infocard/README.md) migrates an app through the image kit instead, which covers steps 3–6 (and the model selector and error panel) for you.
 
 ## Playground (not released)
 
@@ -235,15 +238,15 @@ Enter provider keys in the page, then run text-to-image, image-to-image and mult
 ## Release
 
 ```sh
-git tag kie-v0.1.0 && git push origin kie-v0.1.0      # or toapis-vX.Y.Z / google-vX.Y.Z
+git tag kie-v0.1.0 && git push origin kie-v0.1.0      # or toapis-vX.Y.Z / google-vX.Y.Z / image-kit-vX.Y.Z
 ```
 
 Tag the release commit on `main`. The workflow:
 
 1. checks that the tag matches the package version;
-2. runs check, test and build for the package and its internal dependency;
+2. runs check, build and test for the package and its workspace dependencies (the image kit's tests load the provider packages' built entries);
 3. packs the `.tgz`;
-4. installs it into a fresh project and loads it with `require()` and `import()`;
+4. installs it into a fresh project and loads it with `require()` and `import()` (the image kit together with packed copies of its provider peers and React);
 5. attaches it to a GitHub Release using `GITHUB_TOKEN`.
 
 Each package is released by its own tag, so a KIE fix does not republish ToAPIs or Google. Never replace an asset that consumers use; publish a new patch version instead ([ADR 0001](docs/adr/0001-registry-free-package-releases.md)).
@@ -255,7 +258,7 @@ pnpm install --ignore-scripts
 pnpm run check   # TypeScript 7 (tsc --noEmit)
 pnpm run test    # node:test contract tests with a fake fetch, no network
 pnpm run build   # tsdown: dual CJS/ESM + declarations (oxc isolated declarations)
-pnpm run pack:kie && pnpm run pack:toapis && pnpm run pack:google   # → release-artifacts/
+pnpm run pack:kie && pnpm run pack:toapis && pnpm run pack:google && pnpm run pack:image-kit   # → release-artifacts/
 ```
 
 Exported declarations need explicit types (`isolatedDeclarations`). Provider contracts are in [`referenc-docs/`](referenc-docs/); check them before adding or changing a model operation. Wokey is intentionally excluded.

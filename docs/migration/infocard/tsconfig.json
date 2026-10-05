@@ -1,0 +1,36 @@
+{
+  // Type-checks files/ as they compile inside InfoCard: its compiler options (non-strict,
+  // TypeScript 5.8 defaults made explicit, react-jsx) against the packages' published
+  // declarations (dist/*.d.mts, so run `pnpm run build` first). Not part of the files to copy
+  // into the app.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "jsx": "react-jsx",
+    "strict": false,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowImportingTsExtensions": true,
+    "allowSyntheticDefaultImports": true,
+    "noEmit": true,
+    // Lets files/ resolve the app's own unchanged modules to stand-ins in typecheck/app.
+    "rootDirs": ["files", "typecheck/app"],
+    "paths": {
+      "@hk01/pi-ai-extra-kie": ["../../../packages/kie/dist/index.d.mts"],
+      "@hk01/pi-ai-extra-toapis": ["../../../packages/toapis/dist/index.d.mts"],
+      "@hk01/pi-ai-extra-google": ["../../../packages/google/dist/index.d.mts"],
+      "@hk01/pi-ai-extra-image-kit": ["../../../packages/image-kit/dist/index.d.mts"],
+      "@hk01/pi-ai-extra-image-kit/server": ["../../../packages/image-kit/dist/server.d.mts"],
+      "@hk01/pi-ai-extra-image-kit/browser": ["../../../packages/image-kit/dist/browser.d.mts"],
+      "@hk01/pi-ai-extra-image-kit/react": ["../../../packages/image-kit/dist/react.d.mts"],
+      // Real React types, installed for the image kit.
+      "react": ["../../../packages/image-kit/node_modules/@types/react/index.d.ts"],
+      "react/jsx-runtime": ["../../../packages/image-kit/node_modules/@types/react/jsx-runtime.d.ts"]
+    }
+  },
+  "include": ["files/**/*.ts", "files/**/*.tsx", "typecheck/**/*.ts", "typecheck/**/*.tsx"]
+}

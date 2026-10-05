@@ -28,6 +28,16 @@ Bring Your Own Key. The consumer application supplies its provider API key at ru
 
 An image supplied to an image operation to preserve, transform, or use as a composition/style reference. Each model operation defines its own reference-image limit and accepted input form.
 
+## Image kit
+
+The consumer-side package that turns a consumer application's model options into validated single-provider image requests, and gives the browser the matching model selector and error panel. It sits on the consumer side of the provider boundary: it never chooses a provider for the user and never falls back.
+
+_Avoid_: Multi-Provider Module, 統一 Provider Module (the earlier browser-module plan in Jira)
+
+## Model option
+
+One image model that a consumer application offers to its users, under its own id and label. It maps to exactly one provider and one model operation, or to a pair of operations of one model family when text-to-image and image-to-image are separate operations.
+
 ## Image model catalogue
 
 The published description of the options and limits that vary between image model operations: aspect ratios, resolutions, reference-image limit, temperature, system instruction, and so on. Consumer applications offer only what it lists. When a model's entry does not list one of these options, the model does not support it, and a request that uses it is rejected. Provider-wide settings that every model of a provider accepts, such as a request attribution id, are not part of the catalogue.

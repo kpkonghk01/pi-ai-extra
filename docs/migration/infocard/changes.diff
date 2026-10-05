@@ -1,0 +1,3313 @@
+diff --git a/.env.example b/.env.example
+index f01bbbb..54a7cc8 100644
+--- a/.env.example
++++ b/.env.example
+@@ -8,8 +8,9 @@ GEMINI_API_KEY="MY_GEMINI_API_KEY"
+ # Used for self-referential links, OAuth callbacks, and API endpoints.
+ APP_URL="MY_APP_URL"
+ 
+-# OPENROUTER_API_KEY: Required for OpenRouter API calls (e.g., GPT Image 2).
+-OPENROUTER_API_KEY="MY_OPENROUTER_API_KEY"
++# KIE_API_KEY: Required for the KIE image models (Nano Banana 2, GPT Image 2, Grok Imagine 2.0).
++KIE_API_KEY="MY_KIE_API_KEY"
+ 
+-# TOAPI_API_KEY: Required for ToAPIs API calls (e.g., gpt-image-2, doubao-seedream-5-0).
+-TOAPI_API_KEY="MY_TOAPI_API_KEY"
++# TOAPIS_API_KEY: Required for the ToAPIs image models (GPT Image 2 / 2.5, Seedream 5.0 Pro, Nano Banana 2 Preview).
++# The older name TOAPI_API_KEY is still accepted.
++TOAPIS_API_KEY="MY_TOAPIS_API_KEY"
+diff --git a/package.json b/package.json
+index a21e7cd..b6edff9 100644
+--- a/package.json
++++ b/package.json
+@@ -13,6 +13,10 @@
+   },
+   "dependencies": {
+     "@google/genai": "^1.29.0",
++    "@hk01/pi-ai-extra-google": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.2.0/hk01-pi-ai-extra-google-0.2.0.tgz",
++    "@hk01/pi-ai-extra-image-kit": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/image-kit-v0.1.0/hk01-pi-ai-extra-image-kit-0.1.0.tgz",
++    "@hk01/pi-ai-extra-kie": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.1.0/hk01-pi-ai-extra-kie-0.1.0.tgz",
++    "@hk01/pi-ai-extra-toapis": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.1.0/hk01-pi-ai-extra-toapis-0.1.0.tgz",
+     "@tailwindcss/vite": "^4.1.14",
+     "@vitejs/plugin-react": "^5.0.4",
+     "canvas-confetti": "^1.9.4",
+diff --git a/server.ts b/server.ts
+index 6ecd47f..5be8baa 100644
+--- a/server.ts
++++ b/server.ts
+@@ -5,8 +5,8 @@ import { GoogleGenAI } from "@google/genai";
+ import dotenv from "dotenv";
+ import sharp from "sharp";
+ import { Converter } from "opencc-js";
+-import { generateOpenRouterImage } from "./server/providers/openrouter";
+-import { generateToAPIsImage } from "./server/providers/toapis";
++import { handleImageRequest, type ImagePart } from "@hk01/pi-ai-extra-image-kit/server";
++import { imageClient } from "./server/imageModels";
+ 
+ dotenv.config();
+ 
+@@ -28,9 +28,20 @@ const PORT = 3000;
+ app.use(express.json({ limit: "50mb" }));
+ app.use(express.urlencoded({ limit: "50mb", extended: true }));
+ 
++// 4K output sizes (batch edit offers 4K for these ratios). Other ratios fall back to their 2K size.
++const DIMENSIONS_4K: Record<string, { width: number; height: number }> = {
++  '4:5': { width: 3200, height: 4000 },
++  '3:4': { width: 3072, height: 4096 },
++  '1:1': { width: 4096, height: 4096 },
++  '16:9': { width: 3840, height: 2160 },
++  '9:16': { width: 2160, height: 3840 },
++  '4:3': { width: 4096, height: 3072 },
++};
++
+ // Standard target pixel dimensions
+ export const getTargetDimensions = (ratioId: string, resolution: string = '1K') => {
+-  const is2K = resolution === '2K';
++  const is2K = resolution === '2K' || resolution === '4K';
++  if (resolution === '4K' && DIMENSIONS_4K[ratioId]) return DIMENSIONS_4K[ratioId];
+   switch (ratioId) {
+     case '4:5':
+       return is2K ? { width: 2400, height: 3000 } : { width: 1200, height: 1500 };
+@@ -65,6 +76,12 @@ export const normalizeImageDimensions = async (
+   ratioId: string,
+   resolution: string = '1K'
+ ): Promise<string> => {
++  const { width, height } = getTargetDimensions(ratioId, resolution);
++  return resizeImage(dataUrlOrUrl, width, height);
++};
++
++// Center-crop and resize an image to exact pixel dimensions using sharp
++const resizeImage = async (dataUrlOrUrl: string, width: number, height: number): Promise<string> => {
+   if (!dataUrlOrUrl) return dataUrlOrUrl;
+   try {
+     let inputBuffer: Buffer;
+@@ -82,8 +99,6 @@ export const normalizeImageDimensions = async (
+       inputBuffer = Buffer.from(dataUrlOrUrl, 'base64');
+     }
+ 
+-    const { width, height } = getTargetDimensions(ratioId, resolution);
+-
+     const sharpInstance = sharp(inputBuffer).resize(width, height, {
+       fit: 'cover',
+       position: 'center',
+@@ -103,17 +118,7 @@ export const normalizeImageDimensions = async (
+   }
+ };
+ 
+-// Helper to convert internal ratio ID to supported Gemini API aspect ratio
+-const getGeminiAspectRatio = (ratioId: string) => {
+-  const validAspectRatios = ["1:1", "3:4", "4:3", "9:16", "16:9", "4:5", "5:4"];
+-  if (validAspectRatios.includes(ratioId)) return ratioId;
+-  if (ratioId === '300x250' || ratioId === '336x280' || ratioId === '6:5') return '4:3';
+-  if (ratioId === '300x300') return '1:1';
+-  if (ratioId === '300x600' || ratioId === '320x480') return '9:16';
+-  return '1:1';
+-};
+-
+-// Helper to convert base64 data URL to inlineData format for Gemini SDK
++// Helper to convert base64 data URL to an inline image part for @hk01/pi-ai-extra-image-kit
+ const getInlineData = (dataUrl: string) => {
+   const [header, data] = dataUrl.split(',');
+   const mimeType = header.split(':')[1].split(';')[0];
+@@ -125,6 +130,11 @@ const getInlineData = (dataUrl: string) => {
+   };
+ };
+ 
++// Image models offered by every image feature, with limits and key availability
++app.get("/api/image-models", (_req, res) => {
++  res.json({ models: imageClient.listModels() });
++});
++
+ // Image proxy route to prevent canvas CORS contamination
+ app.get("/api/proxy-image", async (req, res) => {
+   const imageUrl = req.query.url as string;
+@@ -168,7 +178,8 @@ app.post("/api/gemini/generate", async (req, res) => {
+       modelId,
+       eraseTemplateSubject = true,
+       lockBrandLogo = true,
+-      temperature = 0.7,
++      // Sent only for models that accept it; the image kit rejects it for the others.
++      temperature,
+       aiMatting = false,
+       forbidPretrainedKnowledge = true,
+       imageResolution = '1K',
+@@ -179,54 +190,6 @@ app.post("/api/gemini/generate", async (req, res) => {
+     const effectiveGlobalPrompt = language === 'sc' ? toServerSimplified(globalPrompt) : globalPrompt;
+     const effectiveRatioPrompt = language === 'sc' ? toServerSimplified(ratioPrompt) : ratioPrompt;
+ 
+-    if (modelId === 'gpt-image-2' || modelId === 'doubao-seedream-5-0') {
+-      try {
+-        const imageUrl = await generateToAPIsImage({
+-          modelId,
+-          globalPrompt: effectiveGlobalPrompt,
+-          ratioPrompt: effectiveRatioPrompt,
+-          ratio,
+-          templateImage,
+-          sourceImages,
+-          brandLogo,
+-          eraseTemplateSubject,
+-          lockBrandLogo,
+-          temperature,
+-          aiMatting,
+-          forbidPretrainedKnowledge,
+-          language,
+-        });
+-        const normalizedUrl = await normalizeImageDimensions(imageUrl, ratio, targetRes);
+-        return res.json({ imageUrl: normalizedUrl });
+-      } catch (err: any) {
+-        return res.status(500).json({ error: err.message || `${modelId} (ToAPIs) 生成失敗` });
+-      }
+-    }
+-
+-    if (modelId === 'openrouter-gpt-image-2') {
+-      try {
+-        const imageUrl = await generateOpenRouterImage({
+-          globalPrompt: effectiveGlobalPrompt,
+-          ratioPrompt: effectiveRatioPrompt,
+-          ratio,
+-          templateImage,
+-          sourceImages,
+-          brandLogo,
+-          eraseTemplateSubject,
+-          lockBrandLogo,
+-          temperature,
+-          aiMatting,
+-          forbidPretrainedKnowledge,
+-          language,
+-        });
+-        const normalizedUrl = await normalizeImageDimensions(imageUrl, ratio, targetRes);
+-        return res.json({ imageUrl: normalizedUrl });
+-      } catch (err: any) {
+-        return res.status(500).json({ error: err.message || "GPT Image 2 (OpenRouter) 生成失敗" });
+-      }
+-    }
+-
+-
+     if (!templateImage) {
+       return res.status(400).json({ error: "Missing templateImage" });
+     }
+@@ -234,21 +197,7 @@ app.post("/api/gemini/generate", async (req, res) => {
+       return res.status(400).json({ error: "Missing or empty sourceImages" });
+     }
+ 
+-    const apiKey = process.env.GEMINI_API_KEY;
+-    if (!apiKey) {
+-      return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server. Please check the Secrets panel in Settings." });
+-    }
+-
+-    const ai = new GoogleGenAI({
+-      apiKey,
+-      httpOptions: {
+-        headers: {
+-          'User-Agent': 'aistudio-build',
+-        }
+-      }
+-    });
+-
+-    const parts: any[] = [];
++    const parts: ImagePart[] = [];
+ 
+     // Add template image
+     parts.push({ text: "STYLE TEMPLATE (Reference for layout, typography, colors, and overall vibe ONLY. CLEAN SLATE: Do NOT include any people, text, or specific objects from this reference style image in the final output):" });
+@@ -317,87 +266,28 @@ ${effectiveRatioPrompt}
+ 
+     parts.push({ text: fullPrompt });
+ 
+-    // Map to standard models
+-    const actualModelId = modelId === 'nano-banana-pro' ? 'gemini-3-pro-image' : 'gemini-3.1-flash-image';
+-
+-    const response = await ai.models.generateContent({
+-      model: actualModelId,
+-      contents: { parts },
+-      config: {
+-        temperature: typeof temperature === 'number' ? temperature : 0.7,
+-        imageConfig: {
+-          aspectRatio: getGeminiAspectRatio(ratio) as any,
+-          imageSize: targetRes,
+-        }
+-      }
+-    });
+-
+-    let foundImage = false;
+-    for (const part of response.candidates?.[0]?.content?.parts || []) {
+-      if (part.inlineData) {
+-        const base64EncodeString = part.inlineData.data;
+-        const mimeType = part.inlineData.mimeType || 'image/jpeg';
+-        const dataUrl = `data:${mimeType};base64,${base64EncodeString}`;
+-        const normalizedUrl = await normalizeImageDimensions(dataUrl, ratio, targetRes);
+-        
+-        foundImage = true;
+-        return res.json({ imageUrl: normalizedUrl });
+-      }
+-    }
+-
+-    if (!foundImage) {
+-      throw new Error("No image generated by the Gemini model response");
+-    }
+-
++    await handleImageRequest(
++      res,
++      imageClient,
++      { appModelId: modelId, parts, aspectRatio: ratio, resolution: targetRes, temperature },
++      async (image) => ({ imageUrl: await normalizeImageDimensions(image.dataUrl, ratio, targetRes) }),
++    );
+   } catch (error: any) {
+     console.error("Error in generate API:", error);
+-    res.status(500).json({ error: error.message || "Unknown server error occurred" });
++    if (!res.headersSent) res.status(500).json({ error: error.message || "Unknown server error occurred" });
+   }
+ });
+ 
+-// API Endpoint for editing OG image
++// API Endpoint for editing OG image (DeepEditor in the OG, InfoCard and possession tabs)
+ app.post("/api/gemini/edit", async (req, res) => {
+   try {
+     const {
+       baseImage,
+       editPrompt,
+-      ratio,
+       modelId,
+       language = 'tc',
+     } = req.body;
+ 
+-    const effectiveEditPrompt = language === 'sc' ? toServerSimplified(editPrompt) : editPrompt;
+-
+-    if (modelId === 'gpt-image-2' || modelId === 'doubao-seedream-5-0') {
+-      try {
+-        const imageUrl = await generateToAPIsImage({
+-          modelId,
+-          editPrompt: effectiveEditPrompt,
+-          ratio,
+-          baseImage,
+-          language,
+-        });
+-        const normalizedUrl = await normalizeImageDimensions(imageUrl, ratio, '1K');
+-        return res.json({ imageUrl: normalizedUrl });
+-      } catch (err: any) {
+-        return res.status(500).json({ error: err.message || `${modelId} (ToAPIs) 編輯失敗` });
+-      }
+-    }
+-
+-    if (modelId === 'openrouter-gpt-image-2') {
+-      try {
+-        const imageUrl = await generateOpenRouterImage({
+-          editPrompt: effectiveEditPrompt,
+-          ratio,
+-          language,
+-        });
+-        const normalizedUrl = await normalizeImageDimensions(imageUrl, ratio, '1K');
+-        return res.json({ imageUrl: normalizedUrl });
+-      } catch (err: any) {
+-        return res.status(500).json({ error: err.message || "GPT Image 2 (OpenRouter) 編輯失敗" });
+-      }
+-    }
+-
+     if (!baseImage) {
+       return res.status(400).json({ error: "Missing baseImage" });
+     }
+@@ -405,24 +295,17 @@ app.post("/api/gemini/edit", async (req, res) => {
+       return res.status(400).json({ error: "Missing editPrompt" });
+     }
+ 
+-    const apiKey = process.env.GEMINI_API_KEY;
+-    if (!apiKey) {
+-      return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server. Please check the Secrets panel in Settings." });
++    const effectiveEditPrompt = language === 'sc' ? toServerSimplified(editPrompt) : editPrompt;
++    // The edit keeps the original image's aspect ratio and pixel size.
++    const baseSize = await getImageSize(baseImage);
++    if (!baseSize) {
++      return res.status(400).json({ error: "無法讀取原圖的尺寸，請重新載入圖片後再試。" });
+     }
+ 
+-    const ai = new GoogleGenAI({
+-      apiKey,
+-      httpOptions: {
+-        headers: {
+-          'User-Agent': 'aistudio-build',
+-        }
+-      }
+-    });
+-
+-    const parts: any[] = [];
++    const parts: ImagePart[] = [];
+ 
+     parts.push({ text: "ORIGINAL IMAGE TO EDIT:" });
+-    parts.push(getInlineData(baseImage));
++    parts.push(await ensureInlineData(baseImage));
+ 
+     const fullPrompt = `
+ You are an expert image editor. Your task is to apply the requested edits to the provided image.
+@@ -439,40 +322,21 @@ ${effectiveEditPrompt}
+ 
+     parts.push({ text: fullPrompt });
+ 
+-    // Map to standard models
+-    const actualModelId = modelId === 'nano-banana-pro' ? 'gemini-3-pro-image' : 'gemini-3.1-flash-image';
+-
+-    const response = await ai.models.generateContent({
+-      model: actualModelId,
+-      contents: { parts },
+-      config: {
+-        imageConfig: {
+-          aspectRatio: getGeminiAspectRatio(ratio) as any,
+-          imageSize: "2K",
+-        }
+-      }
+-    });
+-
+-    let foundImage = false;
+-    for (const part of response.candidates?.[0]?.content?.parts || []) {
+-      if (part.inlineData) {
+-        const base64EncodeString = part.inlineData.data;
+-        const mimeType = part.inlineData.mimeType || 'image/jpeg';
+-        const dataUrl = `data:${mimeType};base64,${base64EncodeString}`;
+-        const normalizedUrl = await normalizeImageDimensions(dataUrl, ratio, '1K');
+-        
+-        foundImage = true;
+-        return res.json({ imageUrl: normalizedUrl });
+-      }
+-    }
+-
+-    if (!foundImage) {
+-      throw new Error("No image generated by the Gemini model response");
+-    }
+-
++    await handleImageRequest(
++      res,
++      imageClient,
++      {
++        appModelId: modelId,
++        parts,
++        aspectRatio: `${baseSize.width}:${baseSize.height}`,
++        keepInputAspect: true,
++        resolution: '2K',
++      },
++      async (image) => ({ imageUrl: await resizeImage(image.dataUrl, baseSize.width, baseSize.height) }),
++    );
+   } catch (error: any) {
+     console.error("Error in edit API:", error);
+-    res.status(500).json({ error: error.message || "Unknown server error occurred" });
++    if (!res.headersSent) res.status(500).json({ error: error.message || "Unknown server error occurred" });
+   }
+ });
+ 
+@@ -782,54 +646,7 @@ app.post("/api/infocard/generate-card", async (req, res) => {
+       return res.status(400).json({ error: "請提供樣板圖片以供風格參考" });
+     }
+ 
+-    if (modelId === 'gpt-image-2' || modelId === 'doubao-seedream-5-0') {
+-      try {
+-        const composedPrompt = `
+-Social Media InfoCard (${cardType === 'cover' ? 'Cover Hook Card' : `Content Card #${cardIndex}`}).
+-Main Title: ${effectiveMainTitle}
+-Subtitle: ${effectiveSubTitle}
+-Minor Title: ${effectiveMinorTitle}
+-Body: ${effectiveBody}
+-Tags: ${effectiveTags}
+-Visual Subject Prompt: ${imagePrompt}
+-`;
+-        const imageUrl = await generateToAPIsImage({
+-          modelId,
+-          globalPrompt: composedPrompt,
+-          ratioPrompt: `Ratio: ${ratio}, Resolution: ${resolution}`,
+-          ratio,
+-          templateImage,
+-          sourceImages,
+-          brandLogo,
+-          eraseTemplateSubject: eraseTemplateText,
+-          lockBrandLogo,
+-          temperature: 0.7,
+-          aiMatting: false,
+-          forbidPretrainedKnowledge: forbidPretrainedLogo,
+-          language,
+-        });
+-        const normalizedUrl = await normalizeImageDimensions(imageUrl, ratio, resolution);
+-        return res.json({ imageUrl: normalizedUrl });
+-      } catch (err: any) {
+-        return res.status(500).json({ error: err.message || `${modelId} (ToAPIs) 生成失敗` });
+-      }
+-    }
+-
+-    const apiKey = process.env.GEMINI_API_KEY;
+-    if (!apiKey) {
+-      return res.status(500).json({ error: "GEMINI_API_KEY 未配置在伺服器端。" });
+-    }
+-
+-    const ai = new GoogleGenAI({
+-      apiKey,
+-      httpOptions: {
+-        headers: {
+-          'User-Agent': 'aistudio-build',
+-        }
+-      }
+-    });
+-
+-    const parts: any[] = [];
++    const parts: ImagePart[] = [];
+ 
+     // 1. Reference Style Template Image
+     parts.push({
+@@ -914,38 +731,16 @@ ${textNegativePrompt}
+ 
+     parts.push({ text: fullInstruction });
+ 
+-    const actualModelId = modelId === 'nano-banana-pro' ? 'gemini-3-pro-image' : 'gemini-3.1-flash-image';
+-
+-    const response = await ai.models.generateContent({
+-      model: actualModelId,
+-      contents: { parts },
+-      config: {
+-        imageConfig: {
+-          aspectRatio: getGeminiAspectRatio(ratio) as any,
+-          imageSize: resolution === '2K' ? '2K' : '1K',
+-        }
+-      }
+-    });
+-
+-    let foundImage = false;
+-    for (const part of response.candidates?.[0]?.content?.parts || []) {
+-      if (part.inlineData) {
+-        const base64EncodeString = part.inlineData.data;
+-        const mimeType = part.inlineData.mimeType || 'image/jpeg';
+-        const dataUrl = `data:${mimeType};base64,${base64EncodeString}`;
+-        const normalizedUrl = await normalizeImageDimensions(dataUrl, ratio, resolution);
+-        foundImage = true;
+-        return res.json({ imageUrl: normalizedUrl });
+-      }
+-    }
+-
+-    if (!foundImage) {
+-      throw new Error("模型未返回生成的圖卡影像");
+-    }
+-
++    const targetRes = resolution === '2K' ? '2K' : '1K';
++    await handleImageRequest(
++      res,
++      imageClient,
++      { appModelId: modelId, parts, aspectRatio: ratio, resolution: targetRes },
++      async (image) => ({ imageUrl: await normalizeImageDimensions(image.dataUrl, ratio, targetRes) }),
++    );
+   } catch (error: any) {
+     console.error("Error in generate-card API:", error);
+-    res.status(500).json({ error: error.message || "圖卡生成失敗" });
++    if (!res.headersSent) res.status(500).json({ error: error.message || "圖卡生成失敗" });
+   }
+ });
+ 
+@@ -977,6 +772,47 @@ const ensureInlineData = async (dataUrlOrUrl: string) => {
+   };
+ };
+ 
++// Pixel size of an image as displayed (EXIF rotation applied), or null when it cannot be read
++const getImageSize = async (dataUrlOrUrl: string): Promise<{ width: number; height: number } | null> => {
++  try {
++    const metadata = await sharp(await getBufferFromUrlOrDataUrl(dataUrlOrUrl)).metadata();
++    const width = metadata.autoOrient?.width ?? metadata.width;
++    const height = metadata.autoOrient?.height ?? metadata.height;
++    return width && height ? { width, height } : null;
++  } catch (err) {
++    console.warn('Image size read warning:', err);
++    return null;
++  }
++};
++
++// Applies EXIF rotation, so the pixels sent to the model match what the user saw (and drew masks on).
++// An image sharp cannot read is returned unchanged; the later checks reject it with a clear message.
++const getUprightImage = async (dataUrlOrUrl: string): Promise<string> => {
++  try {
++    const input = await getBufferFromUrlOrDataUrl(dataUrlOrUrl);
++    const metadata = await sharp(input).metadata();
++    if (!metadata.orientation || metadata.orientation === 1) return dataUrlOrUrl;
++    const rotated = sharp(input).rotate();
++    const output = metadata.hasAlpha ? await rotated.png().toBuffer() : await rotated.jpeg({ quality: 95 }).toBuffer();
++    return `data:image/${metadata.hasAlpha ? 'png' : 'jpeg'};base64,${output.toString('base64')}`;
++  } catch (err) {
++    console.warn('Image orientation warning:', err);
++    return dataUrlOrUrl;
++  }
++};
++
++// Center-crops an image to the aspect of width:height, keeping its own resolution
++const cropToAspect = async (dataUrl: string, width: number, height: number): Promise<string> => {
++  const size = await getImageSize(dataUrl);
++  if (!size) return dataUrl;
++  const target = width / height;
++  const cropped = size.width / size.height > target
++    ? { width: Math.round(size.height * target), height: size.height }
++    : { width: size.width, height: Math.round(size.width / target) };
++  if (cropped.width === size.width && cropped.height === size.height) return dataUrl;
++  return resizeImage(dataUrl, cropped.width, cropped.height);
++};
++
+ // Helper: Stamp logo on image using Sharp with exact positioning and opacity
+ const stampLogoOnImage = async (
+   baseImageDataUrl: string,
+@@ -1219,78 +1055,7 @@ app.post("/api/possession/generate", async (req, res) => {
+       ? (Array.isArray(badges) ? badges.map((b: string) => toServerSimplified(b)) : [])
+       : badges;
+ 
+-    // Support GPT Image 2 (ToAPIs)
+-    if (imageModel === 'gpt-image-2') {
+-      try {
+-        const badgeText = Array.isArray(effectiveBadges) && effectiveBadges.length > 0 ? effectiveBadges.join(' | ') : '';
+-        const possessionDirectives = `
+-[OG 奪舍 METAMORPHOSIS & TYPOGRAPHY DIRECTIVES]:
+-1. REFERENCE STYLE TEMPLATE (排版骨架與風格來源):
+-   - Strictly adopt and replicate the overall layout composition, background graphic framing, color palette, lighting glow, atmospheric aesthetic, and typography font weight/extrusion from the style template image.
+-   ${eraseTemplateSubject ? '- RIGID PURGE & CLEAN SLATE (嚴格清除舊主體與文字): Completely remove and erase all original characters, people, faces, and old text titles from this template image. The template provides ONLY background layout, color harmony, and font style.' : ''}
+-
+-2. NEW MATERIAL SOURCE IMAGE (唯一人物與產品來源):
+-   - ${lockFacialIdentity ? '100% pixel-perfect clone and preserve the face, facial expression, eyes, gaze, nose, smile, skin texture, and hairstyle from this material image. Strictly zero facial distortion, AI beautification, aging, or identity morphing.' : 'Integrate the subject from this material image.'}
+-   - ${lockProductDetails ? '100% preserve and clone the exact products, devices, props, model details, outer silhouettes, reflections, and proportions from this material image.' : 'Integrate the key products from this image.'}
+-   - Seamlessly blend the subjects into the template background with natural lighting and contact shadows, without carrying over the raw background of the material image.
+-
+-3. INJECTED TITLES & ${isSimp ? 'SIMPLIFIED' : 'TRADITIONAL'} CHINESE TYPOGRAPHY:
+-   - 核心主標題 (Main Title): "${effectiveMainTitle}"
+-   ${effectiveSubtitle ? `- 副標題 (Subtitle): "${effectiveSubtitle}"` : ''}
+-   ${badgeText ? `- 亮點標籤 / 促銷徽章 (Badges): "${badgeText}"` : ''}
+-   - Render the title using the exact 3D extrusion, stroke outline, gradient fill, and drop shadow matching the reference template.
+-   - All text MUST strictly be in accurate, standard ${isSimp ? 'Simplified Chinese (简体中文). 严禁繁体字。' : 'Traditional Chinese (繁體中文).' }
+-   - Ensure the text title does NOT block or obscure the human face or key products.
+-
+-4. BRAND LOGO LOCK:
+-   ${brandLogo ? '- 100% pixel-perfect copy and position the provided Brand Logo in the corner (top-left or top-right).' : lockBrandLogo ? '- If there is a brand logo in the reference template (usually top-left or top-right), 100% pixel-perfect preserve and lock it in the exact same location without distortion.' : ''}
+-
+-5. ANTI-CYBERPUNK & 1K DEFINITION:
+-   - NO CYBERPUNK: Absolutely DO NOT use cyberpunk, neon-grid, or glitchy sci-fi themes. Maintain high-end editorial and clean professional aesthetic.
+-   - 1K RESOLUTION: Optimize for sharp, crystal-clear 1K image definition at target aspect ratio (${ratio}).
+-${customPrompt ? `\nUSER SPECIFIC DIRECTIVE:\n${customPrompt}\n` : ''}
+-`;
+-
+-        const imageUrl = await generateToAPIsImage({
+-          modelId: 'gpt-image-2',
+-          globalPrompt: possessionDirectives,
+-          ratioPrompt: `Target ratio: ${ratio}. Safe margin: keep all titles, logos, and critical focal subjects within the safe viewing canvas.`,
+-          ratio,
+-          templateImage,
+-          sourceImages: [materialImage],
+-          brandLogo,
+-          eraseTemplateSubject,
+-          lockBrandLogo,
+-          forbidPretrainedKnowledge: true,
+-          language,
+-        });
+-
+-        const normalizedUrl = await normalizeImageDimensions(imageUrl, ratio, '1K');
+-        return res.json({
+-          imageUrl: normalizedUrl,
+-          metadata: {
+-            ratio,
+-            model: 'gpt-image-2',
+-            timestamp: Date.now()
+-          }
+-        });
+-      } catch (err: any) {
+-        console.error("GPT Image 2 (ToAPIs) possession error:", err);
+-        return res.status(500).json({ error: err.message || "GPT Image 2 (ToAPIs) OG 奪舍生成失敗" });
+-      }
+-    }
+-
+-    const apiKey = process.env.GEMINI_API_KEY;
+-    if (!apiKey) {
+-      return res.status(500).json({ error: "GEMINI_API_KEY 未配置在伺服器端。" });
+-    }
+-
+-    const ai = new GoogleGenAI({
+-      apiKey,
+-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+-    });
+-
+-    const parts: any[] = [];
++    const parts: ImagePart[] = [];
+ 
+     // Part 1: Reference Style Template
+     const templateInstruction = `
+@@ -1353,48 +1118,22 @@ ${customPrompt ? `\nUSER SPECIFIC DIRECTIVE:\n${customPrompt}\n` : ''}
+ `;
+     parts.push({ text: masterDirectives });
+ 
+-    // Model selection: strictly Nano Banana 2 (gemini-3.1-flash-image) or Nano Banana Pro (gemini-3-pro-image)
+-    const actualModel = imageModel === 'nano-banana-pro' ? 'gemini-3-pro-image' : 'gemini-3.1-flash-image';
+-    const targetGeminiRatio = getGeminiAspectRatio(ratio);
+-
+-    const response = await ai.models.generateContent({
+-      model: actualModel,
+-      contents: { parts },
+-      config: {
+-        imageConfig: {
+-          aspectRatio: targetGeminiRatio as any,
+-          imageSize: '1K', // User constraint: always 1K priority
+-        }
+-      }
+-    });
+-
+-    let foundImageUrl: string | null = null;
+-    for (const part of response.candidates?.[0]?.content?.parts || []) {
+-      if (part.inlineData) {
+-        const base64Data = part.inlineData.data;
+-        const mimeType = part.inlineData.mimeType || 'image/jpeg';
+-        const rawUrl = `data:${mimeType};base64,${base64Data}`;
+-        foundImageUrl = await normalizeImageDimensions(rawUrl, ratio, '1K');
+-        break;
+-      }
+-    }
+-
+-    if (!foundImageUrl) {
+-      throw new Error("模型未返回生成的 OG 奪舍圖片，請稍後再試。");
+-    }
+-
+-    return res.json({
+-      imageUrl: foundImageUrl,
+-      metadata: {
+-        ratio,
+-        model: imageModel,
+-        timestamp: Date.now()
+-      }
+-    });
+-
++    await handleImageRequest(
++      res,
++      imageClient,
++      { appModelId: imageModel, parts, aspectRatio: ratio, resolution: '1K' },
++      async (image) => ({
++        imageUrl: await normalizeImageDimensions(image.dataUrl, ratio, '1K'),
++        metadata: {
++          ratio,
++          model: imageModel,
++          timestamp: Date.now(),
++        },
++      }),
++    );
+   } catch (error: any) {
+     console.error("Error in possession generate API:", error);
+-    res.status(500).json({ error: error.message || "OG 奪舍生成失敗" });
++    if (!res.headersSent) res.status(500).json({ error: error.message || "OG 奪舍生成失敗" });
+   }
+ });
+ 
+@@ -1460,14 +1199,16 @@ app.post("/api/batch-edit/process-image", async (req, res) => {
+     const effectiveDedicatedPrompt = isSimp ? toServerSimplified(dedicatedPrompt) : dedicatedPrompt;
+ 
+     const hasImage = Boolean(image && typeof image === 'string' && image.trim().length > 0);
++    const baseImage = hasImage ? await getUprightImage(image) : null;
+     const combinedPrompt = [effectiveDedicatedPrompt?.trim(), effectiveGlobalPrompt?.trim()].filter(Boolean).join("\n\n");
+ 
+     if (!hasImage && !combinedPrompt) {
+       return res.status(400).json({ error: "留空底圖時（文生圖模式），請輸入提示詞指令以生成圖片。" });
+     }
+ 
++    // Every reference image is sent; the image kit rejects more than the selected model accepts.
+     const validReferenceImages = Array.isArray(referenceImages)
+-      ? referenceImages.filter((img): img is string => Boolean(img && typeof img === 'string')).slice(0, 5)
++      ? referenceImages.filter((img): img is string => Boolean(img && typeof img === 'string'))
+       : [];
+ 
+     const styleReferenceDirective = validReferenceImages.length > 0
+@@ -1477,103 +1218,7 @@ app.post("/api/batch-edit/process-image", async (req, res) => {
+ 3. COMPOSITION & RATIO: The spatial composition, scene arrangement, and subject matter MUST STRICTLY follow the user's prompt directive and the target aspect ratio (${aspectRatio}).`
+       : '';
+ 
+-    if (modelId === 'gpt-image-2' || modelId === 'doubao-seedream-5-0') {
+-      try {
+-        const targetRatio = (aspectRatio === 'original' || !aspectRatio) ? '4:5' : aspectRatio;
+-        let imageUrl: string;
+-        if (hasImage) {
+-          const editPrompt = `You are an expert image editor and generative enhancement engine.
+-Apply the requested photographic modifications to the provided image:
+-Global instructions: ${effectiveGlobalPrompt || 'Photographic enhancement and realistic touch-up.'}
+-Dedicated instructions: ${effectiveDedicatedPrompt || 'Follow global directive with high fidelity.'}
+-${maskImage ? 'Note: White pixels on inpaint mask indicate target edit region.' : ''}
+-${styleReferenceDirective}
+-All in-image text MUST strictly be in ${isSimp ? 'Simplified Chinese (简体中文). 严禁繁体中文。' : 'Traditional Chinese (繁體中文).'}`;
+-          imageUrl = await generateToAPIsImage({
+-            modelId,
+-            editPrompt,
+-            ratio: targetRatio,
+-            baseImage: image,
+-            sourceImages: validReferenceImages.length > 0 ? validReferenceImages : undefined,
+-            language,
+-          });
+-        } else {
+-          const subjectAwarePrompt = `[CORE SUBJECT MANDATE: The user's input specifies the primary subject (e.g. cars, products, objects, scenery). Any style directive defines ONLY the lighting, color grading, materials, and atmosphere. DO NOT generate human dancers, idols, or models unless requested].\nPrompt Directive: ${combinedPrompt}${styleReferenceDirective}\nAll in-image text MUST strictly be in ${isSimp ? 'Simplified Chinese (简体中文). 严禁繁体中文。' : 'Traditional Chinese (繁體中文).'}`;
+-          imageUrl = await generateToAPIsImage({
+-            modelId,
+-            globalPrompt: subjectAwarePrompt,
+-            ratioPrompt: `Ratio: ${targetRatio}, Resolution: ${resolution}`,
+-            ratio: targetRatio,
+-            sourceImages: validReferenceImages.length > 0 ? validReferenceImages : undefined,
+-            language,
+-          });
+-        }
+-
+-        let normalizedUrl = await normalizeImageDimensions(imageUrl, targetRatio, resolution);
+-
+-        if (logoConfig && logoConfig.logoUrl) {
+-          normalizedUrl = await stampLogoOnImage(normalizedUrl, logoConfig);
+-        }
+-
+-        return res.json({ imageUrl: normalizedUrl });
+-      } catch (err: any) {
+-        console.error("ToAPIs batch image error:", err);
+-        return res.status(500).json({ error: err.message || `${modelId} (ToAPIs) 批次處理失敗` });
+-      }
+-    }
+-
+-    if (modelId === 'openrouter-gpt-image-2') {
+-      try {
+-        const targetRatio = (aspectRatio === 'original' || !aspectRatio) ? '4:5' : aspectRatio;
+-        let imageUrl: string;
+-        if (hasImage) {
+-          const editPrompt = `You are an expert image editor and generative enhancement engine.
+-Apply the requested photographic modifications to the provided image:
+-Global instructions: ${effectiveGlobalPrompt || 'Photographic enhancement and realistic touch-up.'}
+-Dedicated instructions: ${effectiveDedicatedPrompt || 'Follow global directive with high fidelity.'}
+-${styleReferenceDirective}
+-All in-image text MUST strictly be in ${isSimp ? 'Simplified Chinese (简体中文). 严禁繁体中文。' : 'Traditional Chinese (繁體中文).'}`;
+-          imageUrl = await generateOpenRouterImage({
+-            editPrompt,
+-            ratio: targetRatio,
+-            sourceImages: validReferenceImages.length > 0 ? validReferenceImages : undefined,
+-            language,
+-          });
+-        } else {
+-          const subjectAwarePrompt = `[CORE SUBJECT MANDATE: The user's input specifies the primary subject (e.g. cars, products, objects, scenery). Any style directive defines ONLY the lighting, color grading, materials, and atmosphere. DO NOT generate human dancers, idols, or models unless requested].\nPrompt Directive: ${combinedPrompt}${styleReferenceDirective}\nAll in-image text MUST strictly be in ${isSimp ? 'Simplified Chinese (简体中文). 严禁繁体中文。' : 'Traditional Chinese (繁體中文).'}`;
+-          imageUrl = await generateOpenRouterImage({
+-            globalPrompt: subjectAwarePrompt,
+-            ratioPrompt: `Ratio: ${targetRatio}, Resolution: ${resolution}`,
+-            ratio: targetRatio,
+-            sourceImages: validReferenceImages.length > 0 ? validReferenceImages : undefined,
+-            language,
+-          });
+-        }
+-
+-        let normalizedUrl = await normalizeImageDimensions(imageUrl, targetRatio, resolution);
+-
+-        if (logoConfig && logoConfig.logoUrl) {
+-          normalizedUrl = await stampLogoOnImage(normalizedUrl, logoConfig);
+-        }
+-
+-        return res.json({ imageUrl: normalizedUrl });
+-      } catch (err: any) {
+-        console.error("OpenRouter batch image error:", err);
+-        return res.status(500).json({ error: err.message || "GPT Image 2 (OpenRouter) 批次處理失敗" });
+-      }
+-    }
+-
+-    const apiKey = process.env.GEMINI_API_KEY;
+-    if (!apiKey) {
+-      return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server" });
+-    }
+-
+-    const ai = new GoogleGenAI({
+-      apiKey,
+-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+-    });
+-
+-    const parts: any[] = [];
++    const parts: ImagePart[] = [];
+ 
+     // Attach style reference images (up to 5) if provided
+     if (validReferenceImages.length > 0) {
+@@ -1593,7 +1238,7 @@ MANDATORY STYLE TRANSFER DIRECTIVE:
+     if (hasImage) {
+       // Image-to-Image mode
+       parts.push({ text: "SOURCE BASE IMAGE (The core image to edit, inpaint, or transform):" });
+-      parts.push(await ensureInlineData(image));
++      parts.push(await ensureInlineData(baseImage));
+ 
+       // Add inpaint mask if user provided one
+       if (maskImage) {
+@@ -1646,48 +1291,41 @@ ${styleReferenceDirective}
+       parts.push({ text: textToImageInstruction });
+     }
+ 
+-    const actualModelId = modelId === 'nano-banana-pro' ? 'gemini-3-pro-image' : 'gemini-3.1-flash-image';
+-    const targetGeminiRatio = aspectRatio === 'original' ? '1:1' : getGeminiAspectRatio(aspectRatio);
+-
+-    const response = await ai.models.generateContent({
+-      model: actualModelId,
+-      contents: { parts },
+-      config: {
+-        imageConfig: {
+-          aspectRatio: targetGeminiRatio as any,
+-          imageSize: resolution === '4K' || resolution === '2K' ? '2K' : '1K',
+-        }
+-      }
+-    });
+-
+-    let foundImageUrl: string | null = null;
+-    for (const part of response.candidates?.[0]?.content?.parts || []) {
+-      if (part.inlineData) {
+-        const base64EncodeString = part.inlineData.data;
+-        const mimeType = part.inlineData.mimeType || 'image/jpeg';
+-        foundImageUrl = `data:${mimeType};base64,${base64EncodeString}`;
+-        break;
+-      }
+-    }
+-
+-    if (!foundImageUrl) {
+-      throw new Error("模型未返回生成的影像，請稍後重試。");
+-    }
+-
+-    // Normalize image dimensions to target ratio and resolution
+-    if (aspectRatio && aspectRatio !== 'original') {
+-      foundImageUrl = await normalizeImageDimensions(foundImageUrl, aspectRatio, resolution);
+-    }
+-
+-    // If logoConfig is provided, stamp logo onto the generated image using Sharp
+-    if (logoConfig && logoConfig.logoUrl) {
+-      foundImageUrl = await stampLogoOnImage(foundImageUrl, logoConfig);
++    const targetRes = resolution === '4K' ? '4K' : resolution === '2K' ? '2K' : '1K';
++    // "original" keeps the base image's aspect; a slot without a base image (text-to-image) is 1:1.
++    const keepOriginal = !aspectRatio || aspectRatio === 'original';
++    const baseSize = keepOriginal && baseImage ? await getImageSize(baseImage) : null;
++    if (keepOriginal && hasImage && !baseSize) {
++      return res.status(400).json({ error: "無法讀取底圖的尺寸，請重新上載底圖後再試。" });
+     }
+-
+-    return res.json({ imageUrl: foundImageUrl });
++    const aspect = !keepOriginal
++      ? { aspectRatio }
++      : baseSize
++        ? { aspectRatio: `${baseSize.width}:${baseSize.height}`, keepInputAspect: true }
++        : { aspectRatio: '1:1' };
++
++    await handleImageRequest(
++      res,
++      imageClient,
++      { appModelId: modelId, parts, resolution: targetRes, ...aspect },
++      async (generated) => {
++        // Normalize image dimensions to target ratio and resolution; "original" keeps the base image's
++        // exact aspect at the generated size (models without that ratio return the nearest one)
++        let imageUrl = !keepOriginal
++          ? await normalizeImageDimensions(generated.dataUrl, aspectRatio, targetRes)
++          : baseSize
++            ? await cropToAspect(generated.dataUrl, baseSize.width, baseSize.height)
++            : generated.dataUrl;
++        // If logoConfig is provided, stamp logo onto the generated image using Sharp
++        if (logoConfig && logoConfig.logoUrl) {
++          imageUrl = await stampLogoOnImage(imageUrl, logoConfig);
++        }
++        return { imageUrl };
++      },
++    );
+   } catch (error: any) {
+     console.error("Error in process-image API:", error);
+-    res.status(500).json({ error: error.message || "圖片處理演算失敗" });
++    if (!res.headersSent) res.status(500).json({ error: error.message || "圖片處理演算失敗" });
+   }
+ });
+ 
+diff --git a/server/imageModels.ts b/server/imageModels.ts
+new file mode 100644
+index 0000000..47f008b
+--- /dev/null
++++ b/server/imageModels.ts
+@@ -0,0 +1,141 @@
++import sharp from 'sharp';
++import { createImageClient, type ImageModelOption, type ReferenceConverter } from '@hk01/pi-ai-extra-image-kit/server';
++
++/**
++ * The image models InfoCard offers, in selector order (grouped like open-graph-single), and the
++ * shared image client every image route uses. Limits and capabilities come from the package
++ * catalogues through @hk01/pi-ai-extra-image-kit; this file only holds InfoCard's own choices.
++ */
++
++export const DEFAULT_IMAGE_MODEL_ID = 'nano-banana-2';
++
++const MODELS: readonly ImageModelOption[] = [
++  {
++    id: 'nano-banana-2',
++    label: 'Nano Banana 2',
++    description: '預設模型，Google 直連 Gemini 3.1 Flash Image，生成速度快。',
++    provider: 'google',
++    model: 'gemini-3.1-flash-image',
++    maskEditing: 'supported',
++    // Google pricing page (2026-10-06): image output $60 / 1M tokens, input $0.50 / 1M tokens.
++    price: { perImageUsd: { '1K': 0.067, '2K': 0.101, '4K': 0.151 }, inputPerMillionTokensUsd: 0.5 },
++  },
++  {
++    id: 'nano-banana-pro',
++    label: 'Nano Banana Pro',
++    description: '進階模型，Google 直連 Gemini 3 Pro Image，細節更豐富。',
++    provider: 'google',
++    model: 'gemini-3-pro-image',
++    maskEditing: 'supported',
++    // Google pricing page (2026-10-06): image output $120 / 1M tokens, input $2.00 / 1M tokens.
++    price: { perImageUsd: { '1K': 0.134, '2K': 0.134, '4K': 0.24 }, inputPerMillionTokensUsd: 2 },
++  },
++  {
++    id: 'gpt-image-2.5-flare',
++    label: 'GPT Image 2.5 Flare (ToAPIs)',
++    description: 'ToAPIs 提供的 GPT Image 2.5 Flare，支援參考圖輸入。',
++    provider: 'toapis',
++    model: 'gpt-image-2.5-flare',
++    maskEditing: 'reference-only',
++    // ToAPIs GPT Image 2.5 doc (verified 2026-09-09); reference images have no extra fee.
++    price: { perImageUsd: { '1K': 0.015, '2K': 0.02, '4K': 0.025 }, inputPerMillionTokensUsd: 0 },
++  },
++  {
++    id: 'gpt-image-2.5-sunburst',
++    label: 'GPT Image 2.5 Sunburst (ToAPIs)',
++    description: 'ToAPIs 提供的 GPT Image 2.5 Sunburst，支援參考圖輸入。',
++    provider: 'toapis',
++    model: 'gpt-image-2.5-sunburst',
++    maskEditing: 'reference-only',
++    price: { perImageUsd: { '1K': 0.015, '2K': 0.02, '4K': 0.025 }, inputPerMillionTokensUsd: 0 },
++  },
++  {
++    id: 'gpt-image-2',
++    label: 'GPT Image 2 (ToAPIs)',
++    description: 'ToAPIs 提供的 GPT Image 2，高創意度與畫面品質。',
++    provider: 'toapis',
++    model: 'gpt-image-2',
++    maskEditing: 'reference-only',
++    price: null,
++  },
++  {
++    id: 'doubao-seedream-5-0-pro',
++    label: 'Doubao Seedream 5.0 Pro (ToAPIs)',
++    description: 'ByteDance 豆包 Seedream 5.0 Pro，最高 2K；參考圖會轉為 PNG / JPEG 送出。',
++    provider: 'toapis',
++    model: 'doubao-seedream-5-0-pro',
++    maskEditing: 'reference-only',
++    price: null,
++  },
++  {
++    id: 'gemini-3.1-flash-image-preview',
++    label: 'Nano Banana 2 Preview (ToAPIs)',
++    description: 'ToAPIs 提供的 Gemini 3.1 Flash Image Preview。',
++    provider: 'toapis',
++    model: 'gemini-3.1-flash-image-preview',
++    maskEditing: 'supported',
++    price: null,
++  },
++  {
++    id: 'kie-grok-imagine-2',
++    label: 'Grok Imagine 2.0 (KIE)',
++    description: 'KIE 提供的 xAI Grok Imagine 2.0；有參考圖時最多 5 張、prompt 上限 8,000 字元，沒有解像度選項。',
++    provider: 'kie',
++    model: 'grok-imagine-image-2-0/image-edit',
++    textOnlyModel: 'grok-imagine-image-2-0/text-to-image',
++    maskEditing: 'reference-only',
++    price: null,
++  },
++  {
++    id: 'kie-gpt-image-2',
++    label: 'GPT Image 2 (KIE)',
++    description: 'KIE 提供的 GPT Image 2；有參考圖時使用 image-to-image。',
++    provider: 'kie',
++    model: 'gpt-image-2-image-to-image',
++    textOnlyModel: 'gpt-image-2-text-to-image',
++    maskEditing: 'reference-only',
++    price: null,
++  },
++  {
++    id: 'kie-nano-banana-2',
++    label: 'Nano Banana 2 (KIE)',
++    description: 'KIE 提供的 Gemini 3.1 Flash Image。',
++    provider: 'kie',
++    model: 'nano-banana-2',
++    maskEditing: 'supported',
++    price: null,
++  },
++];
++
++const JPEG_QUALITY = 90;
++const MAX_SHRINK_ATTEMPTS = 6;
++
++/**
++ * Re-encodes a reference image that the selected model cannot take as is: an unsupported format
++ * (WebP or GIF for Seedream) becomes PNG when it has transparency, otherwise JPEG, and an image
++ * over the model's inline size limit is scaled down until it fits. EXIF rotation is applied.
++ */
++export const convertReference: ReferenceConverter = async (dataUrl, { acceptedMimeTypes, maxInlineBytes }) => {
++  const input = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
++  const metadata = await sharp(input).metadata();
++  const asPng = Boolean(metadata.hasAlpha) && acceptedMimeTypes.includes('image/png');
++  const mimeType = asPng ? 'image/png' : 'image/jpeg';
++  let width = metadata.autoOrient?.width ?? metadata.width;
++  for (let attempt = 0; attempt < MAX_SHRINK_ATTEMPTS; attempt++) {
++    const pipeline = sharp(input).rotate().resize({ width, withoutEnlargement: true });
++    const output = await (asPng ? pipeline.png({ compressionLevel: 9 }) : pipeline.flatten({ background: '#ffffff' }).jpeg({ quality: JPEG_QUALITY })).toBuffer();
++    if (output.length <= maxInlineBytes) return `data:${mimeType};base64,${output.toString('base64')}`;
++    width = Math.floor((width ?? 4096) * Math.sqrt(maxInlineBytes / output.length) * 0.9);
++  }
++  throw new Error(`縮小 ${MAX_SHRINK_ATTEMPTS} 次後仍超過 ${(maxInlineBytes / 1_048_576).toFixed(0)} MB`);
++};
++
++export const imageClient = createImageClient({
++  app: 'infocard',
++  models: MODELS,
++  env: process.env,
++  // InfoCard has always also accepted TOAPI_API_KEY (without the S).
++  secretNames: { toapis: ['TOAPIS_API_KEY', 'TOAPI_API_KEY'] },
++  convertReference,
++  googleHeaders: { 'User-Agent': 'aistudio-build' },
++});
+diff --git a/server/providers/openrouter.ts b/server/providers/openrouter.ts
+deleted file mode 100644
+index ec1fc7e..0000000
+--- a/server/providers/openrouter.ts
++++ /dev/null
+@@ -1,210 +0,0 @@
+-import dotenv from "dotenv";
+-
+-dotenv.config();
+-
+-// Helper to convert remote image URL to Base64 Data URL on server
+-async function fetchImageAsBase64(url: string): Promise<string> {
+-  if (!url) return "";
+-  if (url.startsWith("data:image/")) return url;
+-  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+-    return `data:image/png;base64,${url}`;
+-  }
+-
+-  try {
+-    const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+-    if (res.ok) {
+-      const mime = res.headers.get("content-type") || "image/jpeg";
+-      const buffer = Buffer.from(await res.arrayBuffer());
+-      return `data:${mime};base64,${buffer.toString("base64")}`;
+-    }
+-  } catch (err) {
+-    console.warn("Failed to fetch image as base64 on server:", err);
+-  }
+-  return url;
+-}
+-
+-export async function generateOpenRouterImage({
+-  globalPrompt,
+-  ratioPrompt,
+-  ratio,
+-  editPrompt,
+-  templateImage,
+-  sourceImages,
+-  brandLogo,
+-  eraseTemplateSubject = true,
+-  lockBrandLogo = true,
+-  temperature = 0.7,
+-  aiMatting = false,
+-  forbidPretrainedKnowledge = true,
+-  language = 'tc',
+-}: {
+-  globalPrompt?: string;
+-  ratioPrompt?: string;
+-  ratio: string;
+-  editPrompt?: string;
+-  templateImage?: string;
+-  sourceImages?: string[];
+-  brandLogo?: string | null;
+-  eraseTemplateSubject?: boolean;
+-  lockBrandLogo?: boolean;
+-  temperature?: number;
+-  aiMatting?: boolean;
+-  forbidPretrainedKnowledge?: boolean;
+-  language?: 'tc' | 'sc';
+-}) {
+-  const apiKey = process.env.OPENROUTER_API_KEY;
+-  if (!apiKey || !apiKey.trim()) {
+-    throw new Error("OPENROUTER_API_KEY 未設定或為空，請在 Settings 秘密設定 (Secrets) 中配置 OPENROUTER_API_KEY。");
+-  }
+-
+-  let prompt = "";
+-  if (editPrompt) {
+-    prompt = `You are an expert image editor. Your task is to apply the requested edits to the provided image.
+-CRITICAL RULES:
+-1. PRESERVE UNMARKED AREAS: Do not change any part of the image that is not explicitly mentioned in the edit instructions.
+-2. REMOVE STROKES: The provided image may have colored strokes or circles indicating where to edit. You MUST remove these strokes and replace them with the requested content or blend them naturally into the background.
+-3. FOLLOW INSTRUCTIONS: Apply the edits exactly as requested in the instructions below.
+-4. PRESERVE ASPECT RATIO: The output image MUST have the exact same aspect ratio as the original image. Do not crop it to a square unless the original is a square.
+-
+-Edit Instructions:
+-${editPrompt}`;
+-  } else {
+-    const is300x250 = ratio === '300x250' || ratio.includes('300x250');
+-    const adBannerRules = is300x250 ? `
+-7. CRITICAL 300x250 AD BANNER SAFE ZONE:
+-   - This output is a 300x250 display ad banner.
+-   - You MUST keep ALL text (titles, subtitles, tags) and logos strictly within the central 80% safe region.
+-   - Leave at least 12% empty horizontal safety margin on both left and right outer edges so no text or logo is placed near the border.
+-   - Wrap long text titles neatly into 2-3 shorter lines to stay within the safe width.
+-` : '';
+-
+-    const logoText = lockBrandLogo
+-      ? "6. BRAND LOGO LOCK: You MUST 100% pixel-perfect copy and lock the Brand Logo (from the brand logo image or style template top corner). Maintain exact shape, colors, typography, borders, and aspect ratio without any AI distortion or redrawing. Place cleanly in top-left or top-right corner."
+-      : "6. LOGO: Place brand logo cleanly in top left or top right corner.";
+-
+-    const cleanRule = eraseTemplateSubject
+-      ? "1. CLEAN SLATE & SUBJECT ERASURE: Completely remove and erase any people, characters, actors, faces, or specific main subjects from the Style Template image. The template image is ONLY for layout geometry, typography, color scheme, and background atmosphere. Do NOT include any subjects from the style template image. Place ONLY the subjects from the provided SOURCE IMAGES."
+-      : "1. STYLE TEMPLATE BLENDING: You may preserve or blend subjects from the style template with the source images as requested.";
+-
+-    const mattingRule = aiMatting
+-      ? "2. AI SUBJECT EXTRACTION & BACKGROUND REMOVAL (智能退地/摳圖): You MUST automatically isolate, extract, and cutout the main subjects/people/products from the SOURCE IMAGES, completely stripping away their original backgrounds, and seamlessly place ONLY the extracted main subjects into the template background."
+-      : "2. SOURCE PRESERVATION: You MUST use the provided SOURCE IMAGES. Do NOT modify their faces, expressions, features, or identities. 100% pixel-perfect preservation of the subjects is required.";
+-
+-    const forbidKnowledgeRule = forbidPretrainedKnowledge
+-      ? "7. FORBID PRETRAINED KNOWLEDGE (禁止使用預訓練數據庫): You are STRICTLY FORBIDDEN from searching, recalling, or generating any brand logos, fonts, or assets from your internal AI pretrained knowledge base. You MUST ONLY rely on the user-provided Brand Logo image or style template image. If no logo image is supplied, DO NOT draw or synthesize any brand logo from memory."
+-      : "7. PRETRAINED KNOWLEDGE ALLOWED: You may use internal pretrained knowledge about the brand to assist in drawing or reconstructing the logo if no reference image is provided.";
+-
+-    const hasTemplateOrSource = Boolean(templateImage || (sourceImages && sourceImages.length > 0));
+-    if (!hasTemplateOrSource) {
+-      prompt = `You are an elite photographic and visual image generation engine.
+-Generate a master-level, photorealistic image based on the following creative prompt directive:
+-${globalPrompt || ''}
+-${ratioPrompt ? `Layout & Ratio: ${ratioPrompt}` : ''}
+-CRITICAL RULES:
+-1. High Aesthetic Quality & Photographic Realism.
+-2. Composition & Aspect Ratio: Perfectly compose for ${ratio}.
+-3. Language & Typography: If any text, logos, or slogans appear within the image, they MUST strictly be in clean, grammatically correct ${language === 'sc' ? 'Simplified Chinese (简体中文). 严禁繁体字' : 'Traditional Chinese (繁體中文)'}.
+-4. No blur, artifacts, or distortions.`;
+-    } else {
+-      prompt = `You are an expert Open Graph image creator and collage master.
+-Your task is to create a new Open Graph image based on the provided STYLE TEMPLATE and SOURCE IMAGES.
+-
+-CRITICAL RULES:
+-${cleanRule}
+-${mattingRule}
+-3. CRITICAL: PRESERVE ASPECT RATIO. Do not stretch or squash the subjects. Use cropping or background filling if the aspect ratio doesn't match perfectly.
+-4. TEXT PLACEMENT: Ensure the text title does NOT obscure the main subjects (especially faces) or important objects.
+-5. LANGUAGE: The title and any text must be in ${language === 'sc' ? 'Simplified Chinese (简体中文). 严禁繁体中文' : 'Traditional Chinese (繁體中文)'}.
+-${logoText}
+-${forbidKnowledgeRule}
+-${adBannerRules}
+-Global Instructions & Title:
+-${globalPrompt || ''}
+-
+-Specific Layout Instructions for this ratio (${ratio}):
+-${ratioPrompt || ''}
+-`;
+-    }
+-  }
+-
+-  const modelsToTry = [
+-    "openai/gpt-image-2"
+-  ];
+-  let lastError: any = null;
+-
+-  for (const modelName of modelsToTry) {
+-    try {
+-      const res = await fetch("https://openrouter.ai/api/v1/images", {
+-        method: "POST",
+-        headers: {
+-          "Authorization": `Bearer ${apiKey.trim()}`,
+-          "Content-Type": "application/json",
+-          "HTTP-Referer": process.env.APP_URL || "https://ai.studio",
+-          "Referer": process.env.APP_URL || "https://ai.studio",
+-          "X-Title": "OG Image Creator"
+-        },
+-        body: JSON.stringify({
+-          model: modelName,
+-          prompt,
+-          quality: "high",
+-          background: "auto",
+-          stream: false
+-        }),
+-        signal: AbortSignal.timeout(30000)
+-      });
+-
+-      if (!res.ok) {
+-        let errObj: any = {};
+-        let rawText = "";
+-        try {
+-          rawText = await res.text();
+-          errObj = JSON.parse(rawText)?.error || JSON.parse(rawText) || {};
+-        } catch (_) {}
+-
+-        const code = errObj.code || res.status;
+-        const msg = errObj.message || res.statusText || rawText || "Unknown error";
+-
+-        if (res.status === 403 || code === 403) {
+-          lastError = new Error(`OpenRouter 存取被拒 (403 Forbidden): ${msg}。請前往 OpenRouter 檢查金鑰權限、同意圖像模型服務條款，或在選單中切換至其他模型。`);
+-          continue;
+-        }
+-        if (code === 402 || (typeof msg === 'string' && msg.includes("Insufficient credits"))) {
+-          lastError = new Error("OpenRouter 額度已用盡 (Insufficient credits)。請前往 https://openrouter.ai/credits 充值額度。");
+-          continue;
+-        }
+-        if (code === 429) {
+-          lastError = new Error("OpenRouter API 請求頻率過高 (Rate limit exceeded)，請稍後再試。");
+-          continue;
+-        }
+-        if (code === 401) {
+-          lastError = new Error("OpenRouter API 金鑰驗證失敗 (401 Unauthorized)，請檢查 OPENROUTER_API_KEY。");
+-          continue;
+-        }
+-        if (code === 413) {
+-          lastError = new Error("請求內容過大 (Request payload too large)。");
+-          continue;
+-        }
+-
+-        lastError = new Error(`OpenRouter API 錯誤 [${code}]: ${msg}`);
+-        continue;
+-      }
+-
+-      const responseData = await res.json();
+-      const b64 = responseData?.data?.[0]?.b64_json;
+-      const url = responseData?.data?.[0]?.url || responseData?.images?.[0] || responseData?.url;
+-
+-      if (b64) {
+-        return b64.startsWith('data:') ? b64 : `data:image/png;base64,${b64}`;
+-      } else if (url) {
+-        return await fetchImageAsBase64(url);
+-      } else {
+-        lastError = new Error("OpenRouter API 回傳數據中未包含有效的圖片資訊。");
+-        continue;
+-      }
+-    } catch (err: any) {
+-      lastError = err;
+-    }
+-  }
+-
+-  throw lastError || new Error("OpenRouter API 呼叫失敗，請稍後再試。");
+-}
+diff --git a/server/providers/toapis.ts b/server/providers/toapis.ts
+deleted file mode 100644
+index 437ee93..0000000
+--- a/server/providers/toapis.ts
++++ /dev/null
+@@ -1,502 +0,0 @@
+-import dotenv from "dotenv";
+-
+-dotenv.config();
+-
+-const getToAPIsAspectRatio = (ratioId: string) => {
+-  const supported = ["1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "2:1", "1:2", "21:9", "9:21"];
+-  if (supported.includes(ratioId)) return ratioId;
+-  if (ratioId === '300x250' || ratioId === '336x280') return '4:3';
+-  if (ratioId === '300x300') return '1:1';
+-  if (ratioId === '300x600') return '1:2';
+-  if (ratioId === '320x480') return '2:3';
+-  return '16:9';
+-};
+-
+-// Helper to convert remote image URL to Base64 Data URL on server
+-async function fetchImageAsBase64(url: string): Promise<string> {
+-  if (!url) return "";
+-  if (url.startsWith("data:image/")) return url;
+-  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+-    return `data:image/png;base64,${url}`;
+-  }
+-
+-  for (let attempt = 0; attempt < 3; attempt++) {
+-    try {
+-      const res = await fetch(url, {
+-        headers: {
+-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+-          "Accept": "image/*, */*"
+-        },
+-        signal: AbortSignal.timeout(15000)
+-      });
+-      if (res.ok) {
+-        let mime = res.headers.get("content-type") || "image/jpeg";
+-        if (mime.includes("text/html") || mime.includes("application/json")) {
+-          await new Promise(r => setTimeout(r, 1000));
+-          continue;
+-        }
+-        if (!mime.startsWith("image/")) {
+-          mime = "image/jpeg";
+-        }
+-        const buffer = Buffer.from(await res.arrayBuffer());
+-        if (buffer.length > 0) {
+-          return `data:${mime};base64,${buffer.toString("base64")}`;
+-        }
+-      }
+-    } catch (err) {
+-      console.warn(`Attempt ${attempt + 1} failed to fetch image as base64 on server:`, err);
+-    }
+-    await new Promise(r => setTimeout(r, 1000));
+-  }
+-  return url;
+-}
+-
+-// Helper to upload base64 data URL to ToAPIs upload endpoint if needed
+-async function uploadImageToToAPIs(dataUrlOrUrl: string, apiKey: string): Promise<string> {
+-  if (!dataUrlOrUrl) return "";
+-  if (dataUrlOrUrl.startsWith("http://") || dataUrlOrUrl.startsWith("https://")) {
+-    return dataUrlOrUrl;
+-  }
+-
+-  if (dataUrlOrUrl.startsWith("data:image/")) {
+-    try {
+-      const [header, data] = dataUrlOrUrl.split(',');
+-      const mimeType = header.split(':')[1].split(';')[0];
+-      const buffer = Buffer.from(data, 'base64');
+-      const ext = mimeType.split('/')[1] || 'png';
+-
+-      const file = new File([buffer], `image.${ext}`, { type: mimeType });
+-      const formData = new FormData();
+-      formData.append("file", file);
+-
+-      const res = await fetch("https://toapis.com/v1/uploads/images", {
+-        method: "POST",
+-        headers: {
+-          "Authorization": `Bearer ${apiKey.trim()}`
+-        },
+-        body: formData,
+-        signal: AbortSignal.timeout(8000)
+-      });
+-
+-      if (res.ok) {
+-        const resJson = await res.json();
+-        const uploadedUrl =
+-          resJson.data?.url ||
+-          resJson.url ||
+-          resJson.data?.file_url ||
+-          (typeof resJson.data === 'string' ? resJson.data : null);
+-        if (uploadedUrl) {
+-          return uploadedUrl;
+-        }
+-      } else {
+-        const errText = await res.text().catch(() => "");
+-        console.warn(`ToAPIs image upload returned status ${res.status}: ${errText}`);
+-      }
+-    } catch (e) {
+-      console.warn("Failed to upload base64 image to ToAPIs:", e);
+-    }
+-  }
+-
+-  return "";
+-}
+-
+-function extractToAPIsImageUrl(taskData: any): string | null {
+-  if (!taskData) return null;
+-
+-  // 1. Array data or result.data or response.data
+-  const dataList = taskData.result?.data || taskData.data || taskData.response?.data || taskData.output?.data;
+-  if (Array.isArray(dataList) && dataList.length > 0) {
+-    const first = dataList[0];
+-    if (typeof first === 'string' && first.trim()) return first;
+-    if (first && typeof first === 'object') {
+-      if (first.url) return first.url;
+-      if (first.b64_json) return first.b64_json.startsWith('data:') ? first.b64_json : `data:image/jpeg;base64,${first.b64_json}`;
+-      if (first.image_url) return first.image_url;
+-    }
+-  }
+-
+-  // 2. Array images or result.images
+-  const imgList = taskData.result?.images || taskData.images || taskData.output?.images;
+-  if (Array.isArray(imgList) && imgList.length > 0) {
+-    const first = imgList[0];
+-    if (typeof first === 'string' && first.trim()) return first;
+-    if (first && typeof first === 'object' && first.url) return first.url;
+-  }
+-
+-  // 3. Direct properties
+-  if (taskData.result?.url) return taskData.result.url;
+-  if (taskData.output?.url) return taskData.output.url;
+-  if (taskData.url) return taskData.url;
+-  if (taskData.image_url) return taskData.image_url;
+-
+-  return null;
+-}
+-
+-export async function generateToAPIsImage({
+-  modelId,
+-  globalPrompt,
+-  ratioPrompt,
+-  ratio,
+-  editPrompt,
+-  templateImage,
+-  sourceImages,
+-  brandLogo,
+-  baseImage,
+-  eraseTemplateSubject = true,
+-  lockBrandLogo = true,
+-  temperature = 0.7,
+-  aiMatting = false,
+-  forbidPretrainedKnowledge = true,
+-  language = 'tc',
+-}: {
+-  modelId: string;
+-  globalPrompt?: string;
+-  ratioPrompt?: string;
+-  ratio: string;
+-  editPrompt?: string;
+-  templateImage?: string;
+-  sourceImages?: string[];
+-  brandLogo?: string | null;
+-  baseImage?: string;
+-  eraseTemplateSubject?: boolean;
+-  lockBrandLogo?: boolean;
+-  temperature?: number;
+-  aiMatting?: boolean;
+-  forbidPretrainedKnowledge?: boolean;
+-  language?: 'tc' | 'sc';
+-}) {
+-  const apiKey = process.env.TOAPI_API_KEY || process.env.TOAPIS_API_KEY;
+-  if (!apiKey || !apiKey.trim()) {
+-    throw new Error("TOAPI_API_KEY 未設定或為空，請在 Settings 秘密設定 (Secrets) 中配置 TOAPI_API_KEY。");
+-  }
+-
+-  const cleanKey = apiKey.trim();
+-  const aspect = getToAPIsAspectRatio(ratio);
+-
+-  // Upload reference images in parallel if any
+-  const rawImages: { type: string; url: string }[] = [];
+-  if (baseImage) {
+-    rawImages.push({ type: 'base', url: baseImage });
+-  }
+-  if (templateImage) {
+-    rawImages.push({ type: 'template', url: templateImage });
+-  }
+-  if (sourceImages && Array.isArray(sourceImages)) {
+-    sourceImages.forEach((img) => {
+-      if (img) rawImages.push({ type: 'source', url: img });
+-    });
+-  }
+-  if (brandLogo) {
+-    rawImages.push({ type: 'logo', url: brandLogo });
+-  }
+-
+-  const uploadedResults = await Promise.all(
+-    rawImages.map(async (item) => ({
+-      type: item.type,
+-      uploadedUrl: await uploadImageToToAPIs(item.url, cleanKey),
+-    }))
+-  );
+-
+-  const imageUrlsToUpload: string[] = uploadedResults
+-    .map((r) => r.uploadedUrl)
+-    .filter(Boolean);
+-
+-  let prompt = "";
+-  if (editPrompt) {
+-    prompt = `You are an expert image editor. Your task is to apply the requested edits to the provided image.
+-CRITICAL RULES:
+-1. PRESERVE UNMARKED AREAS: Do not change any part of the image that is not explicitly mentioned in the edit instructions.
+-2. REMOVE STROKES: The provided image may have colored strokes or circles indicating where to edit. You MUST remove these strokes and replace them with the requested content or blend them naturally into the background.
+-3. FOLLOW INSTRUCTIONS: Apply the edits exactly as requested in the instructions below.
+-4. PRESERVE ASPECT RATIO: The output image MUST have the exact same aspect ratio as the original image. Do not crop it to a square unless the original is a square.
+-
+-Edit Instructions:
+-${editPrompt}`;
+-  } else {
+-    const is300x250 = ratio === '300x250' || ratio.includes('300x250');
+-    const adBannerRules = is300x250 ? `
+-7. CRITICAL 300x250 AD BANNER SAFE ZONE:
+-   - This output is a 300x250 display ad banner.
+-   - You MUST keep ALL text (titles, subtitles, tags) and logos strictly within the central 80% safe region.
+-   - Leave at least 12% empty horizontal safety margin on both left and right outer edges so no text or logo is placed near the border.
+-   - Wrap long text titles neatly into 2-3 shorter lines to stay within the safe width.
+-` : '';
+-
+-    const logoText = brandLogo
+-      ? "6. BRAND LOGO: Use the provided brand logo reference image. Place it in the top left or top right corner as appropriate for the layout."
+-      : "6. LOGO: If there is a logo in the style template (usually top right or top left), 100% pixel-perfect copy it to the new image.";
+-
+-    prompt = `You are an expert Open Graph image creator and collage master.
+-Your task is to create a new Open Graph image based on the provided STYLE TEMPLATE and SOURCE IMAGES.
+-
+-CRITICAL RULES:
+-1. CLEAN SLATE: Do NOT include any people, text, or specific objects from the reference style image. The style image is ONLY for layout, typography, colors, and vibe.
+-2. SOURCE PRESERVATION: You MUST use the provided SOURCE IMAGES. Do NOT modify their faces, expressions, features, or identities. 100% pixel-perfect preservation of the subjects is required.
+-3. CRITICAL: PRESERVE ASPECT RATIO. Do not stretch or squash the subjects. Use cropping or background filling if the aspect ratio doesn't match perfectly.
+-4. TEXT PLACEMENT: Ensure the text title does NOT obscure the main subjects (especially faces) or important objects.
+-5. LANGUAGE: The title and any text must be in Traditional Chinese (繁體中文).
+-${logoText}
+-${adBannerRules}
+-Global Instructions & Title:
+-${globalPrompt || ''}
+-
+-Specific Layout Instructions for this ratio (${ratio}):
+-${ratioPrompt || ''}
+-`;
+-  }
+-
+-  const apiModelName = modelId === 'doubao-seedream-5-0' ? 'doubao-seedream-5-0' : 'gpt-image-2';
+-
+-  // Function to build prompt based on model and attempt
+-  const buildPrompt = (isFallback = false) => {
+-    if (editPrompt) {
+-      if (apiModelName === 'doubao-seedream-5-0') {
+-        if (isFallback) {
+-          return `請參考所提供的圖片進行修改，修改內容：${editPrompt.replace(/[^\u4e00-\u9fa5a-zA-Z0-9\s]/g, ' ')}。`;
+-        }
+-        return `請根據參考圖片進行圖像編輯與局部修改。修改要求：${editPrompt}。請移除標記筆劃，確保畫面視覺自然協調與真實感。`;
+-      } else {
+-        if (isFallback) {
+-          return `Please apply the requested edit to the image: ${editPrompt.replace(/[\n\r]/g, ' ')}`;
+-        }
+-        return `You are an expert image editor. Your task is to apply the requested edits to the provided image.
+-CRITICAL RULES:
+-1. PRESERVE UNMARKED AREAS: Do not change any part of the image that is not explicitly mentioned in the edit instructions.
+-2. REMOVE STROKES: The provided image may have colored strokes or circles indicating where to edit. You MUST remove these strokes and replace them with the requested content or blend them naturally into the background.
+-3. FOLLOW INSTRUCTIONS: Apply the edits exactly as requested in the instructions below.
+-4. PRESERVE ASPECT RATIO: The output image MUST have the exact same aspect ratio as the original image.
+-
+-Edit Instructions:
+-${editPrompt}`;
+-      }
+-    } else {
+-      if (apiModelName === 'doubao-seedream-5-0') {
+-        const hasTemplateOrSource = Boolean(templateImage || (sourceImages && sourceImages.length > 0));
+-        const isSimp = language === 'sc';
+-        if (!hasTemplateOrSource) {
+-          return isSimp
+-            ? `请生成高质感专业图像。主题与创意提示词：${globalPrompt || ''}。比例尺寸：${ratio}。所有画面文字与标题必须为简体中文，画面构图美观、细节丰富、光影自然。`
+-            : `請生成高質感專業圖像。主題與創意提示詞：${globalPrompt || ''}。比例尺寸：${ratio}。所有畫面文字必須為繁體中文，畫面構圖美觀、細節豐富、光影自然。`;
+-        }
+-        const is300x250 = ratio === '300x250' || ratio.includes('300x250');
+-        const adRules = is300x250 ? "這是 300x250 廣告橫幅，請確保標題與標註文字保持在中央安全區域。" : "";
+-        const eraseRule = eraseTemplateSubject
+-          ? "樣板主體處理：請務必完全抹除/移除參考風格圖 (Style Template) 中的所有人物、角色與特定主體，風格圖僅作背景配色、文字排版與視覺氛圍參考。主體區域請僅填入所提供的素材圖片人物或物體。"
+-          : "樣板主體處理：可保留或融合參考風格圖中的主體人物。";
+-
+-        const logoRule = lockBrandLogo
+-          ? "品牌Logo處理：必須像素級（100% pixel-perfect）鎖定並複製品牌Logo（來自品牌Logo參考圖或樣板圖角落），嚴格保持其原始形狀、色彩、圖案、字型與邊框，禁止任何AI變形、模糊或重繪。將Logo放置於右上角或左上角。"
+-          : "品牌Logo處理：請將品牌Logo放置於右上角或左上角。";
+-
+-        const mattingRule = aiMatting
+-          ? "素材圖片摳圖處理：必須對上傳的素材圖片進行智能退地與摳圖（Background Removal），完全剝離素材圖片原有的背景，僅精準保留人物主體或核心物件，並自然融合置入新圖像的樣板背景中。"
+-          : "素材圖片摳圖處理：保持預設，可保留素材圖片原本的背景或進行自然的環境融合。";
+-
+-        const forbidKnowledgeRule = forbidPretrainedKnowledge
+-          ? "禁止使用模型預訓練知識庫：嚴禁調用 AI 模型的預訓練知識庫檢索、補充或繪製任何未提供的品牌 Logo 或字體。必須僅依靠用戶上傳的品牌 Logo 參考圖或樣板圖。若未提供 Logo，不得憑記憶畫出品牌標誌。"
+-          : "允許使用模型預訓練知識庫：允許 AI 利用內部預訓練知識庫輔助補全已知品牌 Logo。";
+-
+-        if (isFallback) {
+-          return isSimp
+-            ? `请生成图像，主题：${(globalPrompt || '').replace(/[^\u4e00-\u9fa5a-zA-Z0-9\s]/g, ' ')}。所有文字与标题请使用简体中文。`
+-            : `請生成圖像，主題：${(globalPrompt || '').replace(/[^\u4e00-\u9fa5a-zA-Z0-9\s]/g, ' ')}。所有文字請使用繁體中文。`;
+-        }
+-        return `請根據參考風格圖與素材圖片生成全新的 Open Graph 圖像。
+-設計與主題說明：${globalPrompt || '無'}
+-尺寸排版需求 (${ratio})：${ratioPrompt || '標準排版'}
+-${eraseRule}
+-${logoRule}
+-${mattingRule}
+-${forbidKnowledgeRule}
+-文字與語言規範：${isSimp ? '所有文字与标题必须严格使用简体中文（简体字），字体清楚可读，严禁繁体字。' : '所有文字請使用繁體中文，字體清楚可讀，避免遮擋人物面部或主體。'}
+-${adRules}`;
+-      } else {
+-        const isSimp = language === 'sc';
+-        const hasTemplateOrSource = Boolean(templateImage || (sourceImages && sourceImages.length > 0));
+-        if (!hasTemplateOrSource) {
+-          return `You are an elite photographic and visual image generation engine.
+-Generate a master-level, aesthetically breathtaking, photorealistic image based on the following creative prompt directive:
+-${globalPrompt || ''}
+-${ratioPrompt ? `Ratio & Layout: ${ratioPrompt}` : ''}
+-CRITICAL RULES:
+-1. High Aesthetic Quality & Photographic Realism: Render vivid lifelike textures, natural depth-of-field, realistic ambient lighting, and cinematic color harmony.
+-2. Composition & Aspect Ratio: Perfectly compose the visual scene for ${ratio}.
+-3. Language & Typography: If any text, logos, or slogans appear within the image, they MUST strictly be in clean, grammatically correct ${isSimp ? 'Simplified Chinese (简体中文). 严禁繁体字' : 'Traditional Chinese (繁體中文)'}.
+-4. No blur, artifacts, plastic looks, or unnatural distortions.`;
+-        }
+-        if (isFallback) {
+-          return `Create a high quality Open Graph image for: ${globalPrompt || 'Design'} (${ratio})`;
+-        }
+-        const is300x250 = ratio === '300x250' || ratio.includes('300x250');
+-        const adBannerRules = is300x250 ? `
+-7. CRITICAL 300x250 AD BANNER SAFE ZONE:
+-   - This output is a 300x250 display ad banner.
+-   - Keep ALL text and logos strictly within central safe region.
+-` : '';
+-
+-        const logoText = lockBrandLogo
+-          ? "6. BRAND LOGO LOCK: You MUST 100% pixel-perfect copy and lock the Brand Logo from the provided reference logo or style template. Maintain exact shape, color, typography, and borders with zero distortion."
+-          : "6. LOGO: Place brand logo cleanly in top left or top right.";
+-
+-        const cleanRule = eraseTemplateSubject
+-          ? "1. CLEAN SLATE & SUBJECT ERASURE: Completely remove and erase any people, characters, actors, faces, or specific main subjects from the Style Template image. Use it ONLY for layout, colors, and font style."
+-          : "1. STYLE TEMPLATE BLENDING: You may preserve or blend subjects from the style template with the source images.";
+-
+-        return `You are an expert Open Graph image creator.
+-Create a new image based on STYLE TEMPLATE and SOURCE IMAGES.
+-RULES:
+-${cleanRule}
+-2. SOURCE PRESERVATION: Preserve source subjects accurately.
+-3. PRESERVE ASPECT RATIO.
+-4. LANGUAGE: Text and titles must strictly be in ${isSimp ? 'Simplified Chinese (简体中文). 严禁繁体中文' : 'Traditional Chinese (繁體中文)'}.
+-${logoText}
+-${adBannerRules}
+-Title & Prompt:
+-${globalPrompt || ''}
+-Layout (${ratio}):
+-${ratioPrompt || ''}`;
+-      }
+-    }
+-  };
+-
+-  // Internal helper to send request and poll ToAPIs
+-  const executeGenerationCall = async (currentPrompt: string) => {
+-    const requestBody: any = {
+-      model: apiModelName,
+-      prompt: currentPrompt,
+-      size: aspect,
+-      n: 1,
+-    };
+-
+-    if (apiModelName === 'doubao-seedream-5-0') {
+-      requestBody.response_format = "url";
+-      requestBody.watermark = false;
+-      requestBody.metadata = {
+-        resolution: "2K"
+-      };
+-      if (imageUrlsToUpload.length > 0) {
+-        requestBody.reference_images = imageUrlsToUpload.slice(0, 10);
+-        requestBody.image_urls = imageUrlsToUpload.slice(0, 10);
+-      }
+-    } else {
+-      requestBody.resolution = "1k";
+-      requestBody.response_format = "url";
+-      if (imageUrlsToUpload.length > 0) {
+-        requestBody.reference_images = imageUrlsToUpload.slice(0, 5);
+-        requestBody.image_urls = imageUrlsToUpload.slice(0, 5);
+-      }
+-    }
+-
+-    const createRes = await fetch("https://toapis.com/v1/images/generations", {
+-      method: "POST",
+-      headers: {
+-        "Authorization": `Bearer ${cleanKey}`,
+-        "Content-Type": "application/json"
+-      },
+-      body: JSON.stringify(requestBody),
+-      signal: AbortSignal.timeout(15000)
+-    });
+-
+-    if (!createRes.ok) {
+-      let errText = "";
+-      try {
+-        errText = await createRes.text();
+-        const parsed = JSON.parse(errText);
+-        if (parsed.error?.message) errText = parsed.error.message;
+-        else if (parsed.message) errText = parsed.message;
+-      } catch (_) {}
+-
+-      if (String(errText).toLowerCase().includes("safety review") || String(errText).toLowerCase().includes("blocked")) {
+-        throw new Error("SAFETY_REVIEW_BLOCKED");
+-      }
+-
+-      if (createRes.status === 401) {
+-        throw new Error("ToAPIs API 金鑰驗證失敗 (401 Unauthorized)，請檢查 TOAPI_API_KEY。");
+-      }
+-      if (createRes.status === 403) {
+-        throw new Error(`ToAPIs 存取被拒 (403 Forbidden): ${errText}。請檢查 TOAPI_API_KEY 帳號額度與權限。`);
+-      }
+-      throw new Error(`ToAPIs 建立任務失敗 [${createRes.status}]: ${errText}`);
+-    }
+-
+-    const taskInit = await createRes.json();
+-
+-    // Check if result is directly available
+-    const directUrl = extractToAPIsImageUrl(taskInit);
+-    if (directUrl) {
+-      return await fetchImageAsBase64(directUrl);
+-    }
+-
+-    const taskId = taskInit.id || taskInit.task_id || taskInit.data?.id;
+-    if (!taskId) {
+-      throw new Error("ToAPIs 未回傳有效的任務 ID 或圖片結果。");
+-    }
+-
+-    // Poll for result (60 * 1.5s = 90s max)
+-    const maxAttempts = 60;
+-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+-      await new Promise((resolve) => setTimeout(resolve, 1500));
+-
+-      try {
+-        const pollRes = await fetch(`https://toapis.com/v1/images/generations/${taskId}`, {
+-          headers: {
+-            "Authorization": `Bearer ${cleanKey}`
+-          },
+-          signal: AbortSignal.timeout(8000)
+-        });
+-
+-        if (!pollRes.ok) {
+-          continue;
+-        }
+-
+-        const taskData = await pollRes.json();
+-        const statusStr = String(taskData.status || taskData.state || taskData.task_status || taskData.msg || '').toLowerCase();
+-        
+-        if (['failed', 'error', 'failure', 'rejected'].includes(statusStr)) {
+-          let msg = taskData.error?.message || taskData.error?.code || taskData.message || "未知錯誤";
+-          if (String(msg).toLowerCase().includes("safety review") || String(msg).toLowerCase().includes("blocked")) {
+-            throw new Error("SAFETY_REVIEW_BLOCKED");
+-          }
+-          throw new Error(`ToAPIs 圖片生成失敗: ${msg}`);
+-        }
+-
+-        const rawUrl = extractToAPIsImageUrl(taskData);
+-        const isPending = ['processing', 'pending', 'running', 'in_progress', 'queued', 'waiting'].includes(statusStr);
+-
+-        if (rawUrl && !isPending) {
+-          return await fetchImageAsBase64(rawUrl);
+-        }
+-
+-        if (['completed', 'succeeded', 'success', 'finish', 'finished', 'done', 'successful', 'ok'].includes(statusStr)) {
+-          if (rawUrl) {
+-            return await fetchImageAsBase64(rawUrl);
+-          }
+-          throw new Error("ToAPIs 任務完成，但未回傳有效的圖片 URL。");
+-        }
+-      } catch (pollErr: any) {
+-        if (pollErr.message === "SAFETY_REVIEW_BLOCKED" || pollErr.message?.includes("ToAPIs 圖片生成")) {
+-          throw pollErr;
+-        }
+-      }
+-    }
+-
+-    throw new Error("ToAPIs 圖片生成處理超時 (超出 90 秒)，請稍後再試。");
+-  };
+-
+-  // Attempt primary call, if safety review blocked, retry once with simplified prompt
+-  try {
+-    const primaryPrompt = buildPrompt(false);
+-    return await executeGenerationCall(primaryPrompt);
+-  } catch (firstErr: any) {
+-    if (firstErr.message === "SAFETY_REVIEW_BLOCKED") {
+-      console.warn("ToAPIs safety review blocked primary call, attempting fallback simplified prompt...");
+-      try {
+-        const fallbackPrompt = buildPrompt(true);
+-        return await executeGenerationCall(fallbackPrompt);
+-      } catch (secondErr: any) {
+-        throw new Error("輸入提示詞或內容未通過 API 平台內容安全審查（Safety Review Blocked），請嘗試調整提示詞、移除敏感字眼或更換參考圖後再試一次。");
+-      }
+-    }
+-    throw firstErr;
+-  }
+-}
+diff --git a/src/App.tsx b/src/App.tsx
+index 406bd2b..2022fa1 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -12,13 +12,16 @@ import { BatchExpert } from './components/batch/BatchExpert';
+ import { PossessionExpert } from './components/possession/PossessionExpert';
+ import { Settings, Image as ImageIcon, Download, Trash2, Info, Loader2, LogOut, ChevronDown, Sliders, Scissors, DatabaseZap, Sparkles, Palette, Layers, Zap, X, Globe } from 'lucide-react';
+ import confetti from 'canvas-confetti';
+-import { GoogleGenAI } from '@google/genai';
+ import { Login } from './components/Login';
+ import { useLanguage } from './contexts/LanguageContext';
+ import { auth, db, logout, OperationType, handleFirestoreError } from './firebase';
+ import { doc, getDoc, getDocs, setDoc, deleteDoc, collection, query, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
+ import { downloadImage } from './lib/utils';
+ import { onAuthStateChanged, User } from 'firebase/auth';
++import { ImageModelIssue, ImageModelSelector, findImageModel, useImageModels } from '@hk01/pi-ai-extra-image-kit/react';
++import { TEMPERATURE_SUPPORT_NOTE, selectedModelIssue, temperatureFor } from '@hk01/pi-ai-extra-image-kit';
++import { isAbort, reportError } from '@hk01/pi-ai-extra-image-kit/browser';
++import { calculateCost, sumCosts } from './lib/pricing';
+ 
+ export type VisualTheme = 'rose' | 'blue';
+ 
+@@ -35,13 +38,7 @@ const RATIOS = [
+   { id: '320x480', label: '320 x 480px（廣告專用）', width: 320, height: 480 },
+ ];
+ 
+-const MODELS = [
+-  { id: 'nano-banana-2', label: 'Nano Banana 2', description: '預設模型，生成速度快，適合一般拼貼。' },
+-  { id: 'nano-banana-pro', label: 'Nano Banana Pro', description: '進階模型，細節更豐富，適合高要求圖片。' },
+-  { id: 'gpt-image-2', label: 'GPT Image 2 (ToAPIs)', description: 'ToAPIs 提供之 GPT 圖片模型，高創意度與畫面品質。' },
+-  { id: 'openrouter-gpt-image-2', label: 'GPT Image 2 (OpenRouter)', description: 'OpenRouter 提供之 GPT Image 2 圖片模型。' },
+-  { id: 'doubao-seedream-5-0', label: 'Doubao Seedream 5.0 (ToAPIs)', description: 'ByteDance 豆包最新 Seedream 5.0 圖像模型，支援 2K/3K 超高畫質與強大畫面表現力。' },
+-];
++const DEFAULT_IMAGE_MODEL_ID = 'nano-banana-2';
+ 
+ const compressBase64Image = (base64Str: string | null): Promise<string | null> => {
+   if (!base64Str) return Promise.resolve(null);
+@@ -138,6 +135,8 @@ export default function App() {
+   const [isCustomMangaModalOpen, setIsCustomMangaModalOpen] = useState(false);
+   const [currentTab, setCurrentTab] = useState<'batch' | 'infocard' | 'og' | 'possession'>('possession');
+   const { language, setLanguage } = useLanguage();
++  const imageModels = useImageModels();
++  const generateAbortRef = useRef<AbortController | null>(null);
+   const [ogImportToast, setOgImportToast] = useState<string | null>(null);
+   const [visualTheme, setVisualTheme] = useState<VisualTheme>(() => {
+     try {
+@@ -406,9 +405,14 @@ export default function App() {
+     setEditingImage(null);
+   };
+ 
+-  const currentMonthCost = state.history
++  const currentMonthCost = sumCosts(state.history
+     .filter(h => new Date(h.timestamp).getMonth() === new Date().getMonth())
+-    .reduce((sum, h) => sum + h.costHKD, 0);
++    .map(h => h.costHKD));
++  // Template + source images + brand logo, as sent by /api/gemini/generate
++  const ogReferenceCount = 1 + state.sourceImages.length + (state.brandLogo ? 1 : 0);
++  const ogImageModel = findImageModel(imageModels.models, state.selectedModel);
++  // Also set while the model list is loading, so temperature and price are known when generating.
++  const ogModelIssue = selectedModelIssue(ogImageModel, { referenceCount: ogReferenceCount });
+ 
+   const handleSendImageToOg = (imageUrl: string) => {
+     updateState({
+@@ -493,10 +497,11 @@ export default function App() {
+   const handleGenerate = async () => {
+     if (!state?.templateImage || state.sourceImages.length === 0 || state.selectedRatios.length === 0) return;
+     
++    const controller = new AbortController();
++    generateAbortRef.current = controller;
+     setIsGenerating(true);
+     try {
+       const { generateOgImage } = await import('./lib/gemini');
+-      const { calculateCost } = await import('./lib/pricing');
+       const { v4: uuidv4 } = await import('uuid');
+ 
+       // Pre-compress images before sending over network to avoid high payload timeout
+@@ -506,65 +511,90 @@ export default function App() {
+       );
+       const compressedLogo = await compressBase64Image(state.brandLogo);
+       
+-      for (const ratioId of state.selectedRatios) {
+-        const ratioPrompt = state.ratioPrompts[ratioId] || '';
+-        const inputImagesCount = 1 + state.sourceImages.length + (state.brandLogo ? 1 : 0);
+-        const currentResolution = state.imageResolution ?? '1K';
+-        const costHKD = calculateCost(state.selectedModel, inputImagesCount, currentResolution);
+-        
+-        const imageUrl = await generateOgImage(
+-          compressedTemplate,
+-          compressedSources,
+-          compressedLogo,
+-          state.globalPrompt,
+-          ratioPrompt,
+-          ratioId,
+-          state.selectedModel,
+-          state.eraseTemplateSubject ?? true,
+-          state.lockBrandLogo ?? true,
+-          state.temperature ?? 0.7,
+-          state.aiMatting ?? false,
+-          state.forbidPretrainedKnowledge ?? true,
+-          currentResolution
+-        );
+-
+-        const newId = uuidv4();
+-        const newItem: GeneratedImage = {
+-          id: newId,
+-          url: imageUrl,
+-          ratio: ratioId,
+-          timestamp: Date.now(),
+-          costHKD,
+-          model: state.selectedModel,
+-          resolution: currentResolution,
+-        };
+-
+-        // Always update local state history immediately so generated result is shown in UI instantly
+-        setState(prev => {
+-          if (!prev) return prev;
+-          if (prev.history.some(h => h.id === newId)) return prev;
+-          return {
+-            ...prev,
+-            history: [newItem, ...prev.history],
++      // One ratio at a time; a failed ratio is reported and the next one still runs (no retry, no other model).
++      for (const [index, ratioId] of state.selectedRatios.entries()) {
++        if (controller.signal.aborted) break;
++        try {
++          const ratioPrompt = state.ratioPrompts[ratioId] || '';
++          const currentResolution = state.imageResolution ?? '1K';
++          const costHKD = calculateCost(ogImageModel, {
++            resolution: currentResolution,
++            inputImages: ogReferenceCount,
++            promptChars: state.globalPrompt.length + ratioPrompt.length,
++          });
++          
++          const imageUrl = await generateOgImage(
++            compressedTemplate,
++            compressedSources,
++            compressedLogo,
++            state.globalPrompt,
++            ratioPrompt,
++            ratioId,
++            state.selectedModel,
++            state.eraseTemplateSubject ?? true,
++            state.lockBrandLogo ?? true,
++            temperatureFor(ogImageModel, state.temperature ?? 0.7),
++            state.aiMatting ?? false,
++            state.forbidPretrainedKnowledge ?? true,
++            currentResolution,
++            language,
++            controller.signal
++          );
++
++          const newId = uuidv4();
++          const newItem: GeneratedImage = {
++            id: newId,
++            url: imageUrl,
++            ratio: ratioId,
++            timestamp: Date.now(),
++            costHKD,
++            model: state.selectedModel,
++            resolution: currentResolution,
+           };
+-        });
+ 
+-        if (user) {
+-          const itemRef = doc(db, 'users', user.uid, 'history', newId);
+-          await setDoc(itemRef, newItem).catch(e => {
+-            handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}/history/${newId}`);
++          // Always update local state history immediately so generated result is shown in UI instantly
++          setState(prev => {
++            if (!prev) return prev;
++            if (prev.history.some(h => h.id === newId)) return prev;
++            return {
++              ...prev,
++              history: [newItem, ...prev.history],
++            };
++          });
++
++          if (user) {
++            const itemRef = doc(db, 'users', user.uid, 'history', newId);
++            await setDoc(itemRef, newItem).catch(e => {
++              // The image was generated (and billed); only saving its history entry failed.
++              try {
++                handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}/history/${newId}`);
++              } catch (saveError) {
++                reportError(saveError, '儲存生成紀錄', { 比例: ratioId });
++              }
++            });
++          }
++        } catch (error) {
++          if (isAbort(error, controller.signal)) break;
++          console.error("Generation failed:", error);
++          reportError(error, 'OG 拼貼生成', {
++            比例: `第 ${index + 1}/${state.selectedRatios.length} 張 (${ratioId})`,
+           });
+         }
+       }
+     } catch (error) {
+       console.error("Generation failed:", error);
+-      const errorMessage = error instanceof Error ? error.message : String(error);
+-      alert(`生成失敗，請稍後再試或檢查您的 API Key。\n錯誤詳情: ${errorMessage}`);
++      reportError(error, 'OG 拼貼生成');
+     } finally {
++      generateAbortRef.current = null;
+       setIsGenerating(false);
+     }
+   };
+ 
++  // Stops the request in progress; the server stops polling the provider (a submitted task is still billed).
++  const handleCancelGenerate = () => {
++    generateAbortRef.current?.abort();
++  };
++
+   if (!isAuthReady) {
+     return (
+       <div className="min-h-screen flex items-center justify-center bg-zinc-50">
+@@ -748,18 +778,18 @@ export default function App() {
+           {currentTab === 'og' && (
+             <div className="flex items-center gap-2">
+               <div className="relative flex items-center">
+-                <select
++                <ImageModelSelector
++                  models={imageModels.models}
++                  loading={imageModels.loading}
++                  failed={imageModels.failed}
++                  onReload={imageModels.reload}
+                   value={state.selectedModel}
+-                  onChange={(e) => updateState({ selectedModel: e.target.value as any })}
++                  onChange={(id) => updateState({ selectedModel: id })}
++                  defaultModelId={DEFAULT_IMAGE_MODEL_ID}
++                  needs={{ referenceCount: ogReferenceCount }}
+                   className="border text-white text-xs font-semibold rounded-xl pl-3 pr-7 py-1.5 focus:outline-none focus:ring-2 cursor-pointer transition-all appearance-none bg-black/40 border-white/20 hover:bg-black/50 focus:ring-sky-400"
+-                  title={MODELS.find(m => m.id === state.selectedModel)?.description}
+-                >
+-                  {MODELS.map((model) => (
+-                    <option key={model.id} value={model.id} className="bg-slate-900 text-white">
+-                      {model.label}
+-                    </option>
+-                  ))}
+-                </select>
++                  optionClassName="bg-slate-900 text-white"
++                />
+                 <ChevronDown className="w-3.5 h-3.5 text-slate-300 absolute right-2 pointer-events-none" />
+               </div>
+ 
+@@ -805,7 +835,8 @@ export default function App() {
+               : 'bg-black/35 border-rose-500/30 text-slate-300'
+           }`}>
+             <span className="text-slate-300">
+-              本月: <b className="text-emerald-400 font-black tracking-wide">HK$ {currentMonthCost.toFixed(2)}</b>
++              本月: <b className="text-emerald-400 font-black tracking-wide">HK$ {currentMonthCost.totalHKD.toFixed(2)}</b>
++              {currentMonthCost.unpriced > 0 && <span className="text-slate-400">（另有 {currentMonthCost.unpriced} 張未計價）</span>}
+             </span>
+             <button 
+               onClick={() => setShowTokenHistory(true)}
+@@ -1113,10 +1144,17 @@ export default function App() {
+                   step="0.1"
+                   value={state.temperature ?? 0.7}
+                   onChange={(e) => updateState({ temperature: parseFloat(e.target.value) })}
+-                  className="w-full h-2.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 hover:accent-indigo-700 transition-all"
++                  disabled={ogImageModel !== undefined && ogImageModel.temperature === null}
++                  className="w-full h-2.5 bg-zinc-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 hover:accent-indigo-700 transition-all disabled:cursor-not-allowed disabled:opacity-40"
+                 />
+               </div>
+ 
++              {ogImageModel && ogImageModel.temperature === null && (
++                <p className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
++                  目前模型「{ogImageModel.label}」不使用 Temperature，生成時不會送出此設定（數值會保留）。{TEMPERATURE_SUPPORT_NOTE}
++                </p>
++              )}
++
+               <div className="flex justify-between text-[11px] font-semibold text-zinc-500 px-0.5">
+                 <span>0.0 (0級：極嚴格收斂)</span>
+                 <span className="text-indigo-600 font-bold">0.7 (7級：預設平衡)</span>
+@@ -1306,7 +1344,7 @@ export default function App() {
+               : 'bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700'
+           }`}
+           onClick={handleGenerate}
+-          disabled={isGenerating || !state.templateImage || state.sourceImages.length === 0 || state.selectedRatios.length === 0}
++          disabled={isGenerating || ogModelIssue !== null || !state.templateImage || state.sourceImages.length === 0 || state.selectedRatios.length === 0}
+         >
+           {isGenerating ? (
+             <>
+@@ -1316,10 +1354,11 @@ export default function App() {
+           ) : '開始生成'}
+         </Button>
+         {isGenerating && (
+-          <Button variant="destructive" size="lg" className="rounded-xl">
++          <Button variant="destructive" size="lg" className="rounded-xl" onClick={handleCancelGenerate}>
+             取消
+           </Button>
+         )}
++        <ImageModelIssue model={ogImageModel} needs={{ referenceCount: ogReferenceCount }} className="max-w-xs text-xs font-semibold text-red-600" />
+       </div>
+       </>
+       )}
+diff --git a/src/components/DeepEditor.tsx b/src/components/DeepEditor.tsx
+index 8a0ec2b..64037b0 100644
+--- a/src/components/DeepEditor.tsx
++++ b/src/components/DeepEditor.tsx
+@@ -10,6 +10,10 @@ import { Input } from './ui/Input';
+ import ReactCrop, { type Crop as CropType } from 'react-image-crop';
+ import 'react-image-crop/dist/ReactCrop.css';
+ import { downloadImage } from '../lib/utils';
++import { useLanguage } from '../contexts/LanguageContext';
++import { findImageModel, useImageModels } from '@hk01/pi-ai-extra-image-kit/react';
++import { MASK_REFERENCE_ONLY_NOTE } from '@hk01/pi-ai-extra-image-kit';
++import { reportError } from '@hk01/pi-ai-extra-image-kit/browser';
+ 
+ interface DeepEditorProps {
+   imageUrl: string;
+@@ -87,6 +91,9 @@ export function DeepEditor({ imageUrl, modelId, onClose, onConfirm }: DeepEditor
+   const [history, setHistory] = useState<ImageData[]>([]);
+   
+   const [isProcessing, setIsProcessing] = useState(false);
++  const { language } = useLanguage();
++  const { models: imageModels } = useImageModels();
++  const editModel = findImageModel(imageModels, modelId);
+ 
+   useEffect(() => {
+     const canvas = canvasRef.current;
+@@ -409,17 +416,6 @@ export function DeepEditor({ imageUrl, modelId, onClose, onConfirm }: DeepEditor
+       
+       const { editOgImage } = await import('../lib/gemini');
+       
+-      const getRatioString = (width: number, height: number) => {
+-        const r = width / height;
+-        if (r > 1.5) return "16:9";
+-        if (r > 1.15) return "4:3";
+-        if (r > 0.85) return "1:1";
+-        if (r > 0.77) return "4:5";
+-        if (r > 0.65) return "3:4";
+-        return "9:16";
+-      };
+-      const imageRatio = getRatioString(canvas.width, canvas.height);
+-      
+       let editPrompt = `GLOBAL EDIT: ${globalPrompt}\n`;
+       COLORS.forEach(c => {
+         if (colorPrompts[c.id]) {
+@@ -427,11 +423,12 @@ export function DeepEditor({ imageUrl, modelId, onClose, onConfirm }: DeepEditor
+         }
+       });
+       
++      // The server keeps the canvas's aspect ratio and pixel size.
+       const resultUrl = await editOgImage(
+         editedImageUrl,
+         editPrompt,
+-        imageRatio,
+-        modelId
++        modelId,
++        language
+       );
+       
+       setCurrentImageUrl(resultUrl);
+@@ -439,8 +436,7 @@ export function DeepEditor({ imageUrl, modelId, onClose, onConfirm }: DeepEditor
+       setColorPrompts({});
+     } catch (error) {
+       console.error("Edit failed:", error);
+-      const errorMessage = error instanceof Error ? error.message : String(error);
+-      alert(`編輯失敗：${errorMessage}`);
++      reportError(error, '圖片編輯');
+     } finally {
+       setIsProcessing(false);
+     }
+@@ -860,6 +856,11 @@ export function DeepEditor({ imageUrl, modelId, onClose, onConfirm }: DeepEditor
+ 
+             {/* Bottom Actions Footer */}
+             <div className="p-4 border-t border-zinc-200 bg-white space-y-2 shrink-0">
++              {activeTab === 'draw' && editModel?.maskEditing === 'reference-only' && (
++                <p className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
++                  {MASK_REFERENCE_ONLY_NOTE}
++                </p>
++              )}
+               {activeTab === 'draw' && (
+                 <Button 
+                   className="w-full bg-zinc-900 hover:bg-black text-white" 
+diff --git a/src/components/TokenHistory.tsx b/src/components/TokenHistory.tsx
+index 1a80bc7..2ab2af0 100644
+--- a/src/components/TokenHistory.tsx
++++ b/src/components/TokenHistory.tsx
+@@ -3,6 +3,8 @@ import { X } from 'lucide-react';
+ import { Button } from './ui/Button';
+ import { GeneratedImage } from '../store';
+ import { format } from 'date-fns';
++import { findImageModel, useImageModels } from '@hk01/pi-ai-extra-image-kit/react';
++import { formatCost, sumCosts } from '../lib/pricing';
+ 
+ interface TokenHistoryProps {
+   history: GeneratedImage[];
+@@ -11,17 +13,19 @@ interface TokenHistoryProps {
+ 
+ export function TokenHistory({ history, onClose }: TokenHistoryProps) {
+   const currentMonth = new Date().getMonth();
++  const { models } = useImageModels();
++  // Removed models (for example OpenRouter) have no entry any more; their id is shown instead.
++  const modelLabel = (id: string) => findImageModel(models, id)?.label ?? id;
+   
+-  const monthlyCost = history
++  const monthlyCost = sumCosts(history
+     .filter(h => new Date(h.timestamp).getMonth() === currentMonth)
+-    .reduce((sum, h) => sum + h.costHKD, 0);
++    .map(h => h.costHKD));
+ 
+-  const dailyStats = history.reduce((acc, curr) => {
++  const dailyCosts = history.reduce((acc, curr) => {
+     const date = format(curr.timestamp, 'yyyy-MM-dd');
+-    if (!acc[date]) acc[date] = 0;
+-    acc[date] += curr.costHKD;
+-    return acc;
+-  }, {} as Record<string, number>);
++    return { ...acc, [date]: [...(acc[date] ?? []), curr.costHKD] };
++  }, {} as Record<string, number[]>);
++  const dailyStats = Object.fromEntries(Object.entries(dailyCosts).map(([date, costs]) => [date, sumCosts(costs)]));
+ 
+   return (
+     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+@@ -36,7 +40,10 @@ export function TokenHistory({ history, onClose }: TokenHistoryProps) {
+         <div className="p-6 overflow-y-auto space-y-8">
+           <div className="bg-zinc-50 p-6 rounded-xl border border-zinc-200 text-center">
+             <h3 className="text-sm font-medium text-zinc-500 mb-2">本月累計費用</h3>
+-            <p className="text-4xl font-bold text-zinc-900">HK$ {monthlyCost.toFixed(2)}</p>
++            <p className="text-4xl font-bold text-zinc-900">HK$ {monthlyCost.totalHKD.toFixed(2)}</p>
++            {monthlyCost.unpriced > 0 && (
++              <p className="text-xs text-zinc-500 mt-2">另有 {monthlyCost.unpriced} 張未計價（該模型沒有查證過的單價）</p>
++            )}
+           </div>
+ 
+           <div>
+@@ -45,7 +52,10 @@ export function TokenHistory({ history, onClose }: TokenHistoryProps) {
+               {Object.entries(dailyStats).sort((a, b) => b[0].localeCompare(a[0])).map(([date, cost]) => (
+                 <div key={date} className="flex justify-between items-center p-3 bg-zinc-50 rounded-lg border border-zinc-100">
+                   <span className="font-medium">{date}</span>
+-                  <span className="text-zinc-600">HK$ {cost.toFixed(2)}</span>
++                  <span className="text-zinc-600">
++                    HK$ {cost.totalHKD.toFixed(2)}
++                    {cost.unpriced > 0 && <span className="text-zinc-400">（{cost.unpriced} 張未計價）</span>}
++                  </span>
+                 </div>
+               ))}
+               {Object.keys(dailyStats).length === 0 && (
+@@ -62,10 +72,10 @@ export function TokenHistory({ history, onClose }: TokenHistoryProps) {
+                   <div>
+                     <p className="font-medium">{format(item.timestamp, 'yyyy-MM-dd HH:mm:ss')}</p>
+                     <p className="text-zinc-500 text-xs mt-1">
+-                      模型: {item.model === 'nano-banana-pro' ? 'Nano Banana Pro' : item.model === 'gpt-image-2' ? 'GPT Image 2 (ToAPIs)' : item.model === 'doubao-seedream-5-0' ? 'Doubao Seedream 5.0 (ToAPIs)' : item.model === 'openrouter-gpt-image-2' ? 'GPT Image 2 (OpenRouter)' : 'Nano Banana 2'} | 比例: {item.ratio}
++                      模型: {modelLabel(item.model)} | 比例: {item.ratio}
+                     </p>
+                   </div>
+-                  <span className="font-semibold text-zinc-700">HK$ {item.costHKD.toFixed(2)}</span>
++                  <span className="font-semibold text-zinc-700">{formatCost(item.costHKD)}</span>
+                 </div>
+               ))}
+               {history.length === 0 && (
+diff --git a/src/components/batch/BatchExpert.tsx b/src/components/batch/BatchExpert.tsx
+index e2fc897..58ee2d9 100644
+--- a/src/components/batch/BatchExpert.tsx
++++ b/src/components/batch/BatchExpert.tsx
+@@ -38,6 +38,10 @@ import {
+   SlidersHorizontal,
+ } from 'lucide-react';
+ import JSZip from 'jszip';
++import { useLanguage } from '../../contexts/LanguageContext';
++import { ImageModelIssue, ImageModelSelector, findImageModel, useImageModels } from '@hk01/pi-ai-extra-image-kit/react';
++import { MASK_REFERENCE_ONLY_NOTE, selectedModelIssue } from '@hk01/pi-ai-extra-image-kit';
++import { isAbort, postImageRequest, reportError } from '@hk01/pi-ai-extra-image-kit/browser';
+ import confetti from 'canvas-confetti';
+ 
+ interface BatchExpertProps {
+@@ -56,13 +60,7 @@ const ASPECT_RATIOS: { id: BatchAspectRatio; label: string }[] = [
+   { id: 'original', label: '保持原圖尺寸' },
+ ];
+ 
+-const MODELS: { id: BatchModelId; label: string; desc: string }[] = [
+-  { id: 'nano-banana-2', label: 'Google Nano Banana 2 (極速修圖)', desc: '輕快快速圖像生成與修圖模型' },
+-  { id: 'nano-banana-pro', label: 'Google Nano Banana Pro (大師旗艦)', desc: '極致細節精準度，適合 4K 大片與細緻光影修復' },
+-  { id: 'gpt-image-2', label: 'GPT Image 2 (ToAPIs)', desc: 'ToAPIs 提供之 GPT 圖片模型，高創意度與畫面品質' },
+-  { id: 'openrouter-gpt-image-2', label: 'GPT Image 2 (OpenRouter)', desc: 'OpenRouter 渠道之 GPT Image 2 圖片模型' },
+-  { id: 'doubao-seedream-5-0', label: 'Doubao Seedream 5.0 (ToAPIs)', desc: '字節跳動頂級圖像大模型' },
+-];
++const DEFAULT_IMAGE_MODEL_ID = 'nano-banana-2';
+ 
+ const RESOLUTIONS: { id: BatchResolution; label: string }[] = [
+   { id: '1K', label: '標準 1K (預設)' },
+@@ -105,6 +103,8 @@ export const BatchExpert: React.FC<BatchExpertProps> = ({
+   const [selectedModel, setSelectedModel] = useState<BatchModelId>('nano-banana-2');
+   const [selectedRatio, setSelectedRatio] = useState<BatchAspectRatio>('4:5');
+   const [selectedResolution, setSelectedResolution] = useState<BatchResolution>('1K');
++  const { language } = useLanguage();
++  const imageModels = useImageModels();
+   const [activePreset, setActivePreset] = useState<string | null>(null);
+ 
+   // Custom Capsules (up to 10) & Hidden Presets state
+@@ -413,17 +413,21 @@ export const BatchExpert: React.FC<BatchExpertProps> = ({
+     }
+     setIsPromptMagicing(true);
+     try {
+-      const res = await fetch('/api/batch-edit/expand-prompt', {
++      const res = await fetch('/api/batch-edit/prompt-magic', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ prompt: globalPrompt.trim() }),
+       });
+-      const data = await res.json();
+-      if (data.expandedPrompt) {
+-        setGlobalPrompt(data.expandedPrompt);
++      const data = await res.json().catch(() => ({}));
++      if (!res.ok) {
++        throw new Error(data.error || `AI 擴寫失敗 (HTTP ${res.status})`);
++      }
++      if (data.enhancedPrompt) {
++        setGlobalPrompt(data.enhancedPrompt);
+       }
+     } catch (e) {
+       console.error('Prompt magic error:', e);
++      alert(`AI 擴寫失敗：${e instanceof Error ? e.message : String(e)}`);
+     } finally {
+       setIsPromptMagicing(false);
+     }
+@@ -459,24 +463,42 @@ export const BatchExpert: React.FC<BatchExpertProps> = ({
+     );
+   };
+ 
+-  // Process a single image card (either image-to-image or text-to-image)
+-  const handleGenerateSingle = async (index: number, signal?: AbortSignal) => {
++  // Reference images one slot sends: style references + its base image + its mask
++  const slotReferenceCount = (item: BatchItem) =>
++    referenceImages.length + (item.currentUrl ? 1 : 0) + (item.currentUrl && item.maskUrl ? 1 : 0);
++  const batchImageModel = findImageModel(imageModels.models, selectedModel);
++  const batchNeeds = {
++    referenceCount: Math.max(0, ...items.map(slotReferenceCount)),
++    resolution: selectedResolution,
++  };
++  const usesMaskWithReferenceModel =
++    batchImageModel?.maskEditing === 'reference-only' && items.some((it) => it.currentUrl && it.maskUrl);
++
++  const setSlot = (index: number, partial: Partial<BatchItem>) => {
++    setItems((prev) => prev.map((it, i) => (i === index ? { ...it, ...partial } : it)));
++  };
++
++  // Process a single image card (either image-to-image or text-to-image). Resolves true on success.
++  const handleGenerateSingle = async (index: number, signal?: AbortSignal): Promise<boolean> => {
+     const item = items[index];
+-    if (!item) return;
++    if (!item) return false;
+ 
+     const hasImage = Boolean(item.currentUrl);
+     const combinedPrompt = [item.dedicatedPrompt?.trim(), globalPrompt?.trim()].filter(Boolean).join("\n\n");
+ 
+     if (!hasImage && !combinedPrompt) {
+       alert(`第 ${index + 1} 格目前未上載底圖（文生圖模式），請先在上方全域指令欄或此格輸入生圖指令！`);
+-      return;
++      return false;
+     }
+ 
+-    setItems((prev) => {
+-      const copy = [...prev];
+-      copy[index] = { ...copy[index], status: 'generating', errorMessage: null };
+-      return copy;
+-    });
++    // A slot the selected model cannot serve is marked failed without sending anything.
++    const issue = selectedModelIssue(batchImageModel, { referenceCount: slotReferenceCount(item), resolution: selectedResolution });
++    if (issue) {
++      setSlot(index, { status: 'error', errorMessage: `${batchImageModel?.label ?? selectedModel}：${issue}，未送出。` });
++      return false;
++    }
++
++    setSlot(index, { status: 'generating', errorMessage: null });
+ 
+     try {
+       const payload = {
+@@ -489,63 +511,34 @@ export const BatchExpert: React.FC<BatchExpertProps> = ({
+         aspectRatio: selectedRatio,
+         resolution: selectedResolution,
+         logoConfig: logoConfig.enabled && logoConfig.logoUrl ? logoConfig : null,
++        language,
+       };
+ 
+-      const res = await fetch('/api/batch-edit/process-image', {
+-        method: 'POST',
+-        headers: { 'Content-Type': 'application/json' },
+-        body: JSON.stringify(payload),
+-        signal,
+-      });
+-
+-      if (!res.ok) {
+-        const errData = await res.json().catch(() => ({ error: '生成失敗' }));
+-        throw new Error(errData.error || `HTTP ${res.status}`);
+-      }
++      const data = await postImageRequest('/api/batch-edit/process-image', payload, signal);
+ 
+-      const data = await res.json();
+-      if (!data.imageUrl) {
+-        throw new Error('未接收到生成的圖片數據');
+-      }
+-
+-      setItems((prev) => {
+-        const copy = [...prev];
+-        copy[index] = {
+-          ...copy[index],
+-          generatedUrl: data.imageUrl,
+-          status: 'success',
+-          errorMessage: null,
+-          splitPosition: 50,
+-        };
+-        return copy;
++      setSlot(index, {
++        generatedUrl: data.imageUrl,
++        status: 'success',
++        errorMessage: null,
++        splitPosition: 50,
+       });
++      return true;
+     } catch (err: any) {
+-      if (err.name === 'AbortError' || signal?.aborted) {
++      if (isAbort(err, signal)) {
+         console.log(`Generation on card #${index + 1} canceled by user.`);
+-        setItems((prev) => {
+-          const copy = [...prev];
+-          copy[index] = {
+-            ...copy[index],
+-            status: 'idle',
+-          };
+-          return copy;
+-        });
+-        return;
++        setSlot(index, { status: 'idle' });
++        return false;
+       }
+       console.error(`Generation error on card #${index + 1}:`, err);
+-      setItems((prev) => {
+-        const copy = [...prev];
+-        copy[index] = {
+-          ...copy[index],
+-          status: 'error',
+-          errorMessage: err.message || '生成失敗，請檢查提示詞指令或 API Key。',
+-        };
+-        return copy;
+-      });
++      reportError(err, '批量修圖', { 格: `第 ${index + 1} 格` });
++      // The message names the provider and model (for example "kie/nano-banana-2 生成失敗 [timeout]：…").
++      setSlot(index, { status: 'error', errorMessage: err.message || '生成失敗，請檢查提示詞指令或 API Key。' });
++      return false;
+     }
+   };
+ 
+-  // Batch Process All Slots (with cancellation support)
++  // Batch Process All Slots, one at a time (with cancellation support).
++  // A failed slot is reported on its card and the batch continues; nothing is retried or re-routed.
+   const handleBatchGenerateAll = async () => {
+     // Check if any slot can be generated
+     const hasWorkableSlot = items.some(
+@@ -568,9 +561,9 @@ export const BatchExpert: React.FC<BatchExpertProps> = ({
+         const it = items[i];
+         // Generate if slot has an image OR has dedicated prompt OR global prompt exists
+         if (it.currentUrl || it.dedicatedPrompt.trim() || globalPrompt.trim()) {
+-          await handleGenerateSingle(i, controller.signal);
++          const succeeded = await handleGenerateSingle(i, controller.signal);
+           if (controller.signal.aborted) break;
+-          successCount++;
++          if (succeeded) successCount++;
+         }
+       }
+     } finally {
+@@ -670,23 +663,27 @@ export const BatchExpert: React.FC<BatchExpertProps> = ({
+           <div className="flex flex-wrap items-center gap-2.5">
+             {/* Model Selector */}
+             <div className="relative flex items-center">
+-              <select
++              <ImageModelSelector
++                models={imageModels.models}
++                loading={imageModels.loading}
++                failed={imageModels.failed}
++                onReload={imageModels.reload}
+                 value={selectedModel}
+-                onChange={(e) => setSelectedModel(e.target.value as BatchModelId)}
++                onChange={setSelectedModel}
++                defaultModelId={DEFAULT_IMAGE_MODEL_ID}
++                needs={batchNeeds}
+                 className={`text-xs font-bold pl-3 pr-7 py-2 rounded-xl border focus:outline-none focus:ring-2 cursor-pointer transition-all appearance-none ${
+                   isBlue
+                     ? 'bg-sky-50/70 border-sky-200 text-sky-900 focus:ring-sky-300'
+                     : 'bg-rose-50/70 border-rose-200 text-rose-900 focus:ring-rose-300'
+                 }`}
+-              >
+-                {MODELS.map((m) => (
+-                  <option key={m.id} value={m.id}>
+-                    {m.label}
+-                  </option>
+-                ))}
+-              </select>
++              />
+               <ChevronDown className="w-3.5 h-3.5 text-zinc-500 absolute right-2.5 pointer-events-none" />
+             </div>
++            <ImageModelIssue model={batchImageModel} needs={batchNeeds} className="w-full text-xs font-semibold text-red-600" />
++            {usesMaskWithReferenceModel && (
++              <p className="w-full text-[11px] font-semibold text-amber-700">{MASK_REFERENCE_ONLY_NOTE}</p>
++            )}
+ 
+             {/* Aspect Ratio Selector */}
+             <div className="relative flex items-center">
+@@ -1279,7 +1276,7 @@ export const BatchExpert: React.FC<BatchExpertProps> = ({
+                 批量狀態: {completedCount} / {items.length} 完成 ({imageCount} 張圖生圖，{items.length - imageCount} 格文生圖)
+               </span>
+               <span className="text-[10px] text-zinc-400">
+-                {MODELS.find((m) => m.id === selectedModel)?.label.replace(/\s*\(.*?\)/, '') || selectedModel} • {selectedResolution} • {selectedRatio}
++                {batchImageModel?.label ?? selectedModel} • {selectedResolution} • {selectedRatio}
+               </span>
+             </div>
+           </div>
+diff --git a/src/components/infocard/InfoCardExpert.tsx b/src/components/infocard/InfoCardExpert.tsx
+index 4d5bd81..4d706d5 100644
+--- a/src/components/infocard/InfoCardExpert.tsx
++++ b/src/components/infocard/InfoCardExpert.tsx
+@@ -15,6 +15,9 @@ import {
+   defaultInfoCardState,
+ } from '../../lib/infocardStore';
+ import { analyzeArticle, generateCardImage } from '../../lib/infocardApi';
++import { ImageModelIssue, ImageModelSelector, findImageModel, useImageModels } from '@hk01/pi-ai-extra-image-kit/react';
++import { selectedModelIssue } from '@hk01/pi-ai-extra-image-kit';
++import { reportError } from '@hk01/pi-ai-extra-image-kit/browser';
+ import { TemplatePairsManager } from './TemplatePairsManager';
+ import { TitleReviewPanel } from './TitleReviewPanel';
+ import { CoverCardEditor } from './CoverCardEditor';
+@@ -52,12 +55,7 @@ const RATIO_OPTIONS: { id: InfoCardRatio; label: string; desc: string }[] = [
+   { id: '3:4', label: '3:4 (1242 x 1660px)', desc: '小紅書 / 直式長圖' },
+ ];
+ 
+-const IMAGE_MODELS: { id: InfoCardModel; label: string; desc: string }[] = [
+-  { id: 'nano-banana-2', label: 'Nano Banana 2 (預設)', desc: '極速生成，適合社交圖卡與多圖拼貼' },
+-  { id: 'nano-banana-pro', label: 'Nano Banana Pro', desc: '專業進階，細節豐富與高質感呈現' },
+-  { id: 'gpt-image-2', label: 'GPT Image 2 (ToAPIs)', desc: 'ToAPIs 高創意度畫面品質' },
+-  { id: 'doubao-seedream-5-0', label: 'Doubao Seedream 5.0 (ToAPIs)', desc: '豆包最新圖像模型，超高畫質表現' },
+-];
++const DEFAULT_IMAGE_MODEL_ID = 'nano-banana-2';
+ 
+ const TEXT_MODELS: { id: InfoCardTextModel; label: string; desc: string }[] = [
+   { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash (預設)', desc: '最強社交爆款文案生成與重點提煉' },
+@@ -77,6 +75,9 @@ export function InfoCardExpert({ onBackToOgMaster, theme = 'rose' }: InfoCardExp
+   const [isArticleAnalyzing, setIsArticleAnalyzing] = useState(false);
+   const [isBatchGenerating, setIsBatchGenerating] = useState(false);
+   const [batchCompletedCount, setBatchCompletedCount] = useState(0);
++  // Cards that failed in the last "generate all" run, shown until dismissed
++  const [batchFailures, setBatchFailures] = useState<{ label: string; message: string }[]>([]);
++  const imageModels = useImageModels();
+   const [editingImageUrl, setEditingImageUrl] = useState<{
+     url: string;
+     target: 'cover-template' | 'content-template' | 'cover-source' | 'cover-result' | 'content-result';
+@@ -102,6 +103,28 @@ export function InfoCardExpert({ onBackToOgMaster, theme = 'rose' }: InfoCardExp
+     setState((prev) => ({ ...prev, ...partial }));
+   };
+ 
++  // Each card sends its template + its own source images + the brand logo.
++  const logoCount = state.brandLogo ? 1 : 0;
++  const cardImageCount = (sourceImages: string[]) => 1 + sourceImages.length + logoCount;
++  // The selector and the hint check the card with the most images.
++  const imageNeeds = {
++    referenceCount: Math.max(cardImageCount(state.coverCard.sourceImages), ...state.contentCards.map((card) => cardImageCount(card.sourceImages))),
++  };
++  const selectedImageModel = findImageModel(imageModels.models, state.selectedModel);
++  /** Why the selected model cannot make a card with this many images, or null. */
++  const cardIssue = (referenceCount: number): string | null => {
++    const issue = selectedModelIssue(selectedImageModel, { referenceCount });
++    return issue && selectedImageModel ? `${selectedImageModel.label}：${issue}` : issue;
++  };
++
++  /** Blocks one card the selected model cannot serve, before any request. */
++  const blockedByModel = (referenceCount: number): boolean => {
++    const issue = cardIssue(referenceCount);
++    if (!issue) return false;
++    alert(t(`${issue}。請改選其他模型或移除部分圖片。`));
++    return true;
++  };
++
+   const updateCover = (partial: Partial<typeof state.coverCard>) => {
+     setState((prev) => ({
+       ...prev,
+@@ -244,7 +267,7 @@ export function InfoCardExpert({ onBackToOgMaster, theme = 'rose' }: InfoCardExp
+       // Update state with results
+       const rawCoverTags = result.coverTags || (recommended as any)?.tags || (isSimp ? '#时事焦点 #重点懒人包 #必读指南' : '#時事焦點 #重點懶人包 #必讀指南');
+       const chosenCoverTags = isSimp ? toSimp(rawCoverTags) : rawCoverTags;
+-      setState((prev) => ({
++      const applyAnalysis = (prev: InfoCardState): InfoCardState => ({
+         ...prev,
+         extractedArticle: result.extractedArticle || null,
+         generatedTitleSets: titleSets,
+@@ -263,9 +286,11 @@ export function InfoCardExpert({ onBackToOgMaster, theme = 'rose' }: InfoCardExp
+           tags: chosenCoverTags,
+         },
+         contentCards: newCards.length > 0 ? newCards : prev.contentCards,
+-      }));
++      });
++      setState(applyAnalysis);
+ 
+-      return { titleSets, recommended, newCards };
++      // The analysed state, for full-auto generation right after (React state is not updated yet).
++      return { titleSets, recommended, newCards, analysedState: applyAnalysis(state) };
+     } catch (err: any) {
+       console.error('Article analysis error:', err);
+       alert(language === 'sc' ? `文章解析失败: ${err.message || '请确认网址或文字格式'}` : `文章解析失敗: ${err.message || '請確認網址或文字格式'}`);
+@@ -294,6 +319,7 @@ export function InfoCardExpert({ onBackToOgMaster, theme = 'rose' }: InfoCardExp
+     const minorTitle = isSimp ? toSimp(rawMinor) : rawMinor;
+     const tags = isSimp ? toSimp(rawTags) : rawTags;
+ 
++    if (blockedByModel(cardImageCount(state.coverCard.sourceImages))) return;
+     updateCover({ isGenerating: true });
+     try {
+       const imageUrl = await generateCardImage({
+@@ -319,7 +345,7 @@ export function InfoCardExpert({ onBackToOgMaster, theme = 'rose' }: InfoCardExp
+       updateCover({ resultImage: imageUrl, isGenerating: false });
+     } catch (err: any) {
+       console.error('Cover generation failed:', err);
+-      alert(language === 'sc' ? `封面首图生成失败: ${err.message || '请稍后重试'}` : `封面首圖生成失敗: ${err.message || '請稍後重試'}`);
++      reportError(err, '圖卡生成', { 圖卡: '封面首圖' });
+       updateCover({ isGenerating: false });
+     }
+   };
+@@ -341,6 +367,7 @@ export function InfoCardExpert({ onBackToOgMaster, theme = 'rose' }: InfoCardExp
+     const bodyParagraph = isSimp ? toSimp(card.bodyParagraph) : card.bodyParagraph;
+     const tags = isSimp ? toSimp(card.tags) : card.tags;
+ 
++    if (blockedByModel(cardImageCount(card.sourceImages))) return;
+     updateContentCard(index, { isGenerating: true });
+     try {
+       const imageUrl = await generateCardImage({
+@@ -368,18 +395,18 @@ export function InfoCardExpert({ onBackToOgMaster, theme = 'rose' }: InfoCardExp
+       updateContentCard(index, { resultImage: imageUrl, isGenerating: false });
+     } catch (err: any) {
+       console.error(`Card ${index + 1} generation failed:`, err);
+-      alert(language === 'sc' ? `内容图卡第 ${index + 1} 张生成失败: ${err.message || '请稍后重试'}` : `內容圖卡第 ${index + 1} 張生成失敗: ${err.message || '請稍後重試'}`);
++      reportError(err, '圖卡生成', { 圖卡: `內容圖卡第 ${index + 1} 張` });
+       updateContentCard(index, { isGenerating: false });
+     }
+   };
+ 
+-  // Batch Generation: Generate all (Cover + all Content cards)
+-  const handleGenerateAll = async () => {
+-    if (!state.coverCard.templateImage) {
++  // Batch Generation: Generate all (Cover + all Content cards) from `source`
++  const generateAllCards = async (source: InfoCardState) => {
++    if (!source.coverCard.templateImage) {
+       alert(language === 'sc' ? '请先上传「封面首图样板图片」！' : '請先上傳「封面首圖樣板圖片」！');
+       return;
+     }
+-    if (!state.contentTemplateImage) {
++    if (!source.contentTemplateImage) {
+       alert(language === 'sc' ? '请先上传「内容图卡样板图片」！' : '請先上傳「內容圖卡樣板圖片」！');
+       return;
+     }
+@@ -387,14 +414,24 @@ export function InfoCardExpert({ onBackToOgMaster, theme = 'rose' }: InfoCardExp
+     const isSimp = language === 'sc';
+     setIsBatchGenerating(true);
+     setBatchCompletedCount(0);
++    setBatchFailures([]);
++    // One card at a time; a failed card is reported and the run continues (no retry, no other model).
++    const failures: { label: string; message: string }[] = [];
++    const recordFailure = (label: string, error: unknown) => {
++      reportError(error, '圖卡生成（一鍵生成全部）', { 圖卡: label });
++      failures.push({ label, message: error instanceof Error ? error.message : String(error) });
++    };
+ 
+     // 1. Generate Cover
+     try {
++      // A card the model cannot serve fails here without a request; the run continues.
++      const coverIssue = cardIssue(cardImageCount(source.coverCard.sourceImages));
++      if (coverIssue) throw new Error(`${coverIssue}，未送出。`);
+       updateCover({ isGenerating: true });
+-      const rawMain = state.coverCard.mainTitle || state.reviewedTitles.mainTitle;
+-      const rawSub = state.coverCard.subTitle || state.reviewedTitles.subTitle;
+-      const rawMinor = state.coverCard.minorTitle || state.reviewedTitles.minorTitle;
+-      const rawTags = state.coverCard.tags;
++      const rawMain = source.coverCard.mainTitle || source.reviewedTitles.mainTitle;
++      const rawSub = source.coverCard.subTitle || source.reviewedTitles.subTitle;
++      const rawMinor = source.coverCard.minorTitle || source.reviewedTitles.minorTitle;
++      const rawTags = source.coverCard.tags;
+ 
+       const mainTitle = isSimp ? toSimp(rawMain) : rawMain;
+       const subTitle = isSimp ? toSimp(rawSub) : rawSub;
+@@ -403,35 +440,38 @@ export function InfoCardExpert({ onBackToOgMaster, theme = 'rose' }: InfoCardExp
+ 
+       const coverUrl = await generateCardImage({
+         cardType: 'cover',
+-        templateImage: state.coverCard.templateImage,
+-        sourceImages: state.coverCard.sourceImages,
+-        imagePrompt: state.coverCard.imagePrompt,
+-        brandLogo: state.brandLogo,
++        templateImage: source.coverCard.templateImage,
++        sourceImages: source.coverCard.sourceImages,
++        imagePrompt: source.coverCard.imagePrompt,
++        brandLogo: source.brandLogo,
+         mainTitle,
+         subTitle,
+         minorTitle,
+         tags,
+-        eraseTemplateText: state.coverCard.eraseTemplateText,
+-        lockBrandLogo: state.coverCard.lockBrandLogo,
+-        forbidPretrainedLogo: state.coverCard.forbidPretrainedLogo,
+-        forbidHallucinatedText: state.coverCard.forbidHallucinatedText,
+-        ratio: state.selectedRatio,
+-        resolution: state.selectedResolution,
+-        modelId: state.selectedModel,
++        eraseTemplateText: source.coverCard.eraseTemplateText,
++        lockBrandLogo: source.coverCard.lockBrandLogo,
++        forbidPretrainedLogo: source.coverCard.forbidPretrainedLogo,
++        forbidHallucinatedText: source.coverCard.forbidHallucinatedText,
++        ratio: source.selectedRatio,
++        resolution: source.selectedResolution,
++        modelId: source.selectedModel,
+         language: language,
+       });
+       updateCover({ resultImage: coverUrl, isGenerating: false });
+       setBatchCompletedCount((prev) => prev + 1);
+     } catch (e: any) {
+       console.error('Batch cover generation failed:', e);
++      recordFailure('封面首圖', e);
+       updateCover({ isGenerating: false });
+     }
+ 
+     // 2. Generate Content Cards in sequence
+-    for (let i = 0; i < state.contentCards.length; i++) {
+-      const card = state.contentCards[i];
+-      updateContentCard(i, { isGenerating: true });
++    for (let i = 0; i < source.contentCards.length; i++) {
++      const card = source.contentCards[i];
+       try {
++        const issue = cardIssue(cardImageCount(card.sourceImages));
++        if (issue) throw new Error(`${issue}，未送出。`);
++        updateContentCard(i, { isGenerating: true });
+         const mainTitle = isSimp ? toSimp(card.mainTitle) : card.mainTitle;
+         const subTitle = isSimp ? toSimp(card.subTitle) : card.subTitle;
+         const minorTitle = isSimp ? toSimp(card.minorTitle) : card.minorTitle;
+@@ -441,10 +481,10 @@ export function InfoCardExpert({ onBackToOgMaster, theme = 'rose' }: InfoCardExp
+         const cardUrl = await generateCardImage({
+           cardType: 'content',
+           cardIndex: i + 1,
+-          templateImage: state.contentTemplateImage,
++          templateImage: source.contentTemplateImage,
+           sourceImages: card.sourceImages,
+           imagePrompt: card.imagePrompt,
+-          brandLogo: state.brandLogo,
++          brandLogo: source.brandLogo,
+           mainTitle,
+           subTitle,
+           minorTitle,
+@@ -454,22 +494,26 @@ export function InfoCardExpert({ onBackToOgMaster, theme = 'rose' }: InfoCardExp
+           lockBrandLogo: card.lockBrandLogo,
+           forbidPretrainedLogo: card.forbidPretrainedLogo,
+           forbidHallucinatedText: card.forbidHallucinatedText,
+-          ratio: state.selectedRatio,
+-          resolution: state.selectedResolution,
+-          modelId: state.selectedModel,
++          ratio: source.selectedRatio,
++          resolution: source.selectedResolution,
++          modelId: source.selectedModel,
+           language: language,
+         });
+         updateContentCard(i, { resultImage: cardUrl, isGenerating: false });
+         setBatchCompletedCount((prev) => prev + 1);
+       } catch (err) {
+         console.error(`Batch content card ${i + 1} failed:`, err);
++        recordFailure(`內容圖卡第 ${i + 1} 張`, err);
+         updateContentCard(i, { isGenerating: false });
+       }
+     }
+ 
++    setBatchFailures(failures);
+     setIsBatchGenerating(false);
+   };
+ 
++  const handleGenerateAll = () => generateAllCards(state);
++
+   // Full Auto Workflow
+   const handleFullAutoGenerate = async () => {
+     if (!state.articleUrl && !state.rawArticleText) {
+@@ -485,6 +529,11 @@ export function InfoCardExpert({ onBackToOgMaster, theme = 'rose' }: InfoCardExp
+       return;
+     }
+ 
++    // Stop before paying for the article analysis when no card can be made (no key, list not loaded).
++    if (!selectedImageModel?.available) {
++      alert(t(`${cardIssue(0) ?? '此模型目前不可用'}。請改選其他模型。`));
++      return;
++    }
+     setIsBatchGenerating(true);
+     setBatchCompletedCount(0);
+ 
+@@ -495,8 +544,8 @@ export function InfoCardExpert({ onBackToOgMaster, theme = 'rose' }: InfoCardExp
+       return;
+     }
+ 
+-    // Step d: Generate Cover + Content Cards
+-    await handleGenerateAll();
++    // Step d: Generate Cover + Content Cards from the analysed titles and cards
++    await generateAllCards(analysisRes.analysedState);
+   };
+ 
+   // Download All generated images
+@@ -697,19 +746,20 @@ export function InfoCardExpert({ onBackToOgMaster, theme = 'rose' }: InfoCardExp
+               {/* Image Model */}
+               <div className="flex items-center gap-1.5">
+                 <span className="font-bold text-zinc-700">{t('圖片模型:')}</span>
+-                <select
++                <ImageModelSelector
++                  models={imageModels.models}
++                  loading={imageModels.loading}
++                  failed={imageModels.failed}
++                  onReload={imageModels.reload}
+                   value={state.selectedModel}
+-                  onChange={(e) => updateState({ selectedModel: e.target.value as any })}
++                  onChange={(id) => updateState({ selectedModel: id })}
++                  defaultModelId={DEFAULT_IMAGE_MODEL_ID}
++                  needs={imageNeeds}
++                  formatLabel={t}
+                   className={`bg-white border text-zinc-800 font-semibold rounded-lg px-2.5 py-1 focus:ring-2 cursor-pointer ${
+                     isBlue ? 'border-sky-200 focus:ring-sky-300' : 'border-rose-200 focus:ring-rose-300'
+                   }`}
+-                >
+-                  {IMAGE_MODELS.map((m) => (
+-                    <option key={m.id} value={m.id}>
+-                      {t(m.label)}
+-                    </option>
+-                  ))}
+-                </select>
++                />
+               </div>
+ 
+               {/* Text Model */}
+@@ -797,6 +847,29 @@ export function InfoCardExpert({ onBackToOgMaster, theme = 'rose' }: InfoCardExp
+ 
+       {/* Main Workspace Area */}
+       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-8 space-y-8">
++        <ImageModelIssue
++          model={selectedImageModel}
++          needs={imageNeeds}
++          formatLabel={t}
++          className="text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-2"
++        />
++
++        {/* Cards that failed in the last "generate all" run */}
++        {batchFailures.length > 0 && !isBatchGenerating && (
++          <section role="status" className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-800 space-y-1">
++            <div className="flex items-center justify-between gap-2">
++              <strong>{t(`一鍵生成全部：${batchFailures.length} 張失敗，其餘照常完成（未自動重試或換模型）`)}</strong>
++              <button type="button" onClick={() => setBatchFailures([])} className="text-red-600 underline cursor-pointer">
++                {t('關閉')}
++              </button>
++            </div>
++            {batchFailures.map((failure) => (
++              <p key={failure.label} className="break-words">
++                {t(failure.label)}：{failure.message}
++              </p>
++            ))}
++          </section>
++        )}
+         {/* Semi-Auto / Full-Auto Article Input Section */}
+         {(state.mode === 'semi-auto' || state.mode === 'full-auto') && (
+           <section className={`bg-white rounded-2xl border-2 p-6 shadow-sm space-y-4 ${
+diff --git a/src/components/possession/PossessionExpert.tsx b/src/components/possession/PossessionExpert.tsx
+index 4b2d3c6..18044c5 100644
+--- a/src/components/possession/PossessionExpert.tsx
++++ b/src/components/possession/PossessionExpert.tsx
+@@ -17,6 +17,9 @@ import { BeforeAfterSlider } from './BeforeAfterSlider';
+ import { PresetMaterial } from './sampleData';
+ import { DeepEditor } from '../DeepEditor';
+ import { downloadImage } from '../../lib/utils';
++import { ImageModelIssue, ImageModelSelector, findImageModel, useImageModels } from '@hk01/pi-ai-extra-image-kit/react';
++import { selectedModelIssue as modelIssueFor } from '@hk01/pi-ai-extra-image-kit';
++import { reportError } from '@hk01/pi-ai-extra-image-kit/browser';
+ import {
+   Wand2,
+   Sparkles,
+@@ -42,11 +45,7 @@ const RATIO_OPTIONS: { id: PossessionRatio; label: string; desc: string; aspectC
+   { id: '1:1', label: '1:1 (1200 x 1200)', desc: '正方形貼文', aspectClass: 'aspect-square' },
+ ];
+ 
+-const IMAGE_MODELS: { id: PossessionImageModel; label: string; desc: string }[] = [
+-  { id: 'nano-banana-2', label: 'Nano Banana 2 (預設)', desc: '極速高品質生成・推薦' },
+-  { id: 'nano-banana-pro', label: 'Nano Banana Pro', desc: '專業進階・超高細節光影' },
+-  { id: 'gpt-image-2', label: 'GPT Image 2 (ToAPIs)', desc: 'ToAPIs 提供之 GPT 圖片模型・高創意度' },
+-];
++const DEFAULT_IMAGE_MODEL_ID = 'nano-banana-2';
+ 
+ export function PossessionExpert() {
+   const { language } = useLanguage();
+@@ -57,6 +56,7 @@ export function PossessionExpert() {
+   const [elapsedTime, setElapsedTime] = useState(0);
+   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+   const [errorMessage, setErrorMessage] = useState<string | null>(null);
++  const imageModels = useImageModels();
+   const [showHistoryModal, setShowHistoryModal] = useState(false);
+ 
+   // DeepEditor integration
+@@ -147,6 +147,13 @@ export function PossessionExpert() {
+   };
+ 
+   // Step 5: Start OG Metamorphosis Generation
++  // Template + material image + brand logo, as sent by /api/possession/generate
++  const imageNeeds = { referenceCount: 2 + (state.brandLogo ? 1 : 0) };
++  const selectedImageModel = findImageModel(imageModels.models, state.selectedImageModel);
++  const selectedModelIssue = modelIssueFor(selectedImageModel, imageNeeds);
++  // Removed models in old history items have no entry any more; their id is shown instead.
++  const modelLabel = (id: string) => findImageModel(imageModels.models, id)?.label ?? id;
++
+   const handleStartPossession = async () => {
+     if (!state.templateImage) {
+       setErrorMessage('請先上載「參考樣板圖」以提供排版風格');
+@@ -156,6 +163,10 @@ export function PossessionExpert() {
+       setErrorMessage('請先上載「新圖片素材」以提供人物與產品主體');
+       return;
+     }
++    if (selectedModelIssue) {
++      setErrorMessage(`目前模型「${selectedImageModel?.label ?? state.selectedImageModel}」${selectedModelIssue}，請改選其他模型或移除品牌 Logo。`);
++      return;
++    }
+ 
+     setIsGenerating(true);
+     setErrorMessage(null);
+@@ -211,6 +222,7 @@ export function PossessionExpert() {
+       }, 500);
+     } catch (err: any) {
+       console.error('OG Possession generation error:', err);
++      reportError(err, 'OG 奪舍生成');
+       setErrorMessage(err.message || 'OG 奪舍生成失敗，請稍後再試');
+     } finally {
+       setIsGenerating(false);
+@@ -304,17 +316,18 @@ export function PossessionExpert() {
+             {/* Image Model Selector */}
+             <div className="flex items-center gap-2">
+               <span className="text-xs font-bold text-zinc-700">圖片模型：</span>
+-              <select
++              <ImageModelSelector
++                models={imageModels.models}
++                loading={imageModels.loading}
++                failed={imageModels.failed}
++                onReload={imageModels.reload}
+                 value={state.selectedImageModel}
+-                onChange={(e) => updateState({ selectedImageModel: e.target.value as PossessionImageModel })}
++                onChange={(id) => updateState({ selectedImageModel: id })}
++                defaultModelId={DEFAULT_IMAGE_MODEL_ID}
++                needs={imageNeeds}
+                 className="text-xs font-bold bg-zinc-50 border border-zinc-300 rounded-lg px-2.5 py-1.5 text-zinc-800 hover:border-zinc-400 focus:ring-2 focus:ring-indigo-500 focus:outline-hidden cursor-pointer"
+-              >
+-                {IMAGE_MODELS.map((m) => (
+-                  <option key={m.id} value={m.id}>
+-                    {m.label}
+-                  </option>
+-                ))}
+-              </select>
++              />
++              <ImageModelIssue model={selectedImageModel} needs={imageNeeds} className="text-xs font-semibold text-red-600" />
+             </div>
+ 
+             {/* Aspect Ratio Selector */}
+@@ -432,11 +445,7 @@ export function PossessionExpert() {
+                       第 5 步：按照樣板圖風格生成 OG 圖
+                     </h3>
+                     <span className="px-2 py-0.5 rounded-md bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 text-[10px] font-bold">
+-                      {state.selectedImageModel === 'gpt-image-2'
+-                        ? 'GPT Image 2 (ToAPIs)'
+-                        : state.selectedImageModel === 'nano-banana-pro'
+-                        ? 'Nano Banana Pro'
+-                        : 'Nano Banana 2'} · {state.selectedRatio} (1K)
++                      {modelLabel(state.selectedImageModel)} · {state.selectedRatio} (1K)
+                     </span>
+                   </div>
+                   <p className="text-[11px] text-zinc-300 truncate mt-0.5">
+@@ -450,7 +459,7 @@ export function PossessionExpert() {
+               <button
+                 type="button"
+                 onClick={handleStartPossession}
+-                disabled={isGenerating || !state.templateImage || !state.materialImage}
++                disabled={isGenerating || selectedModelIssue !== null || !state.templateImage || !state.materialImage}
+                 className="w-full sm:w-auto px-6 sm:px-8 py-3.5 bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-zinc-950 font-black text-sm sm:text-base rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none shrink-0"
+               >
+                 {isGenerating ? (
+@@ -537,11 +546,7 @@ export function PossessionExpert() {
+                   <span className="hidden md:inline text-xs font-normal text-zinc-400">(OG 奪舍重構)</span>
+                 </h3>
+                 <span className="px-2 py-0.5 rounded-md bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 text-[10px] font-bold">
+-                  {state.selectedImageModel === 'gpt-image-2'
+-                    ? 'GPT Image 2 (ToAPIs)'
+-                    : state.selectedImageModel === 'nano-banana-pro'
+-                    ? 'Nano Banana Pro'
+-                    : 'Nano Banana 2'} · {state.selectedRatio} (1K)
++                  {modelLabel(state.selectedImageModel)} · {state.selectedRatio} (1K)
+                 </span>
+               </div>
+               <p className="text-[11px] text-zinc-300 truncate mt-0.5">
+@@ -556,7 +561,7 @@ export function PossessionExpert() {
+             type="button"
+             id="btn-sticky-launch-possession"
+             onClick={handleStartPossession}
+-            disabled={isGenerating || !state.templateImage || !state.materialImage}
++            disabled={isGenerating || selectedModelIssue !== null || !state.templateImage || !state.materialImage}
+             className="w-full sm:w-auto px-7 py-3 sm:py-3.5 bg-gradient-to-r from-amber-400 via-amber-300 to-amber-500 hover:from-amber-300 hover:to-amber-400 text-zinc-950 font-black text-sm sm:text-base rounded-xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none shrink-0"
+           >
+             {isGenerating ? (
+@@ -658,7 +663,7 @@ export function PossessionExpert() {
+                           {item.ratio}
+                         </span>
+                         <span className="text-[10px] px-1.5 py-0.2 bg-indigo-100 text-indigo-700 rounded font-medium">
+-                          {item.model === 'gpt-image-2' ? 'GPT Image 2' : item.model === 'nano-banana-pro' ? 'Nano Banana Pro' : 'Nano Banana 2'}
++                          {modelLabel(item.model)}
+                         </span>
+                       </div>
+                     </div>
+diff --git a/src/lib/gemini.ts b/src/lib/gemini.ts
+index 9821c65..8b36487 100644
+--- a/src/lib/gemini.ts
++++ b/src/lib/gemini.ts
+@@ -1,3 +1,5 @@
++import { postImageRequest } from '@hk01/pi-ai-extra-image-kit/browser';
++
+ const processFinalImage = (dataUrl: string, ratioId: string, resolution: '1K' | '2K' = '1K'): Promise<string> => {
+   const is2K = resolution === '2K';
+   const RATIOS: Record<string, {width: number, height: number}> = {
+@@ -107,38 +109,28 @@ const processFinalImage = (dataUrl: string, ratioId: string, resolution: '1K' |
+   });
+ };
+ 
++/**
++ * Edits an image with the selected model. The server keeps the original aspect ratio and pixel
++ * size, so no client-side resizing is needed.
++ */
+ export const editOgImage = async (
+   baseImage: string,
+   editPrompt: string,
+-  ratio: string,
+   modelId: string,
+-  language: 'tc' | 'sc' = 'tc'
++  language: 'tc' | 'sc' = 'tc',
++  signal?: AbortSignal
+ ) => {
+-  const response = await fetch("/api/gemini/edit", {
+-    method: "POST",
+-    headers: {
+-      "Content-Type": "application/json",
+-    },
+-    body: JSON.stringify({
++  const data = await postImageRequest(
++    "/api/gemini/edit",
++    {
+       baseImage,
+       editPrompt,
+-      ratio,
+       modelId,
+       language,
+-    }),
+-  });
+-
+-  if (!response.ok) {
+-    const errData = await response.json().catch(() => ({}));
+-    throw new Error(errData.error || `HTTP error ${response.status}`);
+-  }
+-
+-  const data = await response.json();
+-  if (data.imageUrl) {
+-    return await processFinalImage(data.imageUrl, ratio);
+-  }
+-
+-  throw new Error("No image generated");
++    },
++    signal
++  );
++  return data.imageUrl;
+ };
+ 
+ export const generateOgImage = async (
+@@ -151,18 +143,17 @@ export const generateOgImage = async (
+   modelId: string,
+   eraseTemplateSubject: boolean = true,
+   lockBrandLogo: boolean = true,
+-  temperature: number = 0.7,
++  // Only for models that accept it (temperatureFor); undefined otherwise.
++  temperature: number | undefined = undefined,
+   aiMatting: boolean = false,
+   forbidPretrainedKnowledge: boolean = true,
+   imageResolution: '1K' | '2K' = '1K',
+-  language: 'tc' | 'sc' = 'tc'
++  language: 'tc' | 'sc' = 'tc',
++  signal?: AbortSignal
+ ) => {
+-  const response = await fetch("/api/gemini/generate", {
+-    method: "POST",
+-    headers: {
+-      "Content-Type": "application/json",
+-    },
+-    body: JSON.stringify({
++  const data = await postImageRequest(
++    "/api/gemini/generate",
++    {
+       templateImage,
+       sourceImages,
+       brandLogo,
+@@ -177,18 +168,8 @@ export const generateOgImage = async (
+       forbidPretrainedKnowledge,
+       imageResolution,
+       language,
+-    }),
+-  });
+-
+-  if (!response.ok) {
+-    const errData = await response.json().catch(() => ({}));
+-    throw new Error(errData.error || `HTTP error ${response.status}`);
+-  }
+-
+-  const data = await response.json();
+-  if (data.imageUrl) {
+-    return await processFinalImage(data.imageUrl, ratio, imageResolution);
+-  }
+-
+-  throw new Error("No image generated");
++    },
++    signal
++  );
++  return await processFinalImage(data.imageUrl, ratio, imageResolution);
+ };
+diff --git a/src/lib/infocardApi.ts b/src/lib/infocardApi.ts
+index d097a13..902d3a3 100644
+--- a/src/lib/infocardApi.ts
++++ b/src/lib/infocardApi.ts
+@@ -1,3 +1,4 @@
++import { postImageRequest } from '@hk01/pi-ai-extra-image-kit/browser';
+ import { TitleSet, InfoCardRatio, InfoCardResolution, InfoCardModel, InfoCardTextModel } from '../types/infocard';
+ 
+ export interface AnalyzeArticleResponse {
+@@ -66,24 +67,7 @@ export interface GenerateCardParams {
+   language?: 'tc' | 'sc';
+ }
+ 
+-export const generateCardImage = async (params: GenerateCardParams): Promise<string> => {
+-  const response = await fetch('/api/infocard/generate-card', {
+-    method: 'POST',
+-    headers: {
+-      'Content-Type': 'application/json',
+-    },
+-    body: JSON.stringify(params),
+-  });
+-
+-  if (!response.ok) {
+-    const errorData = await response.json().catch(() => ({}));
+-    throw new Error(errorData.error || `圖卡生成失敗 (${response.status})`);
+-  }
+-
+-  const data = await response.json();
+-  if (!data.imageUrl) {
+-    throw new Error('未收到生成的圖卡圖片');
+-  }
+-
++export const generateCardImage = async (params: GenerateCardParams, signal?: AbortSignal): Promise<string> => {
++  const data = await postImageRequest('/api/infocard/generate-card', params, signal);
+   return data.imageUrl;
+ };
+diff --git a/src/lib/possessionApi.ts b/src/lib/possessionApi.ts
+index 097fcfd..42e9ad8 100644
+--- a/src/lib/possessionApi.ts
++++ b/src/lib/possessionApi.ts
+@@ -1,3 +1,4 @@
++import { postImageRequest } from '@hk01/pi-ai-extra-image-kit/browser';
+ import {
+   PossessionImageModel,
+   PossessionTextModel,
+@@ -43,23 +44,8 @@ export interface GeneratePossessionParams {
+ }
+ 
+ export const generatePossessionOg = async (
+-  params: GeneratePossessionParams
++  params: GeneratePossessionParams,
++  signal?: AbortSignal
+ ): Promise<{ imageUrl: string; metadata?: any }> => {
+-  const response = await fetch('/api/possession/generate', {
+-    method: 'POST',
+-    headers: { 'Content-Type': 'application/json' },
+-    body: JSON.stringify(params),
+-  });
+-
+-  if (!response.ok) {
+-    const errorData = await response.json().catch(() => ({}));
+-    throw new Error(errorData.error || `OG 奪舍生成失敗 (${response.status})`);
+-  }
+-
+-  const data = await response.json();
+-  if (!data.imageUrl) {
+-    throw new Error('未收到生成的 OG 奪舍圖片');
+-  }
+-
+-  return data;
++  return await postImageRequest('/api/possession/generate', params, signal);
+ };
+diff --git a/src/lib/pricing.ts b/src/lib/pricing.ts
+index c7cefe3..f97c1e6 100644
+--- a/src/lib/pricing.ts
++++ b/src/lib/pricing.ts
+@@ -1,24 +1,29 @@
+-export const calculateCost = (modelId: string, inputImagesCount: number, resolution: '1K' | '2K' = '1K') => {
+-  const EXCHANGE_RATE = 7.78;
+-  
+-  if (modelId === 'nano-banana-2') {
+-    // 1K = ~0.067 USD, 2K = 0.101 USD
+-    const costUSD = resolution === '2K' ? 0.101 : 0.067;
+-    return costUSD * EXCHANGE_RATE;
+-  } else if (modelId === 'nano-banana-pro') {
+-    // Input = 560 tokens = $0.0011 USD per image
+-    const inputCostUSD = 0.0011 * inputImagesCount;
+-    const outputCostUSD = resolution === '2K' ? 0.134 : 0.096;
+-    return (inputCostUSD + outputCostUSD) * EXCHANGE_RATE;
+-  } else if (modelId === 'gpt-image-2' || modelId === 'openrouter-gpt-image-2') {
+-    // GPT Image 2 = $0.080 USD
+-    const costUSD = 0.08;
+-    return costUSD * EXCHANGE_RATE;
+-  } else if (modelId === 'doubao-seedream-5-0') {
+-    // Doubao Seedream 5.0 = $0.050 USD
+-    const costUSD = 0.05;
+-    return costUSD * EXCHANGE_RATE;
+-  }
+-  
+-  return 0;
++import { estimateImageCostUsd, type ImageModelView, type OutputResolution } from '@hk01/pi-ai-extra-image-kit';
++
++const EXCHANGE_RATE = 7.78;
++
++/**
++ * Stored as costHKD when the model has no verified price. History documents must keep a numeric
++ * costHKD (Firestore rules), so unpriced images use this marker and totals skip them.
++ */
++export const UNPRICED_COST_HKD = -1;
++
++/** Estimated HK$ for one image from the model's verified price, or UNPRICED_COST_HKD. */
++export const calculateCost = (
++  model: ImageModelView | undefined,
++  input: { resolution: OutputResolution; inputImages: number; promptChars: number }
++): number => {
++  const usd = estimateImageCostUsd(model, input);
++  return usd === null ? UNPRICED_COST_HKD : usd * EXCHANGE_RATE;
+ };
++
++export const isPriced = (costHKD: number): boolean => costHKD >= 0;
++
++/** "HK$ 0.52", or "—" for an unpriced image. */
++export const formatCost = (costHKD: number): string => (isPriced(costHKD) ? `HK$ ${costHKD.toFixed(2)}` : '—');
++
++/** Sum of the priced items and the number of unpriced ones. */
++export const sumCosts = (costs: readonly number[]): { totalHKD: number; unpriced: number } => ({
++  totalHKD: costs.filter(isPriced).reduce((sum, cost) => sum + cost, 0),
++  unpriced: costs.filter((cost) => !isPriced(cost)).length,
++});
+diff --git a/src/main.tsx b/src/main.tsx
+index fc82314..7e2f977 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -3,11 +3,14 @@ import {createRoot} from 'react-dom/client';
+ import App from './App.tsx';
+ import './index.css';
+ import { LanguageProvider } from './contexts/LanguageContext';
++import { ErrorPanel } from '@hk01/pi-ai-extra-image-kit/react';
+ 
+ createRoot(document.getElementById('root')!).render(
+   <StrictMode>
+     <LanguageProvider>
+       <App />
++      {/* Image errors with provider/model, outside App so the login screen shows them too */}
++      <ErrorPanel />
+     </LanguageProvider>
+   </StrictMode>,
+ );
+diff --git a/src/store.ts b/src/store.ts
+index 9d0b48b..d061530 100644
+--- a/src/store.ts
++++ b/src/store.ts
+@@ -5,6 +5,7 @@ export interface GeneratedImage {
+   url: string;
+   ratio: string;
+   timestamp: number;
++  /** Estimated HK$, or UNPRICED_COST_HKD (-1) when the model has no verified price. */
+   costHKD: number;
+   model: string;
+   resolution?: '1K' | '2K';
+@@ -32,7 +33,8 @@ export interface AppState {
+   globalPrompt: string;
+   selectedRatios: string[];
+   ratioPrompts: Record<string, string>;
+-  selectedModel: 'nano-banana-2' | 'nano-banana-pro' | 'gpt-image-2' | 'doubao-seedream-5-0' | string;
++  /** Image model id from GET /api/image-models; an unknown saved id is reset by the selector. */
++  selectedModel: string;
+   history: GeneratedImage[];
+ }
+ 
+diff --git a/src/types/batch.ts b/src/types/batch.ts
+index 72b24ca..ed620c1 100644
+--- a/src/types/batch.ts
++++ b/src/types/batch.ts
+@@ -1,4 +1,5 @@
+-export type BatchModelId = 'nano-banana-2' | 'nano-banana-pro' | 'gpt-image-2' | 'openrouter-gpt-image-2' | 'doubao-seedream-5-0';
++/** Image model id from GET /api/image-models (server/imageModels.ts). */
++export type BatchModelId = string;
+ 
+ export type BatchAspectRatio = '4:5' | '3:4' | 'original' | '1:1' | '16:9' | '9:16';
+ 
+diff --git a/src/types/infocard.ts b/src/types/infocard.ts
+index cb7b4cc..eb16cf4 100644
+--- a/src/types/infocard.ts
++++ b/src/types/infocard.ts
+@@ -1,7 +1,8 @@
+ export type InfoCardMode = 'manual' | 'semi-auto' | 'full-auto';
+ export type InfoCardRatio = '4:5' | '9:16' | '1:1' | '3:4';
+ export type InfoCardResolution = '1K' | '2K';
+-export type InfoCardModel = 'nano-banana-2' | 'nano-banana-pro' | 'gpt-image-2' | 'doubao-seedream-5-0';
++/** Image model id from GET /api/image-models (server/imageModels.ts). */
++export type InfoCardModel = string;
+ export type InfoCardTextModel = 'gemini-3.8-flash' | 'gemini-3.5-flash-lite';
+ 
+ export interface TitleSet {
+diff --git a/src/types/possession.ts b/src/types/possession.ts
+index bc3328d..b1421d2 100644
+--- a/src/types/possession.ts
++++ b/src/types/possession.ts
+@@ -1,4 +1,5 @@
+-export type PossessionImageModel = 'nano-banana-2' | 'nano-banana-pro' | 'gpt-image-2';
++/** Image model id from GET /api/image-models (server/imageModels.ts). */
++export type PossessionImageModel = string;
+ export type PossessionTextModel = 'gemini-3.8-flash' | 'gemini-3.1-flash-lite';
+ export type PossessionRatio = '16:9' | '4:5' | '3:4' | '1:1' | '9:16';
+ export type PossessionResolution = '1K';
+diff --git a/vite.config.ts b/vite.config.ts
+index bfd19a3..54bb530 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -1,15 +1,11 @@
+ import tailwindcss from '@tailwindcss/vite';
+ import react from '@vitejs/plugin-react';
+ import path from 'path';
+-import {defineConfig, loadEnv} from 'vite';
++import {defineConfig} from 'vite';
+ 
+-export default defineConfig(({mode}) => {
+-  const env = loadEnv(mode, '.', '');
++export default defineConfig(() => {
+   return {
+     plugins: [react(), tailwindcss()],
+-    define: {
+-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+-    },
+     resolve: {
+       alias: {
+         '@': path.resolve(__dirname, './src'),
