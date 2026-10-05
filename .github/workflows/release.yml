@@ -1,4 +1,4 @@
-name: Release adapter package
+name: Release package
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - "kie-v*"
       - "toapis-v*"
       - "google-v*"
+      - "image-kit-v*"
 
 permissions:
   contents: write
@@ -51,6 +52,11 @@ jobs:
               echo "directory=packages/google" >> "$GITHUB_OUTPUT"
               echo "version=${GITHUB_REF_NAME#google-v}" >> "$GITHUB_OUTPUT"
               ;;
+            image-kit-v*)
+              echo "name=@hk01/pi-ai-extra-image-kit" >> "$GITHUB_OUTPUT"
+              echo "directory=packages/image-kit" >> "$GITHUB_OUTPUT"
+              echo "version=${GITHUB_REF_NAME#image-kit-v}" >> "$GITHUB_OUTPUT"
+              ;;
             *)
               echo "Unsupported release tag: ${GITHUB_REF_NAME}" >&2
               exit 1
@@ -64,13 +70,14 @@ jobs:
         run: |
           node --input-type=module -e 'import { readFile } from "node:fs/promises"; const manifest = JSON.parse(await readFile(`${process.env.PACKAGE_DIRECTORY}/package.json`, "utf8")); if (manifest.version !== process.env.RELEASE_VERSION) { throw new Error(`Tag version ${process.env.RELEASE_VERSION} does not match ${manifest.name}@${manifest.version}`); }'
 
-      - name: Check, test and build release package
+      # Build before test: the image kit's tests load the provider packages' built entries.
+      - name: Check, build and test release package
         env:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
         run: |
           pnpm --filter "$PACKAGE_NAME"... run check
-          pnpm --filter "$PACKAGE_NAME"... run test
           pnpm --filter "$PACKAGE_NAME"... run build
+          pnpm --filter "$PACKAGE_NAME"... run test
 
       # With --filter, pnpm resolves --pack-destination from the workspace root (verified with pnpm 12).
       - name: Pack release artifact
@@ -80,6 +87,14 @@ jobs:
           mkdir -p release-artifacts
           pnpm --filter "$PACKAGE_NAME" pack --pack-destination ./release-artifacts
           ls -l release-artifacts
+          # The image kit's peers are not on a registry: pack them for the smoke test only (not released).
+          if [ "$PACKAGE_NAME" = "@hk01/pi-ai-extra-image-kit" ]; then
+            mkdir -p smoke-peers
+            for peer in google kie toapis; do
+              pnpm --filter "@hk01/pi-ai-extra-$peer" pack --pack-destination ./smoke-peers
+            done
+            ls -l smoke-peers
+          fi
 
       # Installs the packed artifact exactly as a consumer would, then loads it from CommonJS and ESM.
       - name: Smoke-test packed artifact
@@ -91,10 +106,16 @@ jobs:
           mkdir -p "$consumer"
           cd "$consumer"
           npm init -y > /dev/null
-          npm install --no-audit --no-fund "$tarball" @earendil-works/pi-ai@0.87.1
+          if [ "$PACKAGE_NAME" = "@hk01/pi-ai-extra-image-kit" ]; then
+            npm install --no-audit --no-fund "$tarball" "$GITHUB_WORKSPACE"/smoke-peers/*.tgz react@19
+            node -e 'const kit = require(process.env.PACKAGE_NAME); const server = require(`${process.env.PACKAGE_NAME}/server`); const react = require(`${process.env.PACKAGE_NAME}/react`); if (typeof kit.modelIssue !== "function" || typeof server.createImageClient !== "function" || typeof react.ImageModelSelector !== "function") throw new Error("CommonJS entries are broken");'
+            node --input-type=module -e 'const name = process.env.PACKAGE_NAME; const kit = await import(name); const server = await import(`${name}/server`); const browser = await import(`${name}/browser`); const react = await import(`${name}/react`); const models = server.createImageClient({ app: "smoke", models: [{ id: "nb2", label: "NB2", description: "", provider: "google", model: "gemini-3.1-flash-image", maskEditing: "supported", price: null }], env: {} }).listModels(); if (typeof kit.modelIssue !== "function" || typeof browser.postImageRequest !== "function" || typeof react.ErrorPanel !== "function" || models[0]?.unavailableReason !== "伺服器未設定 GEMINI_API_KEY") throw new Error("ESM entries are broken");'
+          else
+            npm install --no-audit --no-fund "$tarball" @earendil-works/pi-ai@0.87.1
+            node -e 'const entry = require(process.env.PACKAGE_NAME); if (typeof entry.isPiAiExtraError !== "function") throw new Error("CommonJS entry is broken");'
+            node --input-type=module -e 'const entry = await import(process.env.PACKAGE_NAME); const piAi = await import(`${process.env.PACKAGE_NAME}/pi-ai`); if (typeof entry.isPiAiExtraError !== "function" || Object.keys(piAi).length === 0) throw new Error("ESM entries are broken");'
+          fi
           node -e 'const manifest = require(`${process.env.PACKAGE_NAME}/package.json`); if (JSON.stringify(manifest.dependencies ?? {}).includes("pi-ai-extra-internal")) throw new Error("runtime dependency on the internal package");'
-          node -e 'const entry = require(process.env.PACKAGE_NAME); if (typeof entry.isPiAiExtraError !== "function") throw new Error("CommonJS entry is broken");'
-          node --input-type=module -e 'const entry = await import(process.env.PACKAGE_NAME); const piAi = await import(`${process.env.PACKAGE_NAME}/pi-ai`); if (typeof entry.isPiAiExtraError !== "function" || Object.keys(piAi).length === 0) throw new Error("ESM entries are broken");'
 
       - name: Create GitHub Release
         env:
