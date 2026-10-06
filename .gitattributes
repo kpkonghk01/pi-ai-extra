@@ -1,0 +1,2 @@
+# Migration patch preserves upstream whitespace so it remains applicable to its source snapshot.
+docs/migration/infocard/changes.diff -whitespace
