@@ -1773,7 +1773,7 @@ diff --git a/src/App.tsx b/src/App.tsx
 index 406bd2b..2022fa1 100644
 --- a/src/App.tsx
 +++ b/src/App.tsx
-@@ -12,13 +12,16 @@ import { BatchExpert } from './components/batch/BatchExpert';
+@@ -12,13 +12,18 @@ import { BatchExpert } from './components/batch/BatchExpert';
  import { PossessionExpert } from './components/possession/PossessionExpert';
  import { Settings, Image as ImageIcon, Download, Trash2, Info, Loader2, LogOut, ChevronDown, Sliders, Scissors, DatabaseZap, Sparkles, Palette, Layers, Zap, X, Globe } from 'lucide-react';
  import confetti from 'canvas-confetti';
@@ -1788,6 +1788,8 @@ index 406bd2b..2022fa1 100644
 +import { TEMPERATURE_SUPPORT_NOTE, selectedModelIssue, temperatureFor } from '@hk01/pi-ai-extra-image-kit';
 +import { isAbort, reportError } from '@hk01/pi-ai-extra-image-kit/browser';
 +import { calculateCost, sumCosts } from './lib/pricing';
++import { generateOgImage } from './lib/gemini';
++import { v4 as uuidv4 } from 'uuid';
  
  export type VisualTheme = 'rose' | 'blue';
  
@@ -1832,7 +1834,7 @@ index 406bd2b..2022fa1 100644
  
    const handleSendImageToOg = (imageUrl: string) => {
      updateState({
-@@ -493,10 +497,11 @@ export default function App() {
+@@ -493,10 +497,9 @@ export default function App() {
    const handleGenerate = async () => {
      if (!state?.templateImage || state.sourceImages.length === 0 || state.selectedRatios.length === 0) return;
      
@@ -1840,9 +1842,9 @@ index 406bd2b..2022fa1 100644
 +    generateAbortRef.current = controller;
      setIsGenerating(true);
      try {
-       const { generateOgImage } = await import('./lib/gemini');
+-      const { generateOgImage } = await import('./lib/gemini');
 -      const { calculateCost } = await import('./lib/pricing');
-       const { v4: uuidv4 } = await import('uuid');
+-      const { v4: uuidv4 } = await import('uuid');
  
        // Pre-compress images before sending over network to avoid high payload timeout
 @@ -506,65 +511,90 @@ export default function App() {
@@ -2067,10 +2069,11 @@ diff --git a/src/components/DeepEditor.tsx b/src/components/DeepEditor.tsx
 index 8a0ec2b..64037b0 100644
 --- a/src/components/DeepEditor.tsx
 +++ b/src/components/DeepEditor.tsx
-@@ -10,6 +10,10 @@ import { Input } from './ui/Input';
+@@ -10,6 +10,11 @@ import { Input } from './ui/Input';
  import ReactCrop, { type Crop as CropType } from 'react-image-crop';
  import 'react-image-crop/dist/ReactCrop.css';
  import { downloadImage } from '../lib/utils';
++import { editOgImage } from '../lib/gemini';
 +import { useLanguage } from '../contexts/LanguageContext';
 +import { findImageModel, useImageModels } from '@hk01/pi-ai-extra-image-kit/react';
 +import { MASK_REFERENCE_ONLY_NOTE } from '@hk01/pi-ai-extra-image-kit';
@@ -2088,9 +2091,9 @@ index 8a0ec2b..64037b0 100644
  
    useEffect(() => {
      const canvas = canvasRef.current;
-@@ -409,17 +416,6 @@ export function DeepEditor({ imageUrl, modelId, onClose, onConfirm }: DeepEditor
+@@ -409,17 +416,5 @@ export function DeepEditor({ imageUrl, modelId, onClose, onConfirm }: DeepEditor
        
-       const { editOgImage } = await import('../lib/gemini');
+-      const { editOgImage } = await import('../lib/gemini');
        
 -      const getRatioString = (width: number, height: number) => {
 -        const r = width / height;

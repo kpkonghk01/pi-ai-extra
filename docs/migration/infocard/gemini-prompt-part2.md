@@ -442,6 +442,7 @@ index 8a0ec2b..64037b0 100644
  import ReactCrop, { type Crop as CropType } from 'react-image-crop';
  import 'react-image-crop/dist/ReactCrop.css';
  import { downloadImage } from '../lib/utils';
++import { editOgImage } from '../lib/gemini';
 +import { useLanguage } from '../contexts/LanguageContext';
 +import { findImageModel, useImageModels } from '@hk01/pi-ai-extra-image-kit/react';
 +import { MASK_REFERENCE_ONLY_NOTE } from '@hk01/pi-ai-extra-image-kit';
@@ -461,7 +462,7 @@ index 8a0ec2b..64037b0 100644
      const canvas = canvasRef.current;
 @@ -409,17 +416,6 @@ export function DeepEditor({ imageUrl, modelId, onClose, onConfirm }: DeepEditor
        
-       const { editOgImage } = await import('../lib/gemini');
+-      const { editOgImage } = await import('../lib/gemini');
        
 -      const getRatioString = (width: number, height: number) => {
 -        const r = width / height;
@@ -543,6 +544,8 @@ index 406bd2b..2022fa1 100644
  import { doc, getDoc, getDocs, setDoc, deleteDoc, collection, query, orderBy, onSnapshot, serverTimestamp } from 'firebase/firestore';
  import { downloadImage } from './lib/utils';
  import { onAuthStateChanged, User } from 'firebase/auth';
++import { generateOgImage } from './lib/gemini';
++import { v4 as uuidv4 } from 'uuid';
 +import { ImageModelIssue, ImageModelSelector, findImageModel, useImageModels } from '@hk01/pi-ai-extra-image-kit/react';
 +import { TEMPERATURE_SUPPORT_NOTE, selectedModelIssue, temperatureFor } from '@hk01/pi-ai-extra-image-kit';
 +import { isAbort, reportError } from '@hk01/pi-ai-extra-image-kit/browser';
@@ -599,9 +602,9 @@ index 406bd2b..2022fa1 100644
 +    generateAbortRef.current = controller;
      setIsGenerating(true);
      try {
-       const { generateOgImage } = await import('./lib/gemini');
+-      const { generateOgImage } = await import('./lib/gemini');
 -      const { calculateCost } = await import('./lib/pricing');
-       const { v4: uuidv4 } = await import('uuid');
+-      const { v4: uuidv4 } = await import('uuid');
  
        // Pre-compress images before sending over network to avoid high payload timeout
 @@ -506,65 +511,90 @@ export default function App() {
