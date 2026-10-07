@@ -98,6 +98,30 @@ const BLOCKING_FINISH_REASONS = new Set([
   "IMAGE_RECITATION",
 ]);
 
+const RESPONSE_FORMAT_ASPECT_RATIOS: Record<string, string> = {
+  "1:1": "ASPECT_RATIO_ONE_BY_ONE",
+  "2:3": "ASPECT_RATIO_TWO_BY_THREE",
+  "3:2": "ASPECT_RATIO_THREE_BY_TWO",
+  "3:4": "ASPECT_RATIO_THREE_BY_FOUR",
+  "4:3": "ASPECT_RATIO_FOUR_BY_THREE",
+  "4:5": "ASPECT_RATIO_FOUR_BY_FIVE",
+  "5:4": "ASPECT_RATIO_FIVE_BY_FOUR",
+  "9:16": "ASPECT_RATIO_NINE_BY_SIXTEEN",
+  "16:9": "ASPECT_RATIO_SIXTEEN_BY_NINE",
+  "21:9": "ASPECT_RATIO_TWENTY_ONE_BY_NINE",
+  "1:8": "ASPECT_RATIO_ONE_BY_EIGHT",
+  "8:1": "ASPECT_RATIO_EIGHT_BY_ONE",
+  "1:4": "ASPECT_RATIO_ONE_BY_FOUR",
+  "4:1": "ASPECT_RATIO_FOUR_BY_ONE",
+};
+
+const RESPONSE_FORMAT_IMAGE_SIZES: Record<string, string> = {
+  "512": "IMAGE_SIZE_FIVE_TWELVE",
+  "1K": "IMAGE_SIZE_ONE_K",
+  "2K": "IMAGE_SIZE_TWO_K",
+  "4K": "IMAGE_SIZE_FOUR_K",
+};
+
 /**
  * Calls `models/{model}:generateContent` once. Not retried automatically: generation is billed.
  * Returns the final (non-thought) inline images, validated by magic bytes and size.
@@ -107,12 +131,16 @@ export async function generateContentImages(
   input: GenerateContentInput,
 ): Promise<{ images: ImageBytes[]; responseId: string | undefined; usage: ImageUsage | undefined }> {
   const imageSettings = omitUndefined({ aspectRatio: input.aspectRatio, imageSize: input.imageSize });
+  const responseFormatImage = omitUndefined({
+    aspectRatio: input.aspectRatio === undefined ? undefined : RESPONSE_FORMAT_ASPECT_RATIOS[input.aspectRatio],
+    imageSize: input.imageSize === undefined ? undefined : RESPONSE_FORMAT_IMAGE_SIZES[input.imageSize],
+  });
   const generationConfig =
     input.imageConfigFormat === "responseFormat"
       ? omitUndefined({
           temperature: input.temperature,
           responseModalities: ["TEXT", "IMAGE"],
-          responseFormat: Object.keys(imageSettings).length > 0 ? { image: imageSettings } : undefined,
+          responseFormat: Object.keys(responseFormatImage).length > 0 ? { image: responseFormatImage } : undefined,
         })
       : omitUndefined({
           temperature: input.temperature,
