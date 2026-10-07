@@ -76,8 +76,8 @@ describe("generateGoogleImage", () => {
       apiKey: "gemini-key",
       model: "gemini-nano-banana-2.1",
       prompt: "a poster",
-      aspectRatio: "4:5",
-      resolution: "2K",
+      aspectRatio: "16:9",
+      resolution: "1K",
       temperature: 0.7,
       fetch: fake.fetch,
     });
@@ -87,7 +87,7 @@ describe("generateGoogleImage", () => {
       generationConfig: {
         temperature: 0.7,
         responseModalities: ["TEXT", "IMAGE"],
-        responseFormat: { image: { aspectRatio: "4:5", imageSize: "2K" } },
+        responseFormat: { image: { aspectRatio: "ASPECT_RATIO_SIXTEEN_BY_NINE", imageSize: "IMAGE_SIZE_ONE_K" } },
       },
     });
   });
