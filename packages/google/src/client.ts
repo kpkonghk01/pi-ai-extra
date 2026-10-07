@@ -17,7 +17,7 @@ import {
   type ImageUsage,
   type OperationContext,
 } from "@hk01/pi-ai-extra-internal";
-import type { GoogleSafetySetting } from "./models.ts";
+import type { GoogleImageConfigFormat, GoogleSafetySetting } from "./models.ts";
 
 export interface InlineImagePart {
   mimeType: string;
@@ -32,6 +32,7 @@ export interface GenerateContentInput {
   images: readonly InlineImagePart[];
   aspectRatio: string | undefined;
   imageSize: string | undefined;
+  imageConfigFormat: GoogleImageConfigFormat;
   safetySettings: readonly GoogleSafetySetting[] | undefined;
   temperature: number | undefined;
   systemInstruction: string | undefined;
@@ -105,11 +106,18 @@ export async function generateContentImages(
   ctx: OperationContext,
   input: GenerateContentInput,
 ): Promise<{ images: ImageBytes[]; responseId: string | undefined; usage: ImageUsage | undefined }> {
-  const imageConfig = omitUndefined({ aspectRatio: input.aspectRatio, imageSize: input.imageSize });
-  const generationConfig = omitUndefined({
-    temperature: input.temperature,
-    imageConfig: Object.keys(imageConfig).length > 0 ? imageConfig : undefined,
-  });
+  const imageSettings = omitUndefined({ aspectRatio: input.aspectRatio, imageSize: input.imageSize });
+  const generationConfig =
+    input.imageConfigFormat === "responseFormat"
+      ? omitUndefined({
+          temperature: input.temperature,
+          responseModalities: ["TEXT", "IMAGE"],
+          responseFormat: Object.keys(imageSettings).length > 0 ? { image: imageSettings } : undefined,
+        })
+      : omitUndefined({
+          temperature: input.temperature,
+          imageConfig: Object.keys(imageSettings).length > 0 ? imageSettings : undefined,
+        });
   const body = omitUndefined({
     contents: [
       {

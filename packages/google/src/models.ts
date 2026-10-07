@@ -2,7 +2,7 @@ import { z } from "zod";
 import { baseRequestShape, option, type ImageModelInfo, type NumericRangeSpec, type ReferenceImageSpec } from "@hk01/pi-ai-extra-internal";
 import { GOOGLE_PROVIDER_ID } from "./constants.ts";
 
-export type GoogleImageModelId = "gemini-3.1-flash-image" | "gemini-3-pro-image";
+export type GoogleImageModelId = "gemini-nano-banana-2.1" | "gemini-3.1-flash-image" | "gemini-3-pro-image";
 
 export type GoogleProImageAspectRatio = "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "4:5" | "5:4" | "9:16" | "16:9" | "21:9";
 export type GoogleFlashImageAspectRatio = GoogleProImageAspectRatio | "1:4" | "4:1" | "1:8" | "8:1";
@@ -33,9 +33,14 @@ export interface NormalizedGoogleRequest {
   systemInstruction?: string | undefined;
 }
 
+export type GoogleImageConfigFormat = "imageConfig" | "responseFormat";
+export type GoogleImageApiVersion = "v1beta" | "v1";
+
 interface GoogleModelDefinition {
   info: ImageModelInfo;
   schema: z.ZodType<NormalizedGoogleRequest>;
+  imageConfigFormat: GoogleImageConfigFormat;
+  apiVersion: GoogleImageApiVersion;
 }
 
 const PRO_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"] as const;
@@ -78,6 +83,8 @@ function definition(
   ratios: readonly [string, ...string[]],
   sizes: readonly [string, ...string[]],
   notes: readonly string[],
+  imageConfigFormat: GoogleImageConfigFormat = "imageConfig",
+  apiVersion: GoogleImageApiVersion = "v1beta",
 ): GoogleModelDefinition {
   const info: ImageModelInfo = {
     id,
@@ -97,6 +104,8 @@ function definition(
   };
   return {
     info,
+    imageConfigFormat,
+    apiVersion,
     schema: z.strictObject({
       ...baseRequestShape(info),
       aspectRatio: z.enum(ratios).optional(),
@@ -112,6 +121,15 @@ function definition(
 }
 
 const DEFINITIONS: Record<GoogleImageModelId, GoogleModelDefinition> = {
+  "gemini-nano-banana-2.1": definition(
+    "gemini-nano-banana-2.1",
+    "Gemini Nano Banana 2.1",
+    FLASH_RATIOS,
+    PRO_SIZES,
+    ["Up to 14 reference images."],
+    "responseFormat",
+    "v1",
+  ),
   "gemini-3.1-flash-image": definition("gemini-3.1-flash-image", "Gemini 3.1 Flash Image (Nano Banana 2)", FLASH_RATIOS, FLASH_SIZES, [
     "Up to 10 object and 4 character reference images.",
   ]),

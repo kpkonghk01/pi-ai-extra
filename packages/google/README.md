@@ -1,6 +1,6 @@
 # @hk01/pi-ai-extra-google
 
-Server-only extension to `@earendil-works/pi-ai`: Gemini 3.1 Flash Image (`gemini-3.1-flash-image`) and Gemini 3 Pro Image (`gemini-3-pro-image`) through `generateContent`.
+Server-only extension to `@earendil-works/pi-ai`: Gemini Nano Banana 2.1 (`gemini-nano-banana-2.1`), Gemini 3.1 Flash Image (`gemini-3.1-flash-image`) and Gemini 3 Pro Image (`gemini-3-pro-image`) through `generateContent`.
 
 - Main entry (CommonJS and ESM): `generateGoogleImage()`, `GOOGLE_IMAGE_MODELS`, `PiAiExtraError` / `isPiAiExtraError`.
 - `/pi-ai` subpath (ESM only, needs `@earendil-works/pi-ai@0.87.1`): `createGoogleProvider()` (pi-ai `Models`, Gemini chat) and `createGoogleImagesProvider()` (pi-ai `ImagesModels`).

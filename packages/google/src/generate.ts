@@ -23,7 +23,7 @@ import {
   type ResolvedReference,
 } from "@hk01/pi-ai-extra-internal";
 import { generateContentImages, type InlineImagePart } from "./client.ts";
-import { GOOGLE_BASE_URL, GOOGLE_PROVIDER_ID } from "./constants.ts";
+import { GOOGLE_BASE_URL, GOOGLE_PROVIDER_ID, GOOGLE_V1_BASE_URL } from "./constants.ts";
 import {
   GOOGLE_IMAGE_MODEL_IDS,
   googleModelDefinition,
@@ -37,7 +37,7 @@ import {
 
 /** Advanced transport settings. */
 export interface GoogleImageSettings {
-  /** Default `https://generativelanguage.googleapis.com/v1beta`. */
+  /** Gemini API endpoint used by the selected model when no custom base URL is supplied. */
   baseUrl?: string | undefined;
   /**
    * Extra non-credential request headers (for example `{ "User-Agent": "aistudio-build" }`
@@ -57,6 +57,13 @@ interface GoogleRequestBase extends ImageHelperOptions, GoogleImageSettings {
   systemInstruction?: string | undefined;
 }
 
+export interface GoogleNanoBanana21ImageRequest extends GoogleRequestBase {
+  model: "gemini-nano-banana-2.1";
+  aspectRatio?: GoogleFlashImageAspectRatio | undefined;
+  /** Gemini `responseFormat.image.imageSize`. Default 1K. */
+  resolution?: GoogleProImageSize | undefined;
+}
+
 export interface GoogleFlashImageRequest extends GoogleRequestBase {
   model: "gemini-3.1-flash-image";
   aspectRatio?: GoogleFlashImageAspectRatio | undefined;
@@ -71,7 +78,7 @@ export interface GoogleProImageRequest extends GoogleRequestBase {
   resolution?: GoogleProImageSize | undefined;
 }
 
-export type GoogleImageRequest = GoogleFlashImageRequest | GoogleProImageRequest;
+export type GoogleImageRequest = GoogleNanoBanana21ImageRequest | GoogleFlashImageRequest | GoogleProImageRequest;
 
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 const REFERENCE_DOWNLOAD_TIMEOUT_MS = 30_000;
@@ -124,13 +131,14 @@ export async function generateGoogleImage(request: GoogleImageRequest): Promise<
   throwIfAborted(ctx, "generate");
   emitProgress(ctx, { type: "request_sent" });
   const generated = await generateContentImages(ctx, {
-    baseUrl: withoutTrailingSlash(options.baseUrl ?? GOOGLE_BASE_URL),
+    baseUrl: withoutTrailingSlash(options.baseUrl ?? (definition.apiVersion === "v1" ? GOOGLE_V1_BASE_URL : GOOGLE_BASE_URL)),
     apiKey: request.apiKey,
     model: parsed.model,
     prompt: parsed.prompt,
     images,
     aspectRatio: parsed.aspectRatio,
     imageSize: parsed.resolution,
+    imageConfigFormat: definition.imageConfigFormat,
     safetySettings: parsed.safetySettings,
     temperature: parsed.temperature,
     systemInstruction: parsed.systemInstruction,
