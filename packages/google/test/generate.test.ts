@@ -14,6 +14,7 @@ import {
 import { generateGoogleImage, GOOGLE_IMAGE_MODELS, isPiAiExtraError, type GoogleImageRequest } from "../src/index.ts";
 import { createGoogleImagesProvider } from "../src/pi-ai/index.ts";
 
+const NANO_BANANA_21_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-nano-banana-2.1:generateContent";
 const FLASH_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent";
 const PRO_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image:generateContent";
 const PNG_B64 = Buffer.from(PNG_BYTES).toString("base64");
@@ -67,6 +68,28 @@ describe("generateGoogleImage", () => {
     assert.equal(result.images.length, 1);
     assert.equal(result.images[0]?.mimeType, "image/png");
     assert.equal(result.taskId, "resp_1");
+  });
+
+  it("uses the stable endpoint and responseFormat image settings for Nano Banana 2.1", async () => {
+    const fake = createFakeFetch([{ method: "POST", url: NANO_BANANA_21_URL, respond: imageResponse }]);
+    await generateGoogleImage({
+      apiKey: "gemini-key",
+      model: "gemini-nano-banana-2.1",
+      prompt: "a poster",
+      aspectRatio: "4:5",
+      resolution: "2K",
+      temperature: 0.7,
+      fetch: fake.fetch,
+    });
+
+    assert.deepEqual(bodyOf(fake.calls[0]), {
+      contents: [{ role: "user", parts: [{ text: "a poster" }] }],
+      generationConfig: {
+        temperature: 0.7,
+        responseModalities: ["TEXT", "IMAGE"],
+        responseFormat: { image: { aspectRatio: "4:5", imageSize: "2K" } },
+      },
+    });
   });
 
   it("sends temperature in generationConfig and the system instruction as a text Content", async () => {
@@ -161,6 +184,7 @@ describe("generateGoogleImage", () => {
   it("validates model-specific options and references before any request", async () => {
     const fake = createFakeFetch([]);
     const cases: Array<[GoogleImageRequest, string]> = [
+      [{ apiKey: "k", model: "gemini-nano-banana-2.1", prompt: "p", resolution: "512" } as unknown as GoogleImageRequest, "invalid_request"],
       [{ apiKey: "k", model: "gemini-3-pro-image", prompt: "p", aspectRatio: "1:8" } as unknown as GoogleImageRequest, "invalid_request"],
       [{ apiKey: "k", model: "gemini-3-pro-image", prompt: "p", resolution: "512" } as unknown as GoogleImageRequest, "invalid_request"],
       [{ apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", referenceImages: Array(15).fill(dataUrl(PNG_BYTES, "image/png")) }, "reference_limit"],
@@ -177,17 +201,18 @@ describe("generateGoogleImage", () => {
 });
 
 describe("Google catalogue and pi-ai adapter", () => {
-  it("lists both Gemini image models with 14-image limits", () => {
+  it("lists all Gemini image models with 14-image limits", () => {
     assert.deepEqual(
       GOOGLE_IMAGE_MODELS.map((model) => [model.id, model.referenceImages.max]),
       [
+        ["gemini-nano-banana-2.1", 14],
         ["gemini-3.1-flash-image", 14],
         ["gemini-3-pro-image", 14],
       ],
     );
   });
 
-  it("lists temperature (0-2) and system-instruction support for both models", () => {
+  it("lists temperature (0-2) and system-instruction support for every model", () => {
     for (const model of GOOGLE_IMAGE_MODELS) {
       assert.deepEqual(model.temperature, { min: 0, max: 2 }, model.id);
       assert.equal(model.systemInstruction, true, model.id);
