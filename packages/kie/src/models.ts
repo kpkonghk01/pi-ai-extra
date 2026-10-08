@@ -61,8 +61,18 @@ function references(min: number, max: number | null): ReferenceImageSpec {
   return { min, max, acceptedMimeTypes: ["image/png", "image/jpeg", "image/webp"], maxInlineBytes: INLINE_LIMIT_BYTES };
 }
 
-function info(fields: Omit<ImageModelInfo, "provider" | "background" | "outputFormat" | "resolution" | "watermark"> & Partial<ImageModelInfo>): ImageModelInfo {
-  return { provider: KIE_PROVIDER_ID, resolution: null, background: null, outputFormat: null, watermark: false, ...fields };
+function info(fields: Omit<ImageModelInfo, "provider" | "familyId" | "familyName" | "operationRole" | "background" | "outputFormat" | "resolution" | "watermark"> & Partial<ImageModelInfo>): ImageModelInfo {
+  return {
+    provider: KIE_PROVIDER_ID,
+    familyId: fields.id,
+    familyName: fields.name,
+    operationRole: fields.kind === "text-to-image" ? "text-to-image" : fields.kind === "image-to-image" ? "image-to-image" : "unified",
+    resolution: null,
+    background: null,
+    outputFormat: null,
+    watermark: false,
+    ...fields,
+  };
 }
 
 /** Enforces KIE's documented GPT Image 2 aspect-ratio/resolution/background combinations. */
@@ -84,6 +94,9 @@ function gptImage2(id: "gpt-image-2-text-to-image" | "gpt-image-2-image-to-image
     id,
     name: imageToImage ? "GPT Image 2 (image to image)" : "GPT Image 2 (text to image)",
     kind: imageToImage ? "image-to-image" : "text-to-image",
+    familyId: "gpt-image-2",
+    familyName: "GPT Image 2",
+    operationRole: imageToImage ? "image-to-image" : "text-to-image",
     promptMaxLength: 20_000,
     referenceImages: imageToImage ? references(1, 16) : references(0, 0),
     aspectRatio: option(GPT_IMAGE_2_RATIOS, "auto"),
@@ -121,6 +134,9 @@ const GROK_TEXT = info({
   id: "grok-imagine-image-2-0/text-to-image",
   name: "Grok Imagine Image 2.0 (text to image)",
   kind: "text-to-image",
+  familyId: "grok-imagine-image-2-0",
+  familyName: "Grok Imagine Image 2.0",
+  operationRole: "text-to-image",
   promptMaxLength: null,
   referenceImages: references(0, 0),
   aspectRatio: option(GROK_RATIOS, null, true),
@@ -131,6 +147,9 @@ const GROK_EDIT = info({
   id: "grok-imagine-image-2-0/image-edit",
   name: "Grok Imagine Image 2.0 (image edit)",
   kind: "image-to-image",
+  familyId: "grok-imagine-image-2-0",
+  familyName: "Grok Imagine Image 2.0",
+  operationRole: "image-to-image",
   promptMaxLength: 8_000,
   referenceImages: references(1, 5),
   aspectRatio: option(GROK_EDIT_RATIOS, null, true),

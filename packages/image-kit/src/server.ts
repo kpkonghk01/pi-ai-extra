@@ -1,7 +1,31 @@
-import { randomUUID } from 'node:crypto';
-import { GOOGLE_IMAGE_MODELS, generateGoogleImage, type GoogleImageRequest, type ImageModelInfo } from '@hk01/pi-ai-extra-google';
-import { KIE_IMAGE_MODELS, generateKieImage, isPiAiExtraError, type ImageGenerationResult, type KieImageRequest, type PiAiExtraError } from '@hk01/pi-ai-extra-kie';
-import { TOAPIS_IMAGE_MODELS, generateToapisImage, type ToapisImageRequest } from '@hk01/pi-ai-extra-toapis';
+import { randomUUID } from "node:crypto";
+import {
+  GOOGLE_IMAGE_MODELS,
+  generateGoogleImage,
+  type GoogleImageRequest,
+  type ImageModelInfo,
+} from "@hk01/pi-ai-extra-google";
+import {
+  KIE_IMAGE_MODELS,
+  generateKieImage,
+  isPiAiExtraError,
+  type ImageGenerationResult,
+  type KieImageRequest,
+  type PiAiExtraError,
+} from "@hk01/pi-ai-extra-kie";
+import {
+  TOAPIS_IMAGE_MODELS,
+  generateToapisImage,
+  type ToapisImageRequest,
+} from "@hk01/pi-ai-extra-toapis";
+import {
+  descriptionForFamily,
+  familiesForScope,
+  operationForRequest,
+  overrideForScope,
+  type CatalogueModelFamily,
+  type CataloguePolicy,
+} from "./catalogue.ts";
 import {
   STRICT_RESOLUTIONS,
   TEMPERATURE_SUPPORT_NOTE,
@@ -12,7 +36,7 @@ import {
   type MaskEditing,
   type OutputResolution,
   type PriceEstimate,
-} from './models.ts';
+} from "./models.ts";
 
 /**
  * Server side: the only place an app talks to image providers. Each request goes to exactly
@@ -20,24 +44,32 @@ import {
  * never dropped, and a billed submission is never re-sent.
  *
  * Server-only: never import `@hk01/pi-ai-extra-image-kit/server` from browser code. App-specific
- * choices (model list, prices, secret names) go in the config passed to createImageClient().
+ * choices (catalogue policy, prices, secret names) go in the config passed to createImageClient().
  */
 
-/** One image model the app offers, mapped to a provider model operation from the package catalogues. */
-export interface ImageModelOption {
-  /** App model id, stored by the UI (for example "nano-banana-2"). */
+/** Internal normalized representation used by the scoped-client execution path. */
+interface ImageModelOption {
   id: string;
   label: string;
   description: string;
   provider: ImageProvider;
-  /** Catalogue operation used with reference images (and without them, unless textOnlyModel is set). */
   model: string;
-  /** Catalogue text-to-image operation used when a request has no reference images. */
   textOnlyModel?: string;
   maskEditing: MaskEditing;
-  /** Verified list prices only; null shows "—". */
   price: PriceEstimate | null;
 }
+
+interface StaticImageClientConfig extends Omit<ImageClientConfig, "policy"> {
+  models: readonly ImageModelOption[];
+}
+
+/** Re-exports the app policy contract used to derive selector options from provider catalogues. */
+export type {
+  CanonicalModelKey,
+  CatalogueModelOverride,
+  CataloguePolicy,
+  CatalogueScopePolicy,
+} from "./catalogue.ts";
 
 /** Re-encodes a reference image the model cannot take as is (for example WebP for Seedream, or too large). */
 export type ReferenceConverter = (
@@ -48,8 +80,8 @@ export type ReferenceConverter = (
 export interface ImageClientConfig {
   /** App name for usage logs and ToAPIs client_business_id (`<app>:<uuid>`). */
   app: string;
-  /** Selector order within each provider group. */
-  models: readonly ImageModelOption[];
+  /** Provider catalogue families plus app-owned default and tool-scoped policy overlays. */
+  policy: CataloguePolicy;
   /** Secret names to read per provider, first non-empty wins. Defaults below. */
   secretNames?: Partial<Record<ImageProvider, readonly string[]>>;
   providerLabels?: Partial<Record<ImageProvider, string>>;
@@ -114,38 +146,51 @@ export interface ImageResult {
   taskId: string | undefined;
 }
 
-export interface ImageClient {
-  /** Body of GET /api/image-models: `{ models: listModels() }`. */
+/** A client pinned to one route-owned scope. Browser input cannot switch its policy. */
+export interface ImageScopeClient {
+  /** Body of GET /api/image-models?scope=…: `{ models: listModels() }`. */
   listModels(): ImageModelView[];
   findModel(appModelId: string): ImageModelView | undefined;
   /** Validates everything that can fail before a provider is called (AppImageError with HTTP 400 / 503). */
   prepare(request: ImageRequest): Promise<PreparedImageRequest>;
   /** Generates or edits one image with the prepared provider/model. */
-  run(prepared: PreparedImageRequest, signal?: AbortSignal): Promise<ImageResult>;
+  run(
+    prepared: PreparedImageRequest,
+    signal?: AbortSignal,
+  ): Promise<ImageResult>;
+}
+
+/** Creates route-owned scoped clients from one app catalogue policy. */
+export interface ImageClient {
+  forScope(scope: string): ImageScopeClient;
 }
 
 export class AppImageError extends Error {
   readonly details: ImageErrorDetails;
   /** HTTP status when the error is found before any provider call. */
   readonly httpStatus: number;
-  constructor(message: string, details: ImageErrorDetails = {}, options: { httpStatus?: number; cause?: unknown } = {}) {
+  constructor(
+    message: string,
+    details: ImageErrorDetails = {},
+    options: { httpStatus?: number; cause?: unknown } = {},
+  ) {
     super(message, { cause: options.cause });
-    this.name = 'AppImageError';
+    this.name = "AppImageError";
     this.details = details;
     this.httpStatus = options.httpStatus ?? 500;
   }
 }
 
 const DEFAULT_SECRET_NAMES: Record<ImageProvider, readonly string[]> = {
-  google: ['GEMINI_API_KEY', 'API_KEY'],
-  kie: ['KIE_API_KEY'],
-  toapis: ['TOAPIS_API_KEY'],
+  google: ["GEMINI_API_KEY", "API_KEY"],
+  kie: ["KIE_API_KEY"],
+  toapis: ["TOAPIS_API_KEY"],
 };
 
 const DEFAULT_PROVIDER_LABELS: Record<ImageProvider, string> = {
-  google: 'Google Gemini',
-  kie: 'KIE 提供',
-  toapis: 'ToAPIs 提供',
+  google: "Google Gemini",
+  kie: "KIE 提供",
+  toapis: "ToAPIs 提供",
 };
 
 const CATALOGUES: Record<ImageProvider, readonly ImageModelInfo[]> = {
@@ -154,28 +199,45 @@ const CATALOGUES: Record<ImageProvider, readonly ImageModelInfo[]> = {
   toapis: TOAPIS_IMAGE_MODELS,
 };
 
-const OUTPUT_RESOLUTIONS: readonly OutputResolution[] = ['1K', '2K', '4K'];
+const OUTPUT_RESOLUTIONS: readonly OutputResolution[] = ["1K", "2K", "4K"];
 
 /**
  * KIE GPT Image 2 values that are unavailable at a resolution. The catalogue states these only
  * as notes (the package rejects them), so they are repeated here to pick values it accepts.
  */
 const KIE_GPT_IMAGE_2_BLOCKED: Record<string, readonly string[]> = {
-  '2K': ['5:4', '4:5', '3:1', '1:3', '9:21', 'auto'],
-  '4K': ['1:1', '3:1', '1:3', '9:21', 'auto'],
+  "2K": ["5:4", "4:5", "3:1", "1:3", "9:21", "auto"],
+  "4K": ["1:1", "3:1", "1:3", "9:21", "auto"],
 };
 
-function blockedAspects(info: ImageModelInfo, resolution: string | undefined): readonly string[] {
-  if (info.provider !== 'kie' || !info.id.startsWith('gpt-image-2-') || resolution === undefined) return [];
+function blockedAspects(
+  info: ImageModelInfo,
+  resolution: string | undefined,
+): readonly string[] {
+  if (
+    info.provider !== "kie" ||
+    !info.id.startsWith("gpt-image-2-") ||
+    resolution === undefined
+  )
+    return [];
   return KIE_GPT_IMAGE_2_BLOCKED[resolution] ?? [];
 }
 
 /** The model's own ratio for a target aspect: an exact match, otherwise the nearest it accepts. */
-export function pickAspectRatio(info: ImageModelInfo, target: number, resolution: string | undefined): string | undefined {
+export function pickAspectRatio(
+  info: ImageModelInfo,
+  target: number,
+  resolution: string | undefined,
+): string | undefined {
   if (!info.aspectRatio) return undefined;
   const blocked = blockedAspects(info, resolution);
-  const candidates = info.aspectRatio.values.filter((value) => value !== 'auto' && !blocked.includes(value));
-  const distance = (value: string): number => Math.abs(Math.log((ratioValue(value) ?? Number.POSITIVE_INFINITY) / target));
+  const candidates = info.aspectRatio.values.filter(
+    (value) => value !== "auto" && !blocked.includes(value),
+  );
+  const distance = (value: string): number =>
+    Math.abs(
+      Math.log((ratioValue(value) ?? Number.POSITIVE_INFINITY) / target),
+    );
   // Equally near ratios (1:1 → 5:4 or 4:5) differ only by rounding; the catalogue order decides.
   return [...candidates].sort((a, b) => {
     const difference = distance(a) - distance(b);
@@ -188,59 +250,91 @@ export function pickAspectRatio(info: ImageModelInfo, target: number, resolution
  * (Gemini follows the input), or null when an explicit ratio is needed. With more than one image
  * the model could follow any of them, so an explicit ratio is always used then.
  */
-function inputAspectValue(info: ImageModelInfo, resolution: string | undefined, imageCount: number): string | undefined | null {
+function inputAspectValue(
+  info: ImageModelInfo,
+  resolution: string | undefined,
+  imageCount: number,
+): string | undefined | null {
   if (!info.aspectRatio) return undefined;
   if (imageCount !== 1) return null;
-  if (info.aspectRatio.values.includes('auto')) return blockedAspects(info, resolution).includes('auto') ? null : 'auto';
-  return info.provider === 'google' && info.aspectRatio.default === null && !info.aspectRatio.required ? undefined : null;
+  if (info.aspectRatio.values.includes("auto"))
+    return blockedAspects(info, resolution).includes("auto") ? null : "auto";
+  return info.provider === "google" &&
+    info.aspectRatio.default === null &&
+    !info.aspectRatio.required
+    ? undefined
+    : null;
 }
 
 /** Gemini-style parts → one prompt with numbered image markers, images kept in order. */
-export function partsToPrompt(parts: readonly ImagePart[]): { prompt: string; referenceImages: string[] } {
+export function partsToPrompt(parts: readonly ImagePart[]): {
+  prompt: string;
+  referenceImages: string[];
+} {
   const referenceImages: string[] = [];
   const lines: string[] = [];
   for (const part of parts) {
     if (part.inlineData) {
-      referenceImages.push(`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`);
+      referenceImages.push(
+        `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`,
+      );
       lines.push(`[Reference image ${referenceImages.length}]`);
     } else if (part.text) {
       lines.push(part.text);
     }
   }
-  return { prompt: lines.join('\n\n'), referenceImages };
+  return { prompt: lines.join("\n\n"), referenceImages };
 }
 
 /** Image format from the first bytes, like the packages do (a declared type is not trusted). */
 function sniffMimeType(base64: string): string | undefined {
-  const bytes = Buffer.from(base64.slice(0, 24), 'base64');
-  const startsWith = (...values: number[]): boolean => values.every((value, index) => bytes[index] === value);
-  if (startsWith(0x89, 0x50, 0x4e, 0x47)) return 'image/png';
-  if (startsWith(0xff, 0xd8, 0xff)) return 'image/jpeg';
-  if (startsWith(0x47, 0x49, 0x46, 0x38)) return 'image/gif';
-  if (startsWith(0x52, 0x49, 0x46, 0x46) && bytes.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
+  const bytes = Buffer.from(base64.slice(0, 24), "base64");
+  const startsWith = (...values: number[]): boolean =>
+    values.every((value, index) => bytes[index] === value);
+  if (startsWith(0x89, 0x50, 0x4e, 0x47)) return "image/png";
+  if (startsWith(0xff, 0xd8, 0xff)) return "image/jpeg";
+  if (startsWith(0x47, 0x49, 0x46, 0x38)) return "image/gif";
+  if (
+    startsWith(0x52, 0x49, 0x46, 0x46) &&
+    bytes.subarray(8, 12).toString("ascii") === "WEBP"
+  )
+    return "image/webp";
   return undefined;
 }
 
 /** Actual MIME type and decoded size of a base64 data URL, or null when it is not one. */
-function inspectDataUrl(dataUrl: string): { mimeType: string; bytes: number } | null {
+function inspectDataUrl(
+  dataUrl: string,
+): { mimeType: string; bytes: number } | null {
   const match = /^data:([^;,]+);base64,(.*)$/s.exec(dataUrl);
   if (!match) return null;
-  const data = (match[2] ?? '').replace(/\s/g, '');
-  const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
-  const declared = (match[1] ?? '').toLowerCase();
-  return { mimeType: sniffMimeType(data) ?? declared, bytes: Math.floor((data.length * 3) / 4) - padding };
+  const data = (match[2] ?? "").replace(/\s/g, "");
+  const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+  const declared = (match[1] ?? "").toLowerCase();
+  return {
+    mimeType: sniffMimeType(data) ?? declared,
+    bytes: Math.floor((data.length * 3) / 4) - padding,
+  };
 }
 
-function referenceProblem(dataUrl: string, info: ImageModelInfo): string | null {
+function referenceProblem(
+  dataUrl: string,
+  info: ImageModelInfo,
+): string | null {
   const facts = inspectDataUrl(dataUrl);
-  if (!facts) return '不是 base64 data URL';
+  if (!facts) return "不是 base64 data URL";
   const { acceptedMimeTypes, maxInlineBytes } = info.referenceImages;
-  if (!(acceptedMimeTypes as readonly string[]).includes(facts.mimeType)) return `格式 ${facts.mimeType} 不被接受（接受 ${acceptedMimeTypes.join('、')}）`;
-  if (facts.bytes > maxInlineBytes) return `大小 ${(facts.bytes / 1_048_576).toFixed(1)} MB 超過上限 ${(maxInlineBytes / 1_048_576).toFixed(0)} MB`;
+  if (!(acceptedMimeTypes as readonly string[]).includes(facts.mimeType))
+    return `格式 ${facts.mimeType} 不被接受（接受 ${acceptedMimeTypes.join("、")}）`;
+  if (facts.bytes > maxInlineBytes)
+    return `大小 ${(facts.bytes / 1_048_576).toFixed(1)} MB 超過上限 ${(maxInlineBytes / 1_048_576).toFixed(0)} MB`;
   return null;
 }
 
-function packageErrorDetails(error: PiAiExtraError, appModelId?: string): ImageErrorDetails {
+function packageErrorDetails(
+  error: PiAiExtraError,
+  appModelId?: string,
+): ImageErrorDetails {
   return {
     ...(appModelId ? { appModelId } : {}),
     provider: error.provider,
@@ -254,7 +348,8 @@ function packageErrorDetails(error: PiAiExtraError, appModelId?: string): ImageE
 
 /** Turns a package error into a user-facing message that keeps provider/model and the error code. */
 function toAppError(error: unknown, appModelId: string): Error {
-  if (error instanceof AppImageError || !isPiAiExtraError(error)) return error instanceof Error ? error : new Error(String(error));
+  if (error instanceof AppImageError || !isPiAiExtraError(error))
+    return error instanceof Error ? error : new Error(String(error));
   const where = `${error.provider}/${error.model}`;
   const prefixes: Partial<Record<string, string>> = {
     content_blocked: `內容未通過 ${where} 安全審查`,
@@ -264,20 +359,30 @@ function toAppError(error: unknown, appModelId: string): Error {
     aborted: `${where} 請求已取消`,
   };
   const prefix = prefixes[error.code] ?? `${where} 生成失敗 [${error.code}]`;
-  const detail = error.message.replace(/^\[[^\]]+\]\s*/, '');
-  return new AppImageError(`${prefix}：${detail}`, packageErrorDetails(error, appModelId), { cause: error });
+  const detail = error.message.replace(/^\[[^\]]+\]\s*/, "");
+  return new AppImageError(
+    `${prefix}：${detail}`,
+    packageErrorDetails(error, appModelId),
+    { cause: error },
+  );
 }
 
 /** Details for an error response. Unknown errors still report their message; nothing is hidden. */
 export function imageErrorDetails(error: unknown): ImageErrorDetails {
   if (error instanceof AppImageError) return error.details;
   if (isPiAiExtraError(error)) return packageErrorDetails(error);
-  return { code: 'unexpected' };
+  return { code: "unexpected" };
 }
 
 /** `{ error, details }` body for a JSON error response or an NDJSON `error` line. */
-export function imageErrorBody(error: unknown): { error: string; details: ImageErrorDetails } {
-  return { error: error instanceof Error ? error.message : String(error), details: imageErrorDetails(error) };
+export function imageErrorBody(error: unknown): {
+  error: string;
+  details: ImageErrorDetails;
+} {
+  return {
+    error: error instanceof Error ? error.message : String(error),
+    details: imageErrorDetails(error),
+  };
 }
 
 /** HTTP status for an error found before streaming started (400 / 503 from prepare, else 500). */
@@ -285,13 +390,17 @@ export function imageErrorStatus(error: unknown): number {
   return error instanceof AppImageError ? error.httpStatus : 500;
 }
 
-export function createImageClient(config: ImageClientConfig): ImageClient {
+function createStaticImageClient(
+  config: StaticImageClientConfig,
+): ImageScopeClient {
   const ids = new Set<string>();
   for (const option of config.models) {
-    if (ids.has(option.id)) throw new Error(`image-kit: duplicate model id "${option.id}"`);
+    if (ids.has(option.id))
+      throw new Error(`image-kit: duplicate model id "${option.id}"`);
     ids.add(option.id);
   }
-  const secretNames = (provider: ImageProvider): readonly string[] => config.secretNames?.[provider] ?? DEFAULT_SECRET_NAMES[provider];
+  const secretNames = (provider: ImageProvider): readonly string[] =>
+    config.secretNames?.[provider] ?? DEFAULT_SECRET_NAMES[provider];
 
   function providerKey(provider: ImageProvider): string | undefined {
     for (const name of secretNames(provider)) {
@@ -301,12 +410,17 @@ export function createImageClient(config: ImageClientConfig): ImageClient {
     return undefined;
   }
 
-  function catalogueInfo(provider: ImageProvider, model: string): ImageModelInfo | undefined {
+  function catalogueInfo(
+    provider: ImageProvider,
+    model: string,
+  ): ImageModelInfo | undefined {
     return CATALOGUES[provider].find((info) => info.id === model);
   }
 
   function operationInfos(option: ImageModelOption): ImageModelInfo[] {
-    const models = option.textOnlyModel ? [option.textOnlyModel, option.model] : [option.model];
+    const models = option.textOnlyModel
+      ? [option.textOnlyModel, option.model]
+      : [option.model];
     return models.flatMap((model) => {
       const info = catalogueInfo(option.provider, model);
       return info ? [info] : [];
@@ -324,15 +438,28 @@ export function createImageClient(config: ImageClientConfig): ImageClient {
       label: option.label,
       description: option.description,
       provider: option.provider,
-      providerLabel: config.providerLabels?.[option.provider] ?? DEFAULT_PROVIDER_LABELS[option.provider],
+      providerLabel:
+        config.providerLabels?.[option.provider] ??
+        DEFAULT_PROVIDER_LABELS[option.provider],
       providerModel: option.model,
-      acceptedMimeTypes: main ? [...main.referenceImages.acceptedMimeTypes] : [],
+      acceptedMimeTypes: main
+        ? [...main.referenceImages.acceptedMimeTypes]
+        : [],
       referenceLimit: {
-        min: infos.length > 0 ? Math.min(...infos.map((info) => info.referenceImages.min)) : 0,
-        max: maxes.includes(null) ? null : Math.max(0, ...maxes.map((max) => max ?? 0)),
+        min:
+          infos.length > 0
+            ? Math.min(...infos.map((info) => info.referenceImages.min))
+            : 0,
+        max: maxes.includes(null)
+          ? null
+          : Math.max(0, ...maxes.map((max) => max ?? 0)),
       },
-      temperature: main?.temperature ? { min: main.temperature.min, max: main.temperature.max } : null,
-      resolutions: OUTPUT_RESOLUTIONS.filter((value) => main?.resolution?.values.includes(value) ?? false),
+      temperature: main?.temperature
+        ? { min: main.temperature.min, max: main.temperature.max }
+        : null,
+      resolutions: OUTPUT_RESOLUTIONS.filter(
+        (value) => main?.resolution?.values.includes(value) ?? false,
+      ),
       maskEditing: option.maskEditing,
       price: option.price,
       available: hasKey && !missing,
@@ -348,18 +475,34 @@ export function createImageClient(config: ImageClientConfig): ImageClient {
     return config.models.find((option) => option.id === appModelId);
   }
 
-  async function prepareReferences(images: string[], info: ImageModelInfo, base: ImageErrorDetails): Promise<string[]> {
+  async function prepareReferences(
+    images: string[],
+    info: ImageModelInfo,
+    base: ImageErrorDetails,
+  ): Promise<string[]> {
     const fail = (index: number, problem: string): AppImageError =>
-      new AppImageError(`第 ${index + 1} 張參考圖無法送出給 ${info.id}：${problem}。`, { ...base, code: 'invalid_reference' }, { httpStatus: 400 });
-    const target = { acceptedMimeTypes: info.referenceImages.acceptedMimeTypes, maxInlineBytes: info.referenceImages.maxInlineBytes };
+      new AppImageError(
+        `第 ${index + 1} 張參考圖無法送出給 ${info.id}：${problem}。`,
+        { ...base, code: "invalid_reference" },
+        { httpStatus: 400 },
+      );
+    const target = {
+      acceptedMimeTypes: info.referenceImages.acceptedMimeTypes,
+      maxInlineBytes: info.referenceImages.maxInlineBytes,
+    };
     return Promise.all(
       images.map(async (image, index) => {
         const problem = referenceProblem(image, info);
         if (!problem) return image;
         if (!config.convertReference) throw fail(index, problem);
-        const converted = await config.convertReference(image, target).catch((error: unknown) => {
-          throw fail(index, `${problem}，轉換失敗（${error instanceof Error ? error.message : String(error)}）`);
-        });
+        const converted = await config
+          .convertReference(image, target)
+          .catch((error: unknown) => {
+            throw fail(
+              index,
+              `${problem}，轉換失敗（${error instanceof Error ? error.message : String(error)}）`,
+            );
+          });
         const remaining = referenceProblem(converted, info);
         if (remaining) throw fail(index, `轉換後仍然${remaining}`);
         return converted;
@@ -367,34 +510,75 @@ export function createImageClient(config: ImageClientConfig): ImageClient {
     );
   }
 
-  function validTemperature(value: unknown, info: ImageModelInfo, label: string, base: ImageErrorDetails): number | undefined {
+  function validTemperature(
+    value: unknown,
+    info: ImageModelInfo,
+    label: string,
+    base: ImageErrorDetails,
+  ): number | undefined {
     if (value === undefined || value === null) return undefined;
-    const invalid = (message: string): AppImageError => new AppImageError(message, { ...base, code: 'invalid_request' }, { httpStatus: 400 });
-    if (typeof value !== 'number' || !Number.isFinite(value)) throw invalid('temperature 必須是數字。');
+    const invalid = (message: string): AppImageError =>
+      new AppImageError(
+        message,
+        { ...base, code: "invalid_request" },
+        { httpStatus: 400 },
+      );
+    if (typeof value !== "number" || !Number.isFinite(value))
+      throw invalid("temperature 必須是數字。");
     if (!info.temperature) {
-      throw new AppImageError(`${label} 不支援 Temperature。${TEMPERATURE_SUPPORT_NOTE}`, { ...base, code: 'temperature_unsupported' }, { httpStatus: 400 });
+      throw new AppImageError(
+        `${label} 不支援 Temperature。${TEMPERATURE_SUPPORT_NOTE}`,
+        { ...base, code: "temperature_unsupported" },
+        { httpStatus: 400 },
+      );
     }
     if (value < info.temperature.min || value > info.temperature.max) {
-      throw invalid(`${label} 的 temperature 必須介於 ${info.temperature.min} 至 ${info.temperature.max}，收到 ${value}。`);
+      throw invalid(
+        `${label} 的 temperature 必須介於 ${info.temperature.min} 至 ${info.temperature.max}，收到 ${value}。`,
+      );
     }
     return value;
   }
 
-  function resolutionFor(info: ImageModelInfo, requested: OutputResolution | undefined, label: string, base: ImageErrorDetails): string | undefined {
+  function resolutionFor(
+    info: ImageModelInfo,
+    requested: OutputResolution | undefined,
+    label: string,
+    base: ImageErrorDetails,
+  ): string | undefined {
     if (requested === undefined) return undefined;
     if (info.resolution?.values.includes(requested)) return requested;
     if (STRICT_RESOLUTIONS.includes(requested)) {
-      throw new AppImageError(`${label} 不支援 ${requested} 解像度，請改選其他模型或解像度。`, { ...base, code: 'resolution_unsupported' }, { httpStatus: 400 });
+      throw new AppImageError(
+        `${label} 不支援 ${requested} 解像度，請改選其他模型或解像度。`,
+        { ...base, code: "resolution_unsupported" },
+        { httpStatus: 400 },
+      );
     }
     return undefined;
   }
 
-  function aspectFor(info: ImageModelInfo, request: ImageRequest, imageCount: number, resolution: string | undefined, base: ImageErrorDetails): string | undefined {
-    const kept = request.keepInputAspect ? inputAspectValue(info, resolution, imageCount) : null;
+  function aspectFor(
+    info: ImageModelInfo,
+    request: ImageRequest,
+    imageCount: number,
+    resolution: string | undefined,
+    base: ImageErrorDetails,
+  ): string | undefined {
+    const kept = request.keepInputAspect
+      ? inputAspectValue(info, resolution, imageCount)
+      : null;
     if (kept !== null) return kept;
-    const target = request.aspectRatio === undefined ? undefined : ratioValue(request.aspectRatio);
+    const target =
+      request.aspectRatio === undefined
+        ? undefined
+        : ratioValue(request.aspectRatio);
     if (target === undefined) {
-      throw new AppImageError(`無法判斷圖片比例（收到「${request.aspectRatio ?? ''}」），無法為 ${info.id} 選擇比例。`, { ...base, code: 'invalid_request' }, { httpStatus: 400 });
+      throw new AppImageError(
+        `無法判斷圖片比例（收到「${request.aspectRatio ?? ""}」），無法為 ${info.id} 選擇比例。`,
+        { ...base, code: "invalid_request" },
+        { httpStatus: 400 },
+      );
     }
     return pickAspectRatio(info, target, resolution);
   }
@@ -402,39 +586,75 @@ export function createImageClient(config: ImageClientConfig): ImageClient {
   async function prepare(request: ImageRequest): Promise<PreparedImageRequest> {
     const option = findOption(request.appModelId);
     if (!option) {
-      throw new AppImageError(`不支援的圖片模型「${request.appModelId}」，請在模型選單重新選擇。`, { code: 'unsupported_model', appModelId: request.appModelId }, { httpStatus: 400 });
+      throw new AppImageError(
+        `不支援的圖片模型「${request.appModelId}」，請在模型選單重新選擇。`,
+        { code: "unsupported_model", appModelId: request.appModelId },
+        { httpStatus: 400 },
+      );
     }
-    const base: ImageErrorDetails = { appModelId: option.id, provider: option.provider };
+    const base: ImageErrorDetails = {
+      appModelId: option.id,
+      provider: option.provider,
+    };
     const parts = partsToPrompt(request.parts);
-    const model = parts.referenceImages.length === 0 && option.textOnlyModel ? option.textOnlyModel : option.model;
+    const model =
+      parts.referenceImages.length === 0 && option.textOnlyModel
+        ? option.textOnlyModel
+        : option.model;
     const info = catalogueInfo(option.provider, model);
-    if (!info) throw new AppImageError(`已安裝的 ${option.provider} 套件不包含 ${model}。`, { ...base, code: 'unsupported_model' }, { httpStatus: 400 });
+    if (!info)
+      throw new AppImageError(
+        `已安裝的 ${option.provider} 套件不包含 ${model}。`,
+        { ...base, code: "unsupported_model" },
+        { httpStatus: 400 },
+      );
     const target: ImageErrorDetails = { ...base, model: info.id };
 
     const apiKey = providerKey(option.provider);
     if (!apiKey) {
       const secret = secretNames(option.provider)[0] ?? option.provider;
-      throw new AppImageError(`伺服器未設定 ${secret}，無法使用 ${option.label}。`, { ...target, code: 'missing_key' }, { httpStatus: 503 });
+      throw new AppImageError(
+        `伺服器未設定 ${secret}，無法使用 ${option.label}。`,
+        { ...target, code: "missing_key" },
+        { httpStatus: 503 },
+      );
     }
-    const temperature = validTemperature(request.temperature, info, option.label, target);
+    const temperature = validTemperature(
+      request.temperature,
+      info,
+      option.label,
+      target,
+    );
     const { min, max } = info.referenceImages;
     const count = parts.referenceImages.length;
     if (count < min || (max !== null && count > max)) {
       const limit = max === null ? `至少 ${min} 張` : `${min}–${max} 張`;
-      throw new AppImageError(`${option.label} 接受 ${limit}參考圖，這次有 ${count} 張（圖片不會被自動刪減）。`, { ...target, code: 'reference_limit' }, { httpStatus: 400 });
-    }
-
-    const rules = request.systemInstruction?.trim() ?? '';
-    const separateRules = info.systemInstruction === true && rules !== '';
-    const prompt = separateRules || rules === '' ? parts.prompt : `${rules}\n\n${parts.prompt}`;
-    if (info.promptMaxLength !== null && prompt.length > info.promptMaxLength) {
       throw new AppImageError(
-        `${option.label} 的 prompt 上限為 ${info.promptMaxLength.toLocaleString('en-US')} 字元，這次有 ${prompt.length.toLocaleString('en-US')} 字元。請縮短提示詞或改選其他模型。`,
-        { ...target, code: 'prompt_too_long' },
+        `${option.label} 接受 ${limit}參考圖，這次有 ${count} 張（圖片不會被自動刪減）。`,
+        { ...target, code: "reference_limit" },
         { httpStatus: 400 },
       );
     }
-    const resolution = resolutionFor(info, request.resolution, option.label, target);
+
+    const rules = request.systemInstruction?.trim() ?? "";
+    const separateRules = info.systemInstruction === true && rules !== "";
+    const prompt =
+      separateRules || rules === ""
+        ? parts.prompt
+        : `${rules}\n\n${parts.prompt}`;
+    if (info.promptMaxLength !== null && prompt.length > info.promptMaxLength) {
+      throw new AppImageError(
+        `${option.label} 的 prompt 上限為 ${info.promptMaxLength.toLocaleString("en-US")} 字元，這次有 ${prompt.length.toLocaleString("en-US")} 字元。請縮短提示詞或改選其他模型。`,
+        { ...target, code: "prompt_too_long" },
+        { httpStatus: 400 },
+      );
+    }
+    const resolution = resolutionFor(
+      info,
+      request.resolution,
+      option.label,
+      target,
+    );
     const aspectRatio = aspectFor(info, request, count, resolution, target);
     return {
       appModelId: option.id,
@@ -444,14 +664,22 @@ export function createImageClient(config: ImageClientConfig): ImageClient {
       apiKey,
       prompt,
       systemInstruction: separateRules ? rules : undefined,
-      referenceImages: await prepareReferences(parts.referenceImages, info, target),
+      referenceImages: await prepareReferences(
+        parts.referenceImages,
+        info,
+        target,
+      ),
       aspectRatio,
       resolution,
       temperature,
     };
   }
 
-  function callProvider(prepared: PreparedImageRequest, signal: AbortSignal | undefined, clientBusinessId: string | undefined): Promise<ImageGenerationResult> {
+  function callProvider(
+    prepared: PreparedImageRequest,
+    signal: AbortSignal | undefined,
+    clientBusinessId: string | undefined,
+  ): Promise<ImageGenerationResult> {
     const common = {
       apiKey: prepared.apiKey,
       model: prepared.info.id,
@@ -462,7 +690,7 @@ export function createImageClient(config: ImageClientConfig): ImageClient {
       signal,
       ...(config.fetch ? { fetch: config.fetch } : {}),
     };
-    if (prepared.provider === 'google') {
+    if (prepared.provider === "google") {
       return generateGoogleImage({
         ...common,
         temperature: prepared.temperature,
@@ -470,7 +698,8 @@ export function createImageClient(config: ImageClientConfig): ImageClient {
         ...(config.googleHeaders ? { headers: config.googleHeaders } : {}),
       } as GoogleImageRequest);
     }
-    if (prepared.provider === 'kie') return generateKieImage(common as KieImageRequest);
+    if (prepared.provider === "kie")
+      return generateKieImage(common as KieImageRequest);
     return generateToapisImage({
       ...common,
       clientBusinessId,
@@ -479,24 +708,38 @@ export function createImageClient(config: ImageClientConfig): ImageClient {
     } as ToapisImageRequest);
   }
 
-  async function run(prepared: PreparedImageRequest, signal?: AbortSignal): Promise<ImageResult> {
-    const clientBusinessId = prepared.provider === 'toapis' ? `${config.app}:${randomUUID()}` : undefined;
+  async function run(
+    prepared: PreparedImageRequest,
+    signal?: AbortSignal,
+  ): Promise<ImageResult> {
+    const clientBusinessId =
+      prepared.provider === "toapis"
+        ? `${config.app}:${randomUUID()}`
+        : undefined;
     try {
       const result = await callProvider(prepared, signal, clientBusinessId);
       console.info(
-        `[usage] app=${config.app} model=${prepared.appModelId} ${result.provider}/${result.model} task=${result.taskId ?? '-'} ref=${clientBusinessId ?? '-'} elapsedMs=${result.elapsedMs} usage=${JSON.stringify(result.usage ?? null)}`,
+        `[usage] app=${config.app} model=${prepared.appModelId} ${result.provider}/${result.model} task=${result.taskId ?? "-"} ref=${clientBusinessId ?? "-"} elapsedMs=${result.elapsedMs} usage=${JSON.stringify(result.usage ?? null)}`,
       );
       const image = result.images[0];
       if (!image) {
-        throw new AppImageError(`${result.provider}/${result.model} 沒有返回圖片。`, {
-          appModelId: prepared.appModelId,
-          provider: result.provider,
-          model: result.model,
-          code: 'no_output',
-          ...(result.taskId ? { taskId: result.taskId } : {}),
-        });
+        throw new AppImageError(
+          `${result.provider}/${result.model} 沒有返回圖片。`,
+          {
+            appModelId: prepared.appModelId,
+            provider: result.provider,
+            model: result.model,
+            code: "no_output",
+            ...(result.taskId ? { taskId: result.taskId } : {}),
+          },
+        );
       }
-      return { dataUrl: image.dataUrl, provider: result.provider, model: result.model, taskId: result.taskId };
+      return {
+        dataUrl: image.dataUrl,
+        provider: result.provider,
+        model: result.model,
+        taskId: result.taskId,
+      };
     } catch (error) {
       throw toAppError(error, prepared.appModelId);
     }
@@ -520,7 +763,7 @@ export interface StreamingResponse {
   flushHeaders(): void;
   write(chunk: string): boolean;
   end(): unknown;
-  on(event: 'close', listener: () => void): unknown;
+  on(event: "close", listener: () => void): unknown;
   readonly writableEnded: boolean;
   readonly destroyed: boolean;
 }
@@ -545,36 +788,91 @@ export async function streamImageResponse(
 ): Promise<void> {
   if (res.destroyed) {
     // The client left while the route was still preparing; nothing has been sent to a provider.
-    console.info('[image] client disconnected before the request started; nothing was sent to the provider.');
+    console.info(
+      "[image] client disconnected before the request started; nothing was sent to the provider.",
+    );
     return;
   }
   const abort = new AbortController();
-  res.on('close', () => {
+  res.on("close", () => {
     if (!res.writableEnded) abort.abort();
   });
   res.status(200);
-  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache, no-transform');
-  res.setHeader('X-Accel-Buffering', 'no');
+  res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
   const write = (event: object): void => {
-    if (!res.writableEnded && !res.destroyed) res.write(`${JSON.stringify(event)}\n`);
+    if (!res.writableEnded && !res.destroyed)
+      res.write(`${JSON.stringify(event)}\n`);
   };
   const startedAt = Date.now();
-  write({ type: 'start' });
-  const timer = setInterval(() => write({ type: 'ping', elapsedSec: Math.round((Date.now() - startedAt) / 1000) }), pingIntervalMs);
+  write({ type: "start" });
+  const timer = setInterval(
+    () =>
+      write({
+        type: "ping",
+        elapsedSec: Math.round((Date.now() - startedAt) / 1000),
+      }),
+    pingIntervalMs,
+  );
   try {
     const result = await work(abort.signal);
-    write({ ...result, type: 'complete' });
+    write({ ...result, type: "complete" });
   } catch (error) {
-    if (abort.signal.aborted) console.info('[image] request cancelled by the client:', error instanceof Error ? error.message : error);
-    else console.error('[image] request failed:', error);
-    write({ type: 'error', ...imageErrorBody(error) });
+    if (abort.signal.aborted)
+      console.info(
+        "[image] request cancelled by the client:",
+        error instanceof Error ? error.message : error,
+      );
+    else console.error("[image] request failed:", error);
+    write({ type: "error", ...imageErrorBody(error) });
   } finally {
     clearInterval(timer);
     if (!res.writableEnded) res.end();
   }
+}
+
+function optionForFamily(
+  policy: CataloguePolicy,
+  scope: string,
+  family: CatalogueModelFamily,
+): ImageModelOption {
+  const override = overrideForScope(policy, scope, family.key);
+  const primary = operationForRequest(family, 1);
+  return {
+    id: family.key,
+    label: override.label ?? family.familyName,
+    description: override.description ?? descriptionForFamily(family),
+    provider: family.provider,
+    model: primary.id,
+    ...(family.unified || !family.textToImage
+      ? {}
+      : { textOnlyModel: family.textToImage.id }),
+    maskEditing: override.maskEditing ?? "reference-only",
+    price: override.price ?? null,
+  };
+}
+
+/** Creates route-owned scoped clients from the installed provider catalogues. */
+export function createImageClient(config: ImageClientConfig): ImageClient {
+  // Built up front so a stale policy fails at startup rather than on a route's first request.
+  const scopes = new Map(
+    Object.keys(config.policy.scopes).map((scope) => {
+      const models = familiesForScope(config.policy, scope).map((family) =>
+        optionForFamily(config.policy, scope, family),
+      );
+      return [scope, createStaticImageClient({ ...config, models })] as const;
+    }),
+  );
+  return {
+    forScope: (scope: string): ImageScopeClient => {
+      const client = scopes.get(scope);
+      if (!client) throw new Error(`image-kit: unknown model scope "${scope}"`);
+      return client;
+    },
+  };
 }
 
 /** The parts of an Express response that handleImageRequest uses. */
@@ -589,7 +887,7 @@ export interface ImageRouteResponse extends StreamingResponse {
  */
 export async function handleImageRequest(
   res: ImageRouteResponse,
-  client: ImageClient,
+  client: ImageScopeClient,
   request: ImageRequest,
   finish: (image: ImageResult) => Promise<ImageStreamResult>,
 ): Promise<void> {
@@ -597,10 +895,15 @@ export async function handleImageRequest(
   try {
     prepared = await client.prepare(request);
   } catch (error) {
-    console.warn('[image] request rejected:', error instanceof Error ? error.message : error);
+    console.warn(
+      "[image] request rejected:",
+      error instanceof Error ? error.message : error,
+    );
     res.status(imageErrorStatus(error));
     res.json(imageErrorBody(error));
     return;
   }
-  await streamImageResponse(res, async (signal) => finish(await client.run(prepared, signal)));
+  await streamImageResponse(res, async (signal) =>
+    finish(await client.run(prepared, signal)),
+  );
 }

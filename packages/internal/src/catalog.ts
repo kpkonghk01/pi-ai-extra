@@ -20,11 +20,19 @@ export interface ReferenceImageSpec extends ReferenceImageLimit {
   maxInlineBytes: number;
 }
 
+export type ImageOperationRole = "unified" | "text-to-image" | "image-to-image";
+
 /** Describes one image model operation so consumer UIs can offer only valid choices. */
 export interface ImageModelInfo {
   id: string;
   name: string;
   provider: string;
+  /** Stable provider-owned family ID, shared by paired text/edit operations. */
+  familyId: string;
+  /** User-facing family label. Consumers select this rather than an operation. */
+  familyName: string;
+  /** Operation chosen by image-kit from whether a request has reference images. */
+  operationRole: ImageOperationRole;
   kind: "text-to-image" | "image-to-image" | "text-and-image-to-image";
   promptMaxLength: number | null;
   referenceImages: ReferenceImageSpec;

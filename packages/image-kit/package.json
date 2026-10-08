@@ -1,6 +1,6 @@
 {
   "name": "@hk01/pi-ai-extra-image-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Image client for AI Studio apps on top of the pi-ai-extra provider packages: model list, validation, NDJSON streaming, browser reader and React UI",
   "license": "UNLICENSED",
   "type": "module",
@@ -65,9 +65,9 @@
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\""
   },
   "peerDependencies": {
-    "@hk01/pi-ai-extra-google": ">=0.2.0 <1.0.0",
-    "@hk01/pi-ai-extra-kie": ">=0.1.0 <1.0.0",
-    "@hk01/pi-ai-extra-toapis": ">=0.1.0 <1.0.0",
+    "@hk01/pi-ai-extra-google": ">=0.3.2 <1.0.0",
+    "@hk01/pi-ai-extra-kie": ">=0.2.0 <1.0.0",
+    "@hk01/pi-ai-extra-toapis": ">=0.2.0 <1.0.0",
     "react": ">=18.0.0"
   },
   "peerDependenciesMeta": {

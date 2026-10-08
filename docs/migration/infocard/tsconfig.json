@@ -23,10 +23,11 @@
       "@hk01/pi-ai-extra-kie": ["../../../packages/kie/dist/index.d.mts"],
       "@hk01/pi-ai-extra-toapis": ["../../../packages/toapis/dist/index.d.mts"],
       "@hk01/pi-ai-extra-google": ["../../../packages/google/dist/index.d.mts"],
-      "@hk01/pi-ai-extra-image-kit": ["../../../packages/image-kit/dist/index.d.mts"],
-      "@hk01/pi-ai-extra-image-kit/server": ["../../../packages/image-kit/dist/server.d.mts"],
-      "@hk01/pi-ai-extra-image-kit/browser": ["../../../packages/image-kit/dist/browser.d.mts"],
-      "@hk01/pi-ai-extra-image-kit/react": ["../../../packages/image-kit/dist/react.d.mts"],
+      // These files target image-kit 0.1; 0.2 replaced its static model API.
+      "@hk01/pi-ai-extra-image-kit": ["./typecheck/image-kit-v0.1/index.d.ts"],
+      "@hk01/pi-ai-extra-image-kit/server": ["./typecheck/image-kit-v0.1/server.d.ts"],
+      "@hk01/pi-ai-extra-image-kit/browser": ["./typecheck/image-kit-v0.1/browser.d.ts"],
+      "@hk01/pi-ai-extra-image-kit/react": ["./typecheck/image-kit-v0.1/react.d.ts"],
       // Real React types, installed for the image kit.
       "react": ["../../../packages/image-kit/node_modules/@types/react/index.d.ts"],
       "react/jsx-runtime": ["../../../packages/image-kit/node_modules/@types/react/jsx-runtime.d.ts"]

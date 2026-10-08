@@ -240,6 +240,19 @@ describe("KIE catalogue and pi-ai adapters", () => {
     });
   });
 
+  it("declares GPT Image 2 and Grok operation families", () => {
+    assert.deepEqual(
+      KIE_IMAGE_MODELS.map((model) => [model.id, model.familyId, model.operationRole]),
+      [
+        ["grok-imagine-image-2-0/text-to-image", "grok-imagine-image-2-0", "text-to-image"],
+        ["grok-imagine-image-2-0/image-edit", "grok-imagine-image-2-0", "image-to-image"],
+        ["gpt-image-2-text-to-image", "gpt-image-2", "text-to-image"],
+        ["gpt-image-2-image-to-image", "gpt-image-2", "image-to-image"],
+        ["nano-banana-2", "nano-banana-2", "unified"],
+      ],
+    );
+  });
+
   it("generates through pi-ai ImagesModels with validated metadata", async () => {
     const fake = createFakeFetch(kieRoutes());
     const images = createImagesModels();

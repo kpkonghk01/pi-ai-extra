@@ -103,10 +103,12 @@ export function isAbort(error: unknown, signal?: AbortSignal): boolean {
   return signal?.aborted === true || (error instanceof Error && error.name === 'AbortError');
 }
 
-export async function fetchImageModels(url: string = '/api/image-models'): Promise<ImageModelView[]> {
+export async function fetchImageModels(scope: string, url: string = '/api/image-models'): Promise<ImageModelView[]> {
+  const separator = url.includes('?') ? '&' : '?';
+  const scopedUrl = `${url}${separator}scope=${encodeURIComponent(scope)}`;
   let response: Response;
   try {
-    response = await fetch(url);
+    response = await fetch(scopedUrl);
   } catch (error) {
     throw new ImageRequestError(`無法載入圖片模型清單：${error instanceof Error ? error.message : String(error)}`, { code: 'network' });
   }

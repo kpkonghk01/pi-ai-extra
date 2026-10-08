@@ -1,6 +1,26 @@
-import { useEffect, useState, useSyncExternalStore, type CSSProperties, type FC, type ReactNode } from 'react';
-import { fetchImageModels, formatErrorReport, reportError, subscribeErrors, type ErrorEntry } from './browser.ts';
-import { modelIssue, referenceIssue, type ImageModelView, type ImageProvider, type ModelNeeds } from './models.ts';
+import {
+  useCallback,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+  type FC,
+  type ReactNode,
+} from "react";
+import {
+  fetchImageModels,
+  formatErrorReport,
+  reportError,
+  subscribeErrors,
+  type ErrorEntry,
+} from "./browser.ts";
+import {
+  modelIssue,
+  referenceIssue,
+  type ImageModelView,
+  type ImageProvider,
+  type ModelNeeds,
+} from "./models.ts";
 
 /**
  * React UI: model list hook, provider-grouped selector, issue hint and error panel. The app
@@ -15,59 +35,87 @@ export interface ImageModelsState {
   failed: boolean;
 }
 
-/**
- * The model list is loaded once per page and shared by every component that uses it. A failed
- * load is reported to the ErrorPanel once; reload() from any component retries for all of them.
- */
-let snapshot: ImageModelsState = { models: [], loading: true, failed: false };
-let pending: Promise<void> | null = null;
-let started = false;
-const listeners = new Set<() => void>();
-
-function publish(next: ImageModelsState): void {
-  snapshot = next;
-  listeners.forEach((listener) => listener());
+/** One cache per route-owned scope; models from one tool never replace another tool's selector. */
+interface ScopeStore {
+  snapshot: ImageModelsState;
+  pending: Promise<void> | null;
+  started: boolean;
+  listeners: Set<() => void>;
 }
 
-function loadImageModels(): void {
-  if (pending) return;
-  started = true;
-  publish({ ...snapshot, loading: true, failed: false });
-  pending = fetchImageModels().then(
+const stores = new Map<string, ScopeStore>();
+
+function storeFor(scope: string): ScopeStore {
+  const current = stores.get(scope);
+  if (current) return current;
+  const created: ScopeStore = {
+    snapshot: { models: [], loading: true, failed: false },
+    pending: null,
+    started: false,
+    listeners: new Set(),
+  };
+  stores.set(scope, created);
+  return created;
+}
+
+function publish(store: ScopeStore, next: ImageModelsState): void {
+  store.snapshot = next;
+  store.listeners.forEach((listener) => listener());
+}
+
+function loadImageModels(scope: string, store: ScopeStore): void {
+  if (store.pending) return;
+  store.started = true;
+  publish(store, { ...store.snapshot, loading: true, failed: false });
+  store.pending = fetchImageModels(scope).then(
     (models) => {
-      pending = null;
-      publish({ models, loading: false, failed: false });
+      store.pending = null;
+      publish(store, { models, loading: false, failed: false });
     },
     (error: unknown) => {
-      pending = null;
-      reportError(error, '載入圖片模型清單');
-      publish({ models: snapshot.models, loading: false, failed: true });
+      store.pending = null;
+      reportError(error, "載入圖片模型清單", { scope });
+      publish(store, {
+        models: store.snapshot.models,
+        loading: false,
+        failed: true,
+      });
     },
   );
 }
 
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
+function subscribe(store: ScopeStore, listener: () => void): () => void {
+  store.listeners.add(listener);
   return () => {
-    listeners.delete(listener);
+    store.listeners.delete(listener);
   };
 }
 
-const getSnapshot = (): ImageModelsState => snapshot;
-
-export function useImageModels(): ImageModelsState & { reload: () => void } {
-  const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+/** Loads the server-derived model list for one route-owned tool scope. */
+export function useImageModels(
+  scope: string,
+): ImageModelsState & { reload: () => void } {
+  const store = storeFor(scope);
+  const subscribeScope = useCallback(
+    (listener: () => void) => subscribe(store, listener),
+    [store],
+  );
+  const getSnapshot = useCallback(() => store.snapshot, [store]);
+  const state = useSyncExternalStore(subscribeScope, getSnapshot, getSnapshot);
   useEffect(() => {
-    if (!started) loadImageModels();
-  }, []);
-  return { ...state, reload: loadImageModels };
+    if (!store.started) loadImageModels(scope, store);
+  }, [scope, store]);
+  return { ...state, reload: () => loadImageModels(scope, store) };
 }
 
-export function findImageModel(models: readonly ImageModelView[], id: string): ImageModelView | undefined {
+export function findImageModel(
+  models: readonly ImageModelView[],
+  id: string,
+): ImageModelView | undefined {
   return models.find((model) => model.id === id);
 }
 
-/** Providers in the order their first model appears in the server's list (the app's config order). */
+/** Providers in the order their first model appears in the server's list (Google, ToAPIs, KIE). */
 function providerOrder(models: readonly ImageModelView[]): ImageProvider[] {
   return [...new Set(models.map((model) => model.provider))];
 }
@@ -93,7 +141,7 @@ export interface ImageModelSelectorProps {
 }
 
 /**
- * Image model picker grouped by provider, in the app's model order. Models without a server key,
+ * Image model picker grouped by provider, in the server's catalogue order. Models without a server key,
  * with a lower reference-image limit or without the chosen strict resolution stay visible but
  * disabled, with the reason in the label.
  */
@@ -110,15 +158,21 @@ export const ImageModelSelector: FC<ImageModelSelectorProps> = ({
   optionClassName,
   formatLabel = identity,
 }) => {
-  const known = models.length === 0 || findImageModel(models, value) !== undefined;
+  const known =
+    models.length === 0 || findImageModel(models, value) !== undefined;
   useEffect(() => {
     if (!known && value !== defaultModelId) onChange(defaultModelId);
   }, [known, value, defaultModelId, onChange]);
 
   if (failed && models.length === 0) {
     return (
-      <button type="button" onClick={onReload} className={className} title="重新載入圖片模型清單">
-        {formatLabel('模型清單載入失敗，按此重試')}
+      <button
+        type="button"
+        onClick={onReload}
+        className={className}
+        title="重新載入圖片模型清單"
+      >
+        {formatLabel("模型清單載入失敗，按此重試")}
       </button>
     );
   }
@@ -126,23 +180,39 @@ export const ImageModelSelector: FC<ImageModelSelectorProps> = ({
     return (
       <select disabled className={className} value="">
         <option value="" className={optionClassName}>
-          {formatLabel('載入模型中…')}
+          {formatLabel("載入模型中…")}
         </option>
       </select>
     );
   }
   const selected = findImageModel(models, value);
   return (
-    <select value={value} onChange={(event) => onChange(event.target.value)} className={className} title={selected ? formatLabel(selected.description) : undefined}>
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className={className}
+      title={selected ? formatLabel(selected.description) : undefined}
+    >
       {providerOrder(models).map((provider) => {
         const group = models.filter((model) => model.provider === provider);
         return (
-          <optgroup key={provider} label={formatLabel(group[0]?.providerLabel ?? provider)} className={optionClassName}>
+          <optgroup
+            key={provider}
+            label={formatLabel(group[0]?.providerLabel ?? provider)}
+            className={optionClassName}
+          >
             {group.map((model) => {
               const issue = modelIssue(model, needs);
               return (
-                <option key={model.id} value={model.id} disabled={issue !== null && model.id !== value} className={optionClassName}>
-                  {formatLabel(issue ? `${model.label}（${issue}）` : model.label)}
+                <option
+                  key={model.id}
+                  value={model.id}
+                  disabled={issue !== null && model.id !== value}
+                  className={optionClassName}
+                >
+                  {formatLabel(
+                    issue ? `${model.label}（${issue}）` : model.label,
+                  )}
                 </option>
               );
             })}
@@ -161,23 +231,37 @@ export interface ImageModelIssueProps {
   formatLabel?: (text: string) => string;
 }
 
-const ISSUE_STYLE: CSSProperties = { marginTop: 8, fontSize: 12, fontWeight: 600, color: '#dc2626' };
+const ISSUE_STYLE: CSSProperties = {
+  marginTop: 8,
+  fontSize: 12,
+  fontWeight: 600,
+  color: "#dc2626",
+};
 
 /** Red hint shown near the Generate button when the selected model cannot run as configured. */
-export const ImageModelIssue: FC<ImageModelIssueProps> = ({ model, needs, className, formatLabel = identity }) => {
+export const ImageModelIssue: FC<ImageModelIssueProps> = ({
+  model,
+  needs,
+  className,
+  formatLabel = identity,
+}) => {
   if (!model) return null;
   const issue = modelIssue(model, needs);
   if (!issue) return null;
   const { max } = model.referenceLimit;
   const fix = !model.available
-    ? '請改選其他模型，或請管理員設定金鑰。'
+    ? "請改選其他模型，或請管理員設定金鑰。"
     : referenceIssue(model, needs.referenceCount)
       ? max !== null && needs.referenceCount > max
-        ? '請移除部分圖片，或改選其他模型。'
-        : '請加入參考圖，或改選其他模型。'
-      : '請改選其他模型或解像度。';
+        ? "請移除部分圖片，或改選其他模型。"
+        : "請加入參考圖，或改選其他模型。"
+      : "請改選其他模型或解像度。";
   return (
-    <p role="status" className={className} style={className ? undefined : ISSUE_STYLE}>
+    <p
+      role="status"
+      className={className}
+      style={className ? undefined : ISSUE_STYLE}
+    >
       {formatLabel(`目前模型「${model.label}」${issue}。${fix}`)}
     </p>
   );
@@ -189,22 +273,38 @@ async function copyText(text: string): Promise<boolean> {
     await navigator.clipboard.writeText(text);
     return true;
   } catch {
-    const area = document.createElement('textarea');
+    const area = document.createElement("textarea");
     area.value = text;
-    area.style.position = 'fixed';
-    area.style.opacity = '0';
+    area.style.position = "fixed";
+    area.style.opacity = "0";
     document.body.appendChild(area);
     area.select();
-    const copied = document.execCommand('copy');
+    const copied = document.execCommand("copy");
     area.remove();
     return copied;
   }
 }
 
 /** 16 px stroke icons (Lucide shapes), so the package needs no icon library. */
-function Icon({ size = 16, children }: { size?: number; children: ReactNode }): ReactNode {
+function Icon({
+  size = 16,
+  children,
+}: {
+  size?: number;
+  children: ReactNode;
+}): ReactNode {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       {children}
     </svg>
   );
@@ -234,80 +334,99 @@ const CopyIcon = (): ReactNode => (
   </Icon>
 );
 
-const RED = '#dc2626';
+const RED = "#dc2626";
 const PANEL_STYLES: Record<string, CSSProperties> = {
   pill: {
-    position: 'fixed',
+    position: "fixed",
     bottom: 16,
     right: 16,
     zIndex: 9999,
-    display: 'flex',
-    alignItems: 'center',
+    display: "flex",
+    alignItems: "center",
     gap: 6,
     borderRadius: 9999,
-    border: 'none',
+    border: "none",
     background: RED,
-    color: '#fff',
-    padding: '6px 12px',
+    color: "#fff",
+    padding: "6px 12px",
     fontSize: 12,
     fontWeight: 700,
-    boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.2)',
-    cursor: 'pointer',
+    boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.2)",
+    cursor: "pointer",
   },
   panel: {
-    position: 'fixed',
+    position: "fixed",
     bottom: 16,
     right: 16,
     zIndex: 9999,
-    width: 'min(28rem, calc(100vw - 2rem))',
+    width: "min(28rem, calc(100vw - 2rem))",
     borderRadius: 12,
-    border: '1px solid #fca5a5',
-    background: '#fff',
-    color: '#1f2937',
+    border: "1px solid #fca5a5",
+    background: "#fff",
+    color: "#1f2937",
     fontSize: 14,
     lineHeight: 1.45,
-    textAlign: 'left',
-    boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.25)',
+    textAlign: "left",
+    boxShadow: "0 25px 50px -12px rgb(0 0 0 / 0.25)",
   },
   header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: 8,
-    borderRadius: '12px 12px 0 0',
-    background: '#fef2f2',
-    padding: '8px 12px',
+    borderRadius: "12px 12px 0 0",
+    background: "#fef2f2",
+    padding: "8px 12px",
   },
-  title: { display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: '#b91c1c' },
-  iconButton: { display: 'flex', border: 'none', background: 'transparent', color: '#6b7280', padding: 4, borderRadius: 4, cursor: 'pointer' },
-  body: { display: 'flex', flexDirection: 'column', gap: 8, padding: '8px 12px 12px' },
-  message: { margin: 0, overflowWrap: 'anywhere' },
+  title: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    fontWeight: 700,
+    color: "#b91c1c",
+  },
+  iconButton: {
+    display: "flex",
+    border: "none",
+    background: "transparent",
+    color: "#6b7280",
+    padding: 4,
+    borderRadius: 4,
+    cursor: "pointer",
+  },
+  body: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+    padding: "8px 12px 12px",
+  },
+  message: { margin: 0, overflowWrap: "anywhere" },
   report: {
     margin: 0,
     maxHeight: 160,
-    overflow: 'auto',
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-all',
+    overflow: "auto",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-all",
     borderRadius: 4,
-    background: '#f9fafb',
+    background: "#f9fafb",
     padding: 8,
     fontSize: 11,
-    color: '#4b5563',
-    userSelect: 'all',
+    color: "#4b5563",
+    userSelect: "all",
   },
   copy: {
-    display: 'flex',
-    alignItems: 'center',
+    display: "flex",
+    alignItems: "center",
     gap: 6,
-    alignSelf: 'flex-start',
-    border: 'none',
+    alignSelf: "flex-start",
+    border: "none",
     borderRadius: 8,
     background: RED,
-    color: '#fff',
-    padding: '6px 12px',
+    color: "#fff",
+    padding: "6px 12px",
     fontSize: 12,
     fontWeight: 700,
-    cursor: 'pointer',
+    cursor: "pointer",
   },
 };
 
@@ -319,25 +438,34 @@ const PANEL_STYLES: Record<string, CSSProperties> = {
 export const ErrorPanel: FC = () => {
   const [entry, setEntry] = useState<ErrorEntry | null>(null);
   const [collapsed, setCollapsed] = useState(false);
-  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
+    "idle",
+  );
 
   useEffect(
     () =>
       subscribeErrors((next) => {
         setEntry(next);
         setCollapsed(false);
-        setCopyState('idle');
+        setCopyState("idle");
       }),
     [],
   );
 
   if (!entry) return null;
   const report = formatErrorReport(entry);
-  const where = [entry.details.provider, entry.details.model].filter(Boolean).join('/');
+  const where = [entry.details.provider, entry.details.model]
+    .filter(Boolean)
+    .join("/");
 
   if (collapsed) {
     return (
-      <button type="button" onClick={() => setCollapsed(false)} className="notranslate" style={PANEL_STYLES.pill}>
+      <button
+        type="button"
+        onClick={() => setCollapsed(false)}
+        className="notranslate"
+        style={PANEL_STYLES.pill}
+      >
         <AlertIcon size={14} /> 錯誤資訊
       </button>
     );
@@ -347,13 +475,23 @@ export const ErrorPanel: FC = () => {
     <div role="alert" className="notranslate" style={PANEL_STYLES.panel}>
       <div style={PANEL_STYLES.header}>
         <span style={PANEL_STYLES.title}>
-          <AlertIcon /> {entry.operation}失敗{where ? `（${where}）` : ''}
+          <AlertIcon /> {entry.operation}失敗{where ? `（${where}）` : ""}
         </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <button type="button" onClick={() => setCollapsed(true)} title="收起" style={PANEL_STYLES.iconButton}>
+        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <button
+            type="button"
+            onClick={() => setCollapsed(true)}
+            title="收起"
+            style={PANEL_STYLES.iconButton}
+          >
             <ChevronIcon />
           </button>
-          <button type="button" onClick={() => setEntry(null)} title="關閉" style={PANEL_STYLES.iconButton}>
+          <button
+            type="button"
+            onClick={() => setEntry(null)}
+            title="關閉"
+            style={PANEL_STYLES.iconButton}
+          >
             <CloseIcon />
           </button>
         </span>
@@ -361,9 +499,19 @@ export const ErrorPanel: FC = () => {
       <div style={PANEL_STYLES.body}>
         <p style={PANEL_STYLES.message}>{entry.message}</p>
         <pre style={PANEL_STYLES.report}>{report}</pre>
-        <button type="button" onClick={async () => setCopyState((await copyText(report)) ? 'copied' : 'failed')} style={PANEL_STYLES.copy}>
+        <button
+          type="button"
+          onClick={async () =>
+            setCopyState((await copyText(report)) ? "copied" : "failed")
+          }
+          style={PANEL_STYLES.copy}
+        >
           <CopyIcon />
-          {copyState === 'copied' ? '已複製' : copyState === 'failed' ? '複製失敗，請手動選取上方文字' : '複製錯誤資訊'}
+          {copyState === "copied"
+            ? "已複製"
+            : copyState === "failed"
+              ? "複製失敗，請手動選取上方文字"
+              : "複製錯誤資訊"}
         </button>
       </div>
     </div>

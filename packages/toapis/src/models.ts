@@ -58,8 +58,18 @@ function references(max: number | null, acceptedMimeTypes: readonly ImageMimeTyp
   return { min: 0, max, acceptedMimeTypes, maxInlineBytes: INLINE_LIMIT_BYTES };
 }
 
-function info(fields: Omit<ImageModelInfo, "provider" | "kind" | "background" | "outputFormat" | "watermark"> & Partial<ImageModelInfo>): ImageModelInfo {
-  return { provider: TOAPIS_PROVIDER_ID, kind: "text-and-image-to-image", background: null, outputFormat: null, watermark: false, ...fields };
+function info(fields: Omit<ImageModelInfo, "provider" | "kind" | "familyId" | "familyName" | "operationRole" | "background" | "outputFormat" | "watermark"> & Partial<ImageModelInfo>): ImageModelInfo {
+  return {
+    provider: TOAPIS_PROVIDER_ID,
+    kind: "text-and-image-to-image",
+    familyId: fields.id,
+    familyName: fields.name,
+    operationRole: "unified",
+    background: null,
+    outputFormat: null,
+    watermark: false,
+    ...fields,
+  };
 }
 
 function nonEmpty(values: readonly string[]): string[] | undefined {
