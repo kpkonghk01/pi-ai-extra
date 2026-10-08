@@ -185,6 +185,14 @@ describe("ToAPIs catalogue and pi-ai adapters", () => {
     });
   });
 
+  it("declares each ToAPIs operation as its own unified family", () => {
+    for (const model of TOAPIS_IMAGE_MODELS) {
+      assert.equal(model.familyId, model.id);
+      assert.equal(model.familyName, model.name);
+      assert.equal(model.operationRole, "unified");
+    }
+  });
+
   it("generates through pi-ai ImagesModels", async () => {
     const fake = createFakeFetch(routes());
     const images = createImagesModels();

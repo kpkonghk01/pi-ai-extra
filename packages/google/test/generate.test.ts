@@ -212,6 +212,17 @@ describe("Google catalogue and pi-ai adapter", () => {
     );
   });
 
+  it("declares each Google operation as its own unified family", () => {
+    assert.deepEqual(
+      GOOGLE_IMAGE_MODELS.map((model) => [model.id, model.familyId, model.familyName, model.operationRole]),
+      [
+        ["gemini-nano-banana-2.1", "gemini-nano-banana-2.1", "Gemini Nano Banana 2.1", "unified"],
+        ["gemini-3.1-flash-image", "gemini-3.1-flash-image", "Gemini 3.1 Flash Image (Nano Banana 2)", "unified"],
+        ["gemini-3-pro-image", "gemini-3-pro-image", "Gemini 3 Pro Image (Nano Banana Pro)", "unified"],
+      ],
+    );
+  });
+
   it("lists temperature (0-2) and system-instruction support for every model", () => {
     for (const model of GOOGLE_IMAGE_MODELS) {
       assert.deepEqual(model.temperature, { min: 0, max: 2 }, model.id);
