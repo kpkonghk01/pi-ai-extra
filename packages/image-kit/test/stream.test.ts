@@ -124,14 +124,17 @@ describe('streamImageResponse', () => {
 describe('handleImageRequest', () => {
   const PNG = dataUrl(PNG_BYTES, 'image/png');
   const GOOGLE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent';
-  const models = [{ id: 'nb2', label: 'NB2', description: '', provider: 'google' as const, model: 'gemini-3.1-flash-image', maskEditing: 'supported' as const, price: null }];
+  const policy = { scopes: { generate: {} } };
 
   it('answers validation errors with JSON and their HTTP status, without streaming', async () => {
     const res = new FakeResponse();
     const original = console.warn;
     console.warn = () => undefined;
     try {
-      await handleImageRequest(res, createImageClient({ app: 't', models, env: {} }), { appModelId: 'nb2', parts: [{ text: 'x' }], aspectRatio: '1:1' }, async (image) => ({
+      await handleImageRequest(
+        res,
+        createImageClient({ app: 't', policy, env: {} }).forScope('generate'),
+        { appModelId: 'google:gemini-3.1-flash-image', parts: [{ text: 'x' }], aspectRatio: '1:1' }, async (image) => ({
         imageUrl: image.dataUrl,
       }));
     } finally {
@@ -150,12 +153,12 @@ describe('handleImageRequest', () => {
         respond: () => jsonResponse({ candidates: [{ finishReason: 'STOP', content: { parts: [{ inlineData: { mimeType: 'image/png', data: PNG.split(',')[1] } }] } }] }),
       },
     ]);
-    const client = createImageClient({ app: 't', models, env: { GEMINI_API_KEY: 'k' }, fetch: fake.fetch });
+    const client = createImageClient({ app: 't', policy, env: { GEMINI_API_KEY: 'k' }, fetch: fake.fetch }).forScope('generate');
     const res = new FakeResponse();
     const original = console.info;
     console.info = () => undefined;
     try {
-      await handleImageRequest(res, client, { appModelId: 'nb2', parts: [{ text: 'x' }], aspectRatio: '1:1' }, async (image) => ({ imageUrl: `${image.dataUrl}#done`, model: image.model }));
+      await handleImageRequest(res, client, { appModelId: 'google:gemini-3.1-flash-image', parts: [{ text: 'x' }], aspectRatio: '1:1' }, async (image) => ({ imageUrl: `${image.dataUrl}#done`, model: image.model }));
     } finally {
       console.info = original;
     }

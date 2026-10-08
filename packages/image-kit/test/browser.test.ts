@@ -104,14 +104,15 @@ describe('postImageRequest', () => {
 });
 
 describe('fetchImageModels', () => {
-  it('returns the models array', async () => {
-    respondWith(Response.json({ models: [{ id: 'a' }] }));
-    assert.deepEqual(await fetchImageModels(), [{ id: 'a' }]);
+  it('returns the models array for one route-owned scope', async () => {
+    const calls = respondWith(Response.json({ models: [{ id: 'a' }] }));
+    assert.deepEqual(await fetchImageModels('collage'), [{ id: 'a' }]);
+    assert.equal(calls[0]?.url, '/api/image-models?scope=collage');
   });
 
   it('rejects a body without models', async () => {
     respondWith(Response.json({}));
-    await assert.rejects(fetchImageModels(), (error: unknown) => error instanceof ImageRequestError && error.details.code === 'invalid_response');
+    await assert.rejects(fetchImageModels('editor'), (error: unknown) => error instanceof ImageRequestError && error.details.code === 'invalid_response');
   });
 });
 

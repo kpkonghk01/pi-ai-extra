@@ -36,7 +36,7 @@ _Avoid_: Multi-Provider Module, 統一 Provider Module (the earlier browser-modu
 
 ## Model option
 
-One image model that a consumer application offers to its users, under its own id and label. It maps to exactly one provider and one model operation, or to a pair of operations of one model family when text-to-image and image-to-image are separate operations.
+One image model family that a consumer application offers to its users, under its canonical model key and an optional app label. It maps to exactly one provider and either one unified model operation or a pair of text-to-image and image-to-image operations of that family.
 
 ## Image model catalogue
 
@@ -65,3 +65,27 @@ A provider's settlement state for a task's charge (`pending`, `settled`, `refund
 ## Client business id
 
 A caller-chosen identifier (for example `open-graph-single:req-123`) sent with a ToAPIs task so provider records can be attributed to an app or request, and used to look the task up later.
+
+## Catalogue policy
+
+A consumer application's policy for deriving offered model options from all installed provider catalogues. It defines a default policy and optional tool-scoped overlays. An overlay may exclude model families or override app presentation metadata, but it never changes provider transport, model capabilities, or fallback behaviour.
+
+## Canonical model key
+
+The stable identity of a provider model family, written as `<provider>:<familyId>` (for example `google:gemini-nano-banana-2.1` or `kie:gpt-image-2`). Catalogue policy uses canonical model keys for exclusions and generated model IDs. A provider family is distinct from an app's former display-oriented stored model ID.
+
+## Model scope
+
+A named server-owned context in a consumer application that selects a catalogue policy overlay for one image tool or route, such as `collage`, `edit`, or `batch`. A route fixes its own scope; browser input cannot choose a broader scope for that route.
+
+## Model family
+
+A provider-owned group of one or more image model operations presented to a user as one selectable model. A family may have a unified operation, or paired text-to-image and image-to-image operations. The consumer selects the family; image-kit selects the correct family operation from whether the request includes reference images.
+
+## Model operation role
+
+The role of an operation within its model family: `unified` accepts text with or without references, `text-to-image` is used without references, and `image-to-image` is used with references. Provider catalogues declare the role; consumers do not infer it from model IDs.
+
+## Additive scope exclusion
+
+A model family excluded by an app default catalogue policy remains excluded in every tool scope. A tool scope may add family exclusions to the default policy but cannot re-include a default-excluded family. Scope exclusions express permanent tool incompatibility; dynamic request incompatibility remains a runtime validation error.

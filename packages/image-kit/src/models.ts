@@ -35,8 +35,9 @@ export interface ImageErrorDetails {
   providerCode?: string;
 }
 
-/** One entry of GET /api/image-models. */
+/** One entry of GET /api/image-models, keyed by canonical provider family ID. */
 export interface ImageModelView {
+  /** Canonical `provider:familyId`, stored by consumer UI state. */
   id: string;
   label: string;
   description: string;
@@ -68,7 +69,7 @@ export interface ModelNeeds {
 }
 
 export const TEMPERATURE_SUPPORT_NOTE =
-  'Temperature 只適用於 Google Gemini 直連的 Nano Banana 2 / Pro；KIE、ToAPIs 的模型（包括它們提供的 Nano Banana）不支援此設定。';
+  'Temperature 只適用於 catalogue 列出 temperature 範圍的模型；其他模型不支援此設定。';
 
 export const MASK_REFERENCE_ONLY_NOTE =
   '此模型以參考圖方式理解遮罩或筆劃，局部編輯可能影響標記以外的範圍；需要精準局部修改時建議使用 Nano Banana 系列。';
