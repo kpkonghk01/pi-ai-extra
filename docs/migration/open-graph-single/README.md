@@ -1,5 +1,7 @@
 # open-graph-single 遷移指南（Google AI Studio）
 
+> **image-kit 0.2 catalogue policy（後續遷移）：** 已使用 image-kit 0.1 的 app，把 [`catalogue-policy-prompt.md`](catalogue-policy-prompt.md) 整份貼給 AI Studio 的 Gemini。它以 catalogue policy 取代固定模型清單，之後升級 provider package 就會自動加入新模型。見 [ADR 0007](../../adr/0007-catalogue-policy-model-selection.md)。
+
 將 open-graph-single（即 Jira 上的 remix-open-graph-single）的 KIE、ToAPIs、Gemini 生圖邏輯，換成 `@hk01/pi-ai-extra-*` packages。對應 [DATA-4512](https://hk01-digital.atlassian.net/browse/DATA-4512) P0。
 
 有兩種做法：

@@ -1,5 +1,7 @@
 # InfoCard 遷移指南（Google AI Studio）
 
+> **image-kit 0.2 catalogue policy（後續遷移）：** 已完成本頁遷移的 app，把 [`catalogue-policy-prompt.md`](catalogue-policy-prompt.md) 整份貼給 AI Studio 的 Gemini。它以 catalogue policy 取代固定模型清單，並移除修改 `node_modules` 的 `postinstall`，之後升級 provider package 就會自動加入新模型。見 [ADR 0007](../../adr/0007-catalogue-policy-model-selection.md)。
+
 本指南把「InfoCard 多功能製圖大師」（下稱 InfoCard）全部五條生圖 route 改為使用 `@hk01/pi-ai-extra-*` packages，讓四個工具（OG 拼貼、InfoCard 圖卡、OG 奪舍、批量修圖）和圖片編輯器都可以按 provider 分組選擇 Google、ToAPIs、KIE 共 10 個圖片模型。對應 [DATA-4515](https://hk01-digital.atlassian.net/browse/DATA-4515)。
 
 文字模型（文章分析、素材提取、Prompt Magic）維持直接使用 Gemini SDK，不在這次改動範圍內。
