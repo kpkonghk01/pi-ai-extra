@@ -1,6 +1,17 @@
 # Auto OG 遷移指南（Google AI Studio）
 
 > **image-kit 0.2 catalogue policy（後續遷移）：** 已完成本頁遷移的 app，把 [`catalogue-policy-prompt.md`](catalogue-policy-prompt.md) 整份貼給 AI Studio 的 Gemini。它把 app 內的圖片 client 副本換成 image-kit 0.2，移除自行複製的 Nano Banana 2.1 metadata 和直連 Google `v1beta` 的呼叫，之後升級 provider package 就會自動加入新模型（Grok Imagine 2.0 除外）。見 [ADR 0007](../../adr/0007-catalogue-policy-model-selection.md)。
+>
+> 用戶會看到的改變：
+>
+> - 選單變成 10 個 model，順序改為 Google、ToAPIs、KIE（原本 ToAPIs 排第一）。
+> - 預設 model 維持 GPT Image 2.5 Flare (ToAPIs)。
+> - 之前存下的選擇和 Autopilot 草稿的 model 會重設為預設。
+> - Temperature 和遮罩提示改用 image-kit 的文字。
+>
+> 2026-10-13 已在當天的 auto-og 副本上驗證：`npm run lint`、`npm run build` 和假 key 的 server 實測都通過；補裝 React 型別後，也沒有新增型別錯誤。
+>
+> 下文其餘部分描述的是第一次遷移（image-kit 之前），其中 model 數量、分組次序和 `server/imageClient.ts` 等細節，在套用 catalogue policy 之後已不適用。
 
 本指南把 Auto: OG 拼貼大師（自動駕駛版，下稱 auto-og）的 collage 和 edit 生圖，改為使用 `@hk01/pi-ai-extra-*` packages，讓使用者可以按 provider 分組選擇 Google、KIE、ToAPIs 的圖片模型。對應 [DATA-4514](https://hk01-digital.atlassian.net/browse/DATA-4514)；它依賴 [DATA-4534](https://hk01-digital.atlassian.net/browse/DATA-4534)，即 `@hk01/pi-ai-extra-google` 0.2.0。
 
