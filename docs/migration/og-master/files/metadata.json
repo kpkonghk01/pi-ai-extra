@@ -1,0 +1,8 @@
+{
+  "name": "Remix: OG 拼貼大師",
+  "description": "A professional tool to generate Open Graph images by mimicking uploaded style templates, using Google Gemini, ToAPIs and KIE image models.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
