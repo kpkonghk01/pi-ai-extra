@@ -1,0 +1,1511 @@
+diff --git a/.env.example b/.env.example
+index 5532b8c..33257f2 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1,2 +1,8 @@
+ # Google Gemini API Key for server-side generation routing
+ GEMINI_API_KEY=
++
++# KIE_API_KEY: Required for the KIE image models (Nano Banana 2, GPT Image 2, Grok Imagine 2.0)
++KIE_API_KEY=
++
++# TOAPIS_API_KEY: Required for the ToAPIs image models (GPT Image 2 / 2.5, Seedream 5.0 Pro, Nano Banana 2 Preview)
++TOAPIS_API_KEY=
+diff --git a/App.tsx b/App.tsx
+index 3f70065..b61040f 100644
+--- a/App.tsx
++++ b/App.tsx
+@@ -1,4 +1,4 @@
+-import React, { useState, useEffect, ReactNode, ErrorInfo, useMemo } from 'react';
++import React, { useState, useEffect, useRef, ReactNode, ErrorInfo, useMemo } from 'react';
+ import { Download, Trash2, Edit2, Loader2, Image as ImageIcon, AlertCircle, Key, ExternalLink, Calculator, X, HardDrive, Type, ChevronDown, ChevronUp, History, BarChart3, Calendar, LogOut, Lock, BookOpen, Sparkles, Wand2, FolderPlus, Save, Bookmark, Layers, Palette, Check, HelpCircle, Sliders, Shield } from 'lucide-react';
+ import JSZip from 'jszip';
+ import { UploadedFile, AspectRatio, ImageQuality, GeneratedImage, TitleConfig, TitleConfigItem, PresetGroup, SavedTemplateImage, ImageModelType } from './types';
+@@ -7,7 +7,12 @@ import FileUpload from './components/FileUpload';
+ import ImageEditor from './components/ImageEditor';
+ import { generateCollage, fileToBase64, compressToLimit } from './services/geminiService';
+ import { UsageService, MonthlyUsageData, UsageHistory } from './services/usageService';
++import { DEFAULT_IMAGE_MODEL_ID, USD_TO_HKD, estimateCostUsd } from './shared/imageModels';
++import { TEMPERATURE_SUPPORT_NOTE, estimateInputTokens, modelIssue } from '@hk01/pi-ai-extra-image-kit';
++import { ErrorPanel, ImageModelIssue, ImageModelSelector, findImageModel, useImageModels } from '@hk01/pi-ai-extra-image-kit/react';
++import { ImageRequestError, isAbort, reportError } from '@hk01/pi-ai-extra-image-kit/browser';
+ import { HistoryService } from './services/historyService';
++import { PresetService } from './services/presetService';
+ import { auth, signInWithGoogle, signOut } from './services/firebaseService';
+ import { User, onAuthStateChanged } from 'firebase/auth';
+ 
+@@ -135,6 +140,9 @@ const fileToDataUrl = (file: File): Promise<string> => {
+   });
+ };
+ 
++/** File extension for an image data URL: PNG results (crop, logo) stay .png, everything else is .jpg. */
++const imageExtension = (url: string): string => (url.startsWith('data:image/png') ? 'png' : 'jpg');
++
+ const dataUrlToFile = (dataUrl: string, filename: string): File => {
+   const arr = dataUrl.split(',');
+   const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+@@ -205,6 +213,11 @@ const HistoryModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOp
+                                                 <div className="font-bold text-gray-800">{data.requestCount}</div>
+                                             </div>
+                                         </div>
++                                        {(data.unpricedImages ?? 0) > 0 && (
++                                            <div className="mt-2 text-[10px] text-amber-600">
++                                                另有 {data.unpricedImages} 張圖片的模型未有單價（未計價），不計入金額。
++                                            </div>
++                                        )}
+                                         <div className="mt-2 text-[10px] text-gray-400 text-right">
+                                             Last Updated: {new Date(data.lastUpdated).toLocaleString()}
+                                         </div>
+@@ -221,16 +234,15 @@ const HistoryModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOp
+ 
+ interface UsageMeterProps {
+   refreshTrigger: number;
+-  selectedModel: ImageModelType;
+-  setSelectedModel: (model: ImageModelType) => void;
++  /** The image model selector, shown where the model buttons used to be. */
++  modelSelector: ReactNode;
+   user: User | null;
+   onLogout: () => void;
+ }
+ 
+-const UsageMeter: React.FC<UsageMeterProps> = ({ 
+-  refreshTrigger, 
+-  selectedModel, 
+-  setSelectedModel,
++const UsageMeter: React.FC<UsageMeterProps> = ({
++  refreshTrigger,
++  modelSelector,
+   user,
+   onLogout
+ }) => {
+@@ -265,42 +277,10 @@ const UsageMeter: React.FC<UsageMeterProps> = ({
+                     </div>
+                 </div>
+ 
+-                {/* Service Model Pill Selectors */}
++                {/* Image model selector (grouped by provider; disabled options show the reason) */}
+                 <div className="flex items-center gap-1.5 bg-gray-950 p-1 rounded-lg border border-gray-800 shrink-0">
+                     <span className="text-gray-500 text-[10px] uppercase font-extrabold px-1.5 hidden lg:inline">Model:</span>
+-                    <button
+-                        onClick={() => setSelectedModel('gemini-nano-banana-2.1')}
+-                        className={`px-3 py-1 rounded-md text-[10px] font-extrabold tracking-tight transition-all flex items-center gap-1.5 ${
+-                            selectedModel === 'gemini-nano-banana-2.1'
+-                            ? 'bg-red-600 text-white shadow-sm font-black'
+-                            : 'text-gray-400 hover:text-white hover:bg-gray-900'
+-                        }`}
+-                    >
+-                        <span className={`w-1.5 h-1.5 rounded-full ${selectedModel === 'gemini-nano-banana-2.1' ? 'bg-white' : 'bg-gray-500'}`} />
+-                        <span>Nano Banana 2.1</span>
+-                    </button>
+-                    <button
+-                        onClick={() => setSelectedModel('nano-banana-2')}
+-                        className={`px-3 py-1 rounded-md text-[10px] font-extrabold tracking-tight transition-all flex items-center gap-1.5 ${
+-                            selectedModel === 'nano-banana-2'
+-                            ? 'bg-red-600 text-white shadow-sm font-black'
+-                            : 'text-gray-400 hover:text-white hover:bg-gray-900'
+-                        }`}
+-                    >
+-                        <span className={`w-1.5 h-1.5 rounded-full ${selectedModel === 'nano-banana-2' ? 'bg-white' : 'bg-gray-500'}`} />
+-                        <span>2代平衡</span>
+-                    </button>
+-                    <button
+-                        onClick={() => setSelectedModel('nano-banana-pro')}
+-                        className={`px-3 py-1 rounded-md text-[10px] font-extrabold tracking-tight transition-all flex items-center gap-1.5 ${
+-                            selectedModel === 'nano-banana-pro'
+-                            ? 'bg-red-600 text-white shadow-sm font-black'
+-                            : 'text-gray-400 hover:text-white hover:bg-gray-900'
+-                        }`}
+-                    >
+-                        <span className={`w-1.5 h-1.5 rounded-full ${selectedModel === 'nano-banana-pro' ? 'bg-white' : 'bg-gray-500'}`} />
+-                        <span>Pro思考</span>
+-                    </button>
++                    {modelSelector}
+                 </div>
+                 
+                 <div className="flex w-full md:w-auto items-center justify-between md:justify-end gap-3 border-t border-gray-800 md:border-none pt-2 md:pt-0">
+@@ -391,13 +371,29 @@ const AppContent: React.FC = () => {
+   const [editingGroupId, setEditingGroupId] = useState<number | null>(null);
+   const [editingGroupName, setEditingGroupName] = useState<string>('');
+ 
++  // Preset groups live in IndexedDB: 30 templates do not fit in localStorage (about 5 MB).
++  // The initial state above still reads the old localStorage copy, which is kept unchanged as a
++  // backup; it is written to IndexedDB on the first load.
++  const [presetsLoaded, setPresetsLoaded] = useState<boolean>(false);
++
+   useEffect(() => {
+-    try {
+-      localStorage.setItem('collage_preset_groups', JSON.stringify(presetGroups));
+-    } catch (e) {
+-      console.error("Failed to save preset groups to localStorage:", e);
+-    }
+-  }, [presetGroups]);
++    PresetService.load()
++      .then((saved) => {
++        if (saved && Array.isArray(saved) && saved.length === 5) {
++          setPresetGroups(saved);
++        }
++      })
++      .catch((e) => console.error("Failed to load preset groups:", e))
++      .finally(() => setPresetsLoaded(true));
++  }, []);
++
++  useEffect(() => {
++    if (!presetsLoaded) return;
++    PresetService.save(presetGroups).catch((e) => {
++      console.error("Failed to save preset groups:", e);
++      showToast("樣板組合儲存失敗，重新整理後可能會遺失。(Failed to save preset groups)", "error");
++    });
++  }, [presetGroups, presetsLoaded]);
+ 
+   // Manga & Custom Manga States
+   const [isMangaActive, setIsMangaActive] = useState<boolean>(false);
+@@ -486,7 +482,22 @@ const AppContent: React.FC = () => {
+   const [removeBackground, setRemoveBackground] = useState<boolean>(false); // New state
+   const [prohibitPretrainedData, setProhibitPretrainedData] = useState<boolean>(true); // Default true (點亮)
+   const [limitSize2MB, setLimitSize2MB] = useState<boolean>(true); // Default true
+-  const [selectedModel, setSelectedModel] = useState<ImageModelType>('gemini-nano-banana-2.1');
++  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_IMAGE_MODEL_ID);
++
++  // --- Image models (server catalogue policy; the collage route's scope) ---
++  const {
++    models: imageModels,
++    loading: imageModelsLoading,
++    failed: imageModelsFailed,
++    reload: reloadImageModels,
++  } = useImageModels('collage');
++  const currentImageModel = findImageModel(imageModels, selectedModel);
++  // Reference images one collage sends: the selected style templates + every source image.
++  const imageModelNeeds = { referenceCount: selectedTemplateIds.length + sources.length };
++  // Generation waits for the model list and is blocked while the selected model cannot take the request.
++  const imageModelBlocked = !currentImageModel || modelIssue(currentImageModel, imageModelNeeds) !== null;
++  // Only some models accept temperature; the slider keeps its value while it is disabled.
++  const temperatureSupported = currentImageModel ? !!currentImageModel.temperature : true;
+   
+   const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
+   const [isHistoryLoaded, setIsHistoryLoaded] = useState(false);
+@@ -513,6 +524,8 @@ const AppContent: React.FC = () => {
+   }, [generatedImages, isHistoryLoaded]);
+ 
+   const [isGenerating, setIsGenerating] = useState(false);
++  /** Aborts the collage in progress (取消). */
++  const generateAbortRef = useRef<AbortController | null>(null);
+   const [generatingStatus, setGeneratingStatus] = useState('');
+   
+   const [editorOpen, setEditorOpen] = useState(false);
+@@ -547,12 +560,8 @@ const AppContent: React.FC = () => {
+             const data = await resp.json().catch(() => ({}));
+             setHasApiKey(!!data.hasApiKey);
+           } else {
+-            // Fallback to define env check
+-            try {
+-              setHasApiKey(!!process.env.API_KEY);
+-            } catch (e) {
+-              setHasApiKey(false);
+-            }
++            // The server could not be asked; the browser never holds the key itself.
++            setHasApiKey(false);
+           }
+         }
+       } catch (e) {
+@@ -824,14 +833,17 @@ const AppContent: React.FC = () => {
+     }));
+   };
+ 
+-  const handleApiError = (error: any) => {
++  const handleApiError = (error: any, context: Record<string, string | number | undefined> = {}) => {
+     console.error("API Error:", error);
++    // The ErrorPanel shows the provider, model, error code, HTTP status and task id, with 複製錯誤資訊.
++    reportError(error, '拼貼生成', { model: selectedModel, ...context });
+     const msg = error?.message || '';
+-    if (msg.includes('403') || msg.includes('PERMISSION_DENIED') || msg.includes('Requested entity was not found')) {
++    const details = error instanceof ImageRequestError ? error.details : {};
++    // Same trigger as before the migration (403 / PERMISSION_DENIED), now limited to Google errors.
++    const keyPermissionProblem = details.status === 403 || msg.includes('PERMISSION_DENIED') || msg.includes('Requested entity was not found');
++    if (keyPermissionProblem && (details.provider === 'google' || !details.provider)) {
+        showToast("授權失敗。請選擇具有啟用計費功能 (Billing Enabled) 的 Google Cloud Project 專案 API 密鑰。", "error");
+-       setHasApiKey(false); 
+-    } else {
+-       showToast(`產生失敗: ${msg}`, "error");
++       setHasApiKey(false);
+     }
+   };
+ 
+@@ -840,34 +852,16 @@ const AppContent: React.FC = () => {
+   const activeQuality = activeOption ? activeOption.quality : '1K';
+ 
+   const estimatedCost = useMemo(() => {
+-    const INPUT_IMAGE_TOKENS = 258;
+-    const INPUT_TEXT_TOKEN_RATIO = 0.25; 
+-    const PRICE_PER_1M_INPUT_TOKENS_USD = 5.00; 
+-    
+-    // Dynamic output image price based on model and selected ratio quality
+-    let PRICE_PER_OUTPUT_IMAGE_USD = 0.134;
+-    if (selectedModel === 'gemini-nano-banana-2.1' || selectedModel === 'nano-banana-2') {
+-      PRICE_PER_OUTPUT_IMAGE_USD = activeQuality === '1K' ? 0.067 : 0.101;
+-    } else {
+-      PRICE_PER_OUTPUT_IMAGE_USD = 0.134;
+-    }
+-    
+-    const HKD_EXCHANGE_RATE = 7.8;
+     const numInputImages = selectedTemplateIds.length + sources.length;
+-    const inputImageTokens = numInputImages * INPUT_IMAGE_TOKENS;
+-    const inputTextTokens = prompt.length * INPUT_TEXT_TOKEN_RATIO;
+-    const totalInputTokens = inputImageTokens + inputTextTokens;
+-    const numOutputImages = selectedRatios.length * selectedCount;
+-    const inputCostUSD = (totalInputTokens / 1000000) * PRICE_PER_1M_INPUT_TOKENS_USD;
+-    const outputCostUSD = numOutputImages * PRICE_PER_OUTPUT_IMAGE_USD;
+-    const totalUSD = inputCostUSD + outputCostUSD;
+-    const totalHKD = totalUSD * HKD_EXCHANGE_RATE;
++    const plannedRatios = selectedRatios.flatMap((ratio) => Array.from({ length: selectedCount }, () => ratio));
++    // The selected model's price at the resolution of each ratio; null when no price is verified.
++    const totalUSD = estimateCostUsd(currentImageModel, { inputImages: numInputImages, promptChars: prompt.length, ratios: plannedRatios });
+     return {
+-        totalHKD: totalHKD.toFixed(2),
+-        inputTokens: Math.ceil(totalInputTokens),
+-        outputCount: numOutputImages
++        totalHKD: totalUSD === null ? null : (totalUSD * USD_TO_HKD).toFixed(2),
++        inputTokens: estimateInputTokens(numInputImages, prompt.length),
++        outputCount: plannedRatios.length
+     };
+-  }, [templates, selectedTemplateIds, sources, prompt, selectedRatios, selectedCount, selectedModel, activeQuality]);
++  }, [selectedTemplateIds, sources, prompt, selectedRatios, selectedCount, currentImageModel]);
+ 
+   const startCollage = async () => {
+     const apiKey = getEnvApiKey();
+@@ -889,6 +883,9 @@ const AppContent: React.FC = () => {
+     }
+     setIsGenerating(true);
+     setGeneratingStatus('Preparing assets...');
++    // One controller per run: 取消 aborts the request in flight and stops the remaining tasks.
++    const abort = new AbortController();
++    generateAbortRef.current = abort;
+     try {
+       const selectedTemplates = templates.filter(t => selectedTemplateIds.includes(t.id));
+       const templateB64s = await Promise.all(selectedTemplates.map(t => fileToBase64(t.file)));
+@@ -914,6 +911,7 @@ const AppContent: React.FC = () => {
+       }
+       setGeneratingStatus(`Generating ${tasks.length} images...`);
+       for (let i = 0; i < tasks.length; i++) {
++        if (abort.signal.aborted) break;
+         const task = tasks[i];
+         setGeneratingStatus(`Generating image ${i + 1} of ${tasks.length} (${task.ratio})...`);
+         try {
+@@ -932,7 +930,8 @@ const AppContent: React.FC = () => {
+                 titles,
+                 selectedModel,
+                 temperature,
+-                prohibitPretrainedData
++                prohibitPretrainedData,
++                abort.signal
+             );
+ 
+ 
+@@ -941,10 +940,9 @@ const AppContent: React.FC = () => {
+               base64Image = await compressToLimit(base64Image, 2 * 1024 * 1024);
+             }
+ 
+-            // Track Usage on Success
+-            const activeOpt = RATIO_OPTIONS.find(o => o.value === task.ratio);
+-            const activeQual = activeOpt ? activeOpt.quality : '1K';
+-            UsageService.trackTransaction(estimatedInputTokensPerReq, 1, selectedModel, activeQual);
++            // Track usage on success: the estimated cost at the resolution actually requested (null = 未計價)
++            const costUsd = estimateCostUsd(currentImageModel, { inputImages: totalInputImages, promptChars: effectivePrompt.length, ratios: [task.ratio] });
++            UsageService.trackTransaction(estimatedInputTokensPerReq, 1, costUsd);
+             setUsageUpdateTrigger(prev => prev + 1);
+ 
+             const newImage: GeneratedImage = {
+@@ -955,13 +953,19 @@ const AppContent: React.FC = () => {
+             };
+             setGeneratedImages(prev => [newImage, ...prev]);
+         } catch (err) {
+-            handleApiError(err);
++            // A cancel is not an error; a failure is reported once and stops the remaining tasks.
++            if (!isAbort(err, abort.signal)) {
++              handleApiError(err, { 比例: task.ratio });
++            }
+             break;
+         }
+       }
+     } catch (error) {
+-      handleApiError(error);
++      if (!isAbort(error, abort.signal)) {
++        handleApiError(error);
++      }
+     } finally {
++      if (generateAbortRef.current === abort) generateAbortRef.current = null;
+       setIsGenerating(false);
+       setGeneratingStatus('');
+     }
+@@ -982,8 +986,7 @@ const AppContent: React.FC = () => {
+     try {
+         const response = await fetch(img.url);
+         const blob = await response.blob();
+-        // Changed to .jpg
+-        downloadBlob(blob, `collage-${img.ratio}-${img.id}.jpg`);
++        downloadBlob(blob, `collage-${img.ratio}-${img.id}.${imageExtension(img.url)}`);
+     } catch (e) {
+         console.error("Download failed:", e);
+         showToast("下載失敗。請稍後再試。(Download failed. Please try again)", "error");
+@@ -996,8 +999,7 @@ const AppContent: React.FC = () => {
+         for (let i = 0; i < generatedImages.length; i++) {
+             const img = generatedImages[i];
+             const base64Data = img.url.split(',')[1];
+-            // Changed to .jpg
+-            zip.file(`collage-${i + 1}-${img.ratio}.jpg`, base64Data, {base64: true});
++            zip.file(`collage-${i + 1}-${img.ratio}.${imageExtension(img.url)}`, base64Data, {base64: true});
+         }
+         const content = await zip.generateAsync({type:"blob"});
+         downloadBlob(content, "og-collage-batch.zip");
+@@ -1229,7 +1231,7 @@ const AppContent: React.FC = () => {
+           </div>
+           <h1 className="text-2xl font-bold text-gray-900 mb-2">Authentication Required</h1>
+           <p className="text-gray-600 mb-6">
+-            To use the <strong>Gemini 3 Pro Image Preview</strong> model for high-fidelity collage generation, you must connect a Google Cloud Project with billing enabled.
++            To use the <strong>Google Gemini</strong> image models for high-fidelity collage generation, you must connect a Google Cloud Project with billing enabled.
+           </p>
+           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-left">
+              <div className="flex items-start gap-2">
+@@ -1262,10 +1264,22 @@ const AppContent: React.FC = () => {
+   return (
+     <div className="h-screen max-h-screen bg-gray-50 flex flex-col notranslate overflow-hidden">
+       {/* Top Usage Meter with model controls and logout */}
+-      <UsageMeter 
+-        refreshTrigger={usageUpdateTrigger} 
+-        selectedModel={selectedModel}
+-        setSelectedModel={setSelectedModel}
++      <UsageMeter
++        refreshTrigger={usageUpdateTrigger}
++        modelSelector={
++          <ImageModelSelector
++            models={imageModels}
++            loading={imageModelsLoading}
++            failed={imageModelsFailed}
++            onReload={reloadImageModels}
++            value={selectedModel}
++            onChange={setSelectedModel}
++            defaultModelId={DEFAULT_IMAGE_MODEL_ID}
++            needs={imageModelNeeds}
++            className="max-w-[16rem] bg-gray-900 text-white text-[11px] font-bold rounded-md border border-gray-700 px-2 py-1 focus:outline-none focus:ring-1 focus:ring-red-600"
++            optionClassName="bg-gray-900 text-white"
++          />
++        }
+         user={currentUser}
+         onLogout={handleLogout}
+       />
+@@ -1806,8 +1820,11 @@ const AppContent: React.FC = () => {
+                     </span>
+                   </div>
+ 
+-                  {/* Range Input Control */}
+-                  <div className="px-1 py-1">
++                  {!temperatureSupported && (
++                    <p className="text-[11px] text-gray-500 mb-1">{TEMPERATURE_SUPPORT_NOTE}</p>
++                  )}
++                  {/* Range Input Control (disabled for models without temperature; the value is kept) */}
++                  <fieldset disabled={!temperatureSupported} className={`px-1 py-1 ${!temperatureSupported ? 'opacity-50' : ''}`}>
+                     <input
+                       type="range"
+                       min="0.1"
+@@ -1841,7 +1858,7 @@ const AppContent: React.FC = () => {
+                         創意
+                       </button>
+                     </div>
+-                  </div>
++                  </fieldset>
+                 </div>
+             </div>
+ 
+@@ -1903,27 +1920,32 @@ const AppContent: React.FC = () => {
+                 </div>
+                 <div className="flex justify-between items-center pt-2 border-t border-gray-200 mt-2">
+                     <span className="text-gray-800 font-bold">Total (HKD):</span>
+-                    <span className="font-mono text-red-600 font-bold text-sm">HK${estimatedCost.totalHKD}</span>
++                    <span className="font-mono text-red-600 font-bold text-sm">{estimatedCost.totalHKD === null ? '—' : `HK$${estimatedCost.totalHKD}`}</span>
+                 </div>
+                 <p className="text-[10px] text-gray-400 mt-1 italic text-right">
+-                    *Estimate: ${selectedModel === 'nano-banana-pro' ? '0.134' : (activeQuality === '1K' ? '0.067' : '0.101')} USD/image ({selectedModel === 'gemini-nano-banana-2.1' ? 'Nano Banana 2.1' : (selectedModel === 'nano-banana-2' ? '2代平衡' : 'Pro思考')} - {activeQuality})
++                    *Estimate: {currentImageModel?.price?.perImageUsd[activeQuality] !== undefined ? `$${currentImageModel.price.perImageUsd[activeQuality]} USD/image` : '單價未知（未計價）'} ({currentImageModel?.label ?? selectedModel} - {activeQuality})
+                 </p>
+             </div>
+             </div>
+ 
+             {/* Pinned Floating Generate Button Footer */}
+             <div className="shrink-0 p-4 bg-white/95 backdrop-blur-md border-t border-gray-200 shadow-[0_-6px_20px_rgba(0,0,0,0.12)] z-30">
++                <ImageModelIssue
++                  model={currentImageModel}
++                  needs={imageModelNeeds}
++                  className="mb-2 text-xs font-semibold text-red-600"
++                />
+                 <div className="flex gap-3">
+                     <button 
+                         onClick={startCollage}
+-                        disabled={isGenerating}
++                        disabled={isGenerating || imageModelBlocked}
+                         className="flex-1 bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-700 hover:via-rose-700 hover:to-red-800 text-white py-3.5 px-4 rounded-xl font-extrabold text-base shadow-lg shadow-red-200 hover:shadow-xl hover:shadow-red-300 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2.5 transition-all cursor-pointer tracking-wide"
+                     >
+                         {isGenerating ? <Loader2 className="animate-spin text-white" size={22} /> : <Wand2 className="text-white" size={22} />}
+                         {isGenerating ? <span>拼貼生成中...</span> : <span>開始拼貼 (Generate)</span>}
+                     </button>
+                     {isGenerating && (
+-                        <button onClick={() => { window.location.reload(); }} className="px-4 bg-gray-100 text-gray-700 border border-gray-300 rounded-xl font-bold hover:bg-gray-200 transition-colors cursor-pointer text-xs">
++                        <button onClick={() => generateAbortRef.current?.abort()} className="px-4 bg-gray-100 text-gray-700 border border-gray-300 rounded-xl font-bold hover:bg-gray-200 transition-colors cursor-pointer text-xs">
+                             <span>取消</span>
+                         </button>
+                     )}
+@@ -2176,9 +2198,13 @@ const AppContent: React.FC = () => {
+ 
+ const App: React.FC = () => {
+   return (
+-    <ErrorBoundary>
+-      <AppContent />
+-    </ErrorBoundary>
++    <>
++      <ErrorBoundary>
++        <AppContent />
++      </ErrorBoundary>
++      {/* image-kit error panel: mounted once, outside screens that can unmount (also on the login and key screens) */}
++      <ErrorPanel />
++    </>
+   );
+ };
+ 
+diff --git a/components/ImageEditor.tsx b/components/ImageEditor.tsx
+index 21f88b8..80acd72 100644
+--- a/components/ImageEditor.tsx
++++ b/components/ImageEditor.tsx
+@@ -2,6 +2,10 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
+ import { X, Crop, Type, Eraser, Undo, Redo, Save, Loader2, Check, Sparkles, Brush, Trash2, RotateCcw, ZoomIn, Download, Target, Plus, Scissors, AlertCircle, Shield, Upload, Move, Layers } from 'lucide-react';
+ import { GeneratedImage, ImageModelType } from '../types';
+ import { editImage } from '../services/geminiService';
++import { DEFAULT_IMAGE_MODEL_ID } from '../shared/imageModels';
++import { MASK_REFERENCE_ONLY_NOTE } from '@hk01/pi-ai-extra-image-kit';
++import { findImageModel, useImageModels } from '@hk01/pi-ai-extra-image-kit/react';
++import { ImageRequestError, reportError } from '@hk01/pi-ai-extra-image-kit/browser';
+ 
+ interface ImageEditorProps {
+   image: GeneratedImage;
+@@ -41,8 +45,11 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
+   image, 
+   onClose, 
+   onUpdateImage, 
+-  selectedModel = 'gemini-nano-banana-2.1' as ImageModelType 
++  selectedModel = DEFAULT_IMAGE_MODEL_ID
+ }) => {
++  // The edit route's model list: whether the selected model edits masks precisely.
++  const { models: editModels } = useImageModels('edit');
++  const editModel = findImageModel(editModels, selectedModel);
+   const [mode, setMode] = useState<'view' | 'prompt' | 'mask' | 'multi-mask' | 'crop' | 'logo'>('view');
+   const [prompt, setPrompt] = useState('');
+   const [isLoading, setIsLoading] = useState(false);
+@@ -349,11 +356,15 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
+       const box = calculateLogoBox();
+       const pad = Math.max(20, box.w * 0.15);
+       ctx.fillStyle = '#FFFFFF';
++      // The padded box, clipped to the image. The old width and height were measured from the
++      // unpadded corner, so the mask fell short or overshot near the edges.
++      const maskX = Math.max(0, box.x - pad);
++      const maskY = Math.max(0, box.y - pad);
+       ctx.fillRect(
+-        Math.max(0, box.x - pad),
+-        Math.max(0, box.y - pad),
+-        Math.min(W - box.x, box.w + pad * 2),
+-        Math.min(H - box.y, box.h + pad * 2)
++        maskX,
++        maskY,
++        Math.min(W, box.x + box.w + pad) - maskX,
++        Math.min(H, box.y + box.h + pad) - maskY
+       );
+ 
+       const maskData = maskCanvas.toDataURL('image/png');
+@@ -370,7 +381,10 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
+         const cleanedImg = new Image();
+         cleanedImg.crossOrigin = 'anonymous';
+         cleanedImg.src = cleanedImageData;
+-        await new Promise((res) => { cleanedImg.onload = res; });
++        await new Promise((res, rej) => {
++          cleanedImg.onload = res;
++          cleanedImg.onerror = () => rej(new Error('無法讀取 AI 擦除後的圖片。'));
++        });
+         compCtx.drawImage(cleanedImg, 0, 0, W, H);
+ 
+         if (logoPlate !== 'none') {
+@@ -397,6 +411,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
+       setMode('view');
+     } catch (e: any) {
+       console.error(e);
++      if (e instanceof ImageRequestError) reportError(e, 'AI Logo 擦除', { model: selectedModel });
+       setEditorError(`AI Logo 替換失敗: ${e.message || '請稍後再試'}`);
+     } finally {
+       setIsLoading(false);
+@@ -760,6 +775,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
+     } catch (e: any) {
+         console.error(e);
+         const msg = e.message || 'Unknown error';
++        if (e instanceof ImageRequestError) reportError(e, '圖片編輯', { model: selectedModel });
+         setEditorError(`Failed to edit image: ${msg}`);
+     } finally {
+         setIsLoading(false);
+@@ -789,7 +805,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
+   const handleDownload = () => {
+       const a = document.createElement('a');
+       a.href = previewUrl;
+-      a.download = `edited-image-${Date.now()}.png`;
++      a.download = `edited-image-${Date.now()}.${previewUrl.startsWith('data:image/jpeg') ? 'jpg' : 'png'}`;
+       document.body.appendChild(a);
+       a.click();
+       document.body.removeChild(a);
+@@ -1029,6 +1045,9 @@ const ImageEditor: React.FC<ImageEditorProps> = ({
+                     {mode === 'crop' && "在圖片上拖曳滑鼠以選取裁切範圍。"}
+                     {mode === 'logo' && "上傳品牌 Logo，即時套用或使用 AI 智能擦除並替換。"}
+                 </p>
++                {(mode === 'mask' || mode === 'multi-mask' || mode === 'logo') && editModel?.maskEditing === 'reference-only' && (
++                    <p className="text-amber-400 text-[11px] mt-2 leading-relaxed">{MASK_REFERENCE_ONLY_NOTE}</p>
++                )}
+             </div>
+             
+             <div className="flex-1 overflow-y-auto custom-scrollbar">
+diff --git a/index.html b/index.html
+index c10ed70..70653d3 100644
+--- a/index.html
++++ b/index.html
+@@ -8,7 +8,7 @@
+     
+     <!-- Open Graph Meta Tags -->
+     <meta property="og:title" content="OG拼貼大師｜風格模擬｜換標題｜換主題｜局部修圖" />
+-    <meta property="og:description" content="A professional tool to generate Open Graph images by mimicking uploaded style templates using Gemini 3 Pro Image Preview." />
++    <meta property="og:description" content="A professional tool to generate Open Graph images by mimicking uploaded style templates, using Google Gemini, ToAPIs and KIE image models." />
+     <meta property="og:image" content="https://cdn.hk01.com/di/media/images/dw/20260629/1148278058122219520745693.png/6ldb3Toq9bsFmE3hKCMZ97CbnfnhqbjWuIY55riGOeY?v=w1280" />
+     <meta property="og:type" content="website" />
+ 
+@@ -52,7 +52,6 @@
+   }
+ }
+ </script>
+-<link rel="stylesheet" href="/index.css">
+ </head>
+   <body class="bg-gray-50 text-slate-900 font-sans antialiased notranslate">
+     <div id="root"></div>
+diff --git a/metadata.json b/metadata.json
+index 885367f..d9a7945 100644
+--- a/metadata.json
++++ b/metadata.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "Remix: OG 拼貼大師",
+-  "description": "A professional tool to generate Open Graph images by mimicking uploaded style templates using Gemini 3 Pro Image Preview.",
++  "description": "A professional tool to generate Open Graph images by mimicking uploaded style templates, using Google Gemini, ToAPIs and KIE image models.",
+   "requestFramePermissions": [],
+   "majorCapabilities": [
+     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+diff --git a/package.json b/package.json
+index e39a836..ec62fab 100644
+--- a/package.json
++++ b/package.json
+@@ -11,6 +11,10 @@
+   },
+   "dependencies": {
+     "@google/genai": "^1.31.0",
++    "@hk01/pi-ai-extra-google": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.3.2/hk01-pi-ai-extra-google-0.3.2.tgz",
++    "@hk01/pi-ai-extra-image-kit": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/image-kit-v0.2.0/hk01-pi-ai-extra-image-kit-0.2.0.tgz",
++    "@hk01/pi-ai-extra-kie": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.2.0/hk01-pi-ai-extra-kie-0.2.0.tgz",
++    "@hk01/pi-ai-extra-toapis": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.2.0/hk01-pi-ai-extra-toapis-0.2.0.tgz",
+     "express": "^5.2.1",
+     "firebase": "^12.15.0",
+     "jszip": "^3.10.1",
+diff --git a/server/imageModels.ts b/server/imageModels.ts
+new file mode 100644
+index 0000000..58c1e5a
+--- /dev/null
++++ b/server/imageModels.ts
+@@ -0,0 +1,69 @@
++import { createImageClient, type CataloguePolicy } from '@hk01/pi-ai-extra-image-kit/server';
++
++/**
++ * og-master's catalogue policy and route-owned image clients. Every image model family in the
++ * installed Google, ToAPIs and KIE packages is offered, so a provider package upgrade adds its new
++ * families. Limits and capabilities come from the catalogues; this file only holds the app's own
++ * labels, verified prices and mask-editing guidance (the same as Auto OG's).
++ */
++
++const POLICY: CataloguePolicy = {
++  overrides: {
++    'google:gemini-nano-banana-2.1': {
++      label: 'Nano Banana 2.1',
++      description: 'Google 直連 Gemini Nano Banana 2.1，最新旗艦高效率生圖模型。',
++      maskEditing: 'supported',
++      price: { perImageUsd: { '1K': 0.034, '2K': 0.05 }, inputPerMillionTokensUsd: 0.5 },
++    },
++    'google:gemini-3.1-flash-image': {
++      label: 'Nano Banana 2（2代平衡）',
++      description: 'Google 直連 Gemini 3.1 Flash Image，速度快，適合一般拼貼。',
++      maskEditing: 'supported',
++      // Google pricing page (2026-10-01), input $0.50 / 1M tokens.
++      price: { perImageUsd: { '1K': 0.067, '2K': 0.101 }, inputPerMillionTokensUsd: 0.5 },
++    },
++    'google:gemini-3-pro-image': {
++      label: 'Nano Banana Pro（Pro 思考）',
++      description: 'Google 直連 Gemini 3 Pro Image，細節更豐富，適合高要求圖片。',
++      maskEditing: 'supported',
++      // Google pricing page (2026-10-01), input $2.00 / 1M tokens.
++      price: { perImageUsd: { '1K': 0.134, '2K': 0.134 }, inputPerMillionTokensUsd: 2 },
++    },
++    'toapis:gemini-3.1-flash-image-preview': {
++      label: 'Nano Banana 2 Preview (ToAPIs)',
++      description: 'ToAPIs 提供的 Gemini 3.1 Flash Image Preview。',
++      maskEditing: 'supported',
++    },
++    'toapis:gpt-image-2': { label: 'GPT Image 2 (ToAPIs)', description: 'ToAPIs 提供的 GPT Image 2。' },
++    'toapis:gpt-image-2.5-flare': {
++      label: 'GPT Image 2.5 Flare (ToAPIs)',
++      description: 'ToAPIs 提供的 GPT Image 2.5 Flare。',
++      // ToAPIs GPT Image 2.5 doc (2026-09-09).
++      price: { perImageUsd: { '1K': 0.015, '2K': 0.02 }, inputPerMillionTokensUsd: 0 },
++    },
++    'toapis:gpt-image-2.5-sunburst': {
++      label: 'GPT Image 2.5 Sunburst (ToAPIs)',
++      description: 'ToAPIs 提供的 GPT Image 2.5 Sunburst。',
++      price: { perImageUsd: { '1K': 0.015, '2K': 0.02 }, inputPerMillionTokensUsd: 0 },
++    },
++    'toapis:doubao-seedream-5-0-pro': { label: 'Seedream 5.0 Pro (ToAPIs)', description: 'ToAPIs 提供的 ByteDance Seedream 5.0 Pro。' },
++    'kie:grok-imagine-image-2-0': { label: 'Grok Imagine 2.0 (KIE)', description: 'KIE 提供的 Grok Imagine 2.0。' },
++    'kie:gpt-image-2': { label: 'GPT Image 2 (KIE)', description: 'KIE 提供的 GPT Image 2；有參考圖時使用 image-to-image。' },
++    'kie:nano-banana-2': { label: 'Nano Banana 2 (KIE)', description: 'KIE 提供的 Gemini 3.1 Flash Image。', maskEditing: 'supported' },
++  },
++  scopes: {
++    collage: {},
++    edit: {},
++  },
++};
++
++export const imageClient = createImageClient({
++  app: 'og-master',
++  policy: POLICY,
++  env: process.env,
++  googleHeaders: { 'User-Agent': 'aistudio-build' },
++});
++
++/** Route-owned clients. Each route uses its own scope; a request body never chooses one. */
++export const collageImages = imageClient.forScope('collage');
++export const editImages = imageClient.forScope('edit');
+diff --git a/server.ts b/server.ts
+index 0952946..6c41081 100644
+--- a/server.ts
++++ b/server.ts
+@@ -1,7 +1,14 @@
+ import express from "express";
+ import path from "path";
+ import { createServer as createViteServer } from "vite";
+-import { GoogleGenAI } from "@google/genai";
++import {
++  handleImageRequest,
++  imageErrorBody,
++  imageErrorStatus,
++  type ImagePart,
++} from "@hk01/pi-ai-extra-image-kit/server";
++import { collageImages, editImages, imageClient } from "./server/imageModels";
++import { OUTPUT_SPECS, outputSpec } from "./shared/imageOutput";
+ 
+ const app = express();
+ const PORT = 3000;
+@@ -10,64 +17,18 @@ const PORT = 3000;
+ app.use(express.json({ limit: "50mb" }));
+ app.use(express.urlencoded({ limit: "50mb", extended: true }));
+ 
+-// Helper to resolve third-party URLs to Base64 in Node.js
+-const urlToAsset = async (url: string) => {
+-  if (!url) {
+-    throw new Error("Missing or empty image URL");
+-  }
+-  const cleanUrl = url.trim();
+-  if (cleanUrl.startsWith("data:")) {
+-    const mimeMatch = cleanUrl.match(/:(.*?);/);
+-    const mimeType = mimeMatch ? mimeMatch[1] : "image/jpeg";
+-    const commaIndex = cleanUrl.indexOf(",");
+-    const data = commaIndex !== -1 ? cleanUrl.slice(commaIndex + 1) : cleanUrl;
+-    return { data, mimeType };
+-  }
+-  if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+-    throw new Error(`Invalid image URL protocol scheme: "${cleanUrl.slice(0, 30)}". Supported schemes are data, http, and https.`);
+-  }
+-  const res = await fetch(cleanUrl);
+-  if (!res.ok) {
+-    throw new Error(`Failed to download image asset (${res.status} ${res.statusText})`);
+-  }
+-  const arrayBuffer = await res.arrayBuffer();
+-  const buffer = Buffer.from(arrayBuffer);
+-  const mimeType = res.headers.get("content-type") || "image/jpeg";
+-  return {
+-    data: buffer.toString("base64"),
+-    mimeType
+-  };
+-};
+-
+-const mapRatioToSupported = (ratio: string): string => {
+-  switch (ratio) {
+-    case "2:3": return "3:4"; 
+-    case "3:2": return "4:3";
+-    case "4:5": return "3:4";
+-    case "300x250": return "4:3";
+-    case "300x300": return "1:1";
+-    default: return ratio;
+-  }
+-};
+-
+-const mapQualityToSize = (quality: string): string => {
+-  return "2K"; 
++/** A base64 data URL as an image part, or null for anything else (other URLs are never fetched). */
++const inlineImage = (dataUrl: unknown): ImagePart | null => {
++  if (typeof dataUrl !== "string") return null;
++  const match = /^data:([^;,]+);base64,(.*)$/s.exec(dataUrl.trim());
++  return match ? { inlineData: { mimeType: match[1], data: match[2] } } : null;
+ };
+ 
+-const buildImageConfig = (modelName: string, ratio?: string, quality?: string) => {
+-  const config: any = {};
+-  if (ratio) {
+-    config.aspectRatio = mapRatioToSupported(ratio);
+-  }
+-  const isLite = modelName.toLowerCase().includes("lite");
+-  if (!isLite) {
+-    if (quality) {
+-      config.imageSize = mapQualityToSize(quality);
+-    } else {
+-      config.imageSize = "1K";
+-    }
+-  }
+-  return config;
++/** Errors found before streaming starts go back as JSON; validation errors keep their HTTP status. */
++const sendImageError = (res: express.Response, route: string, error: unknown) => {
++  console.error(`[PROXY ERROR] ${route} failed:`, error);
++  if (res.headersSent) return;
++  res.status(imageErrorStatus(error)).json(imageErrorBody(error));
+ };
+ 
+ // API: Check config if api key is present on the server
+@@ -76,13 +37,19 @@ app.get("/api/config", (req, res) => {
+   res.json({ hasApiKey: hasKey });
+ });
+ 
++// API: Image models for one route-owned scope (?scope=collage | edit)
++app.get("/api/image-models", (req, res) => {
++  const scope = typeof req.query.scope === "string" ? req.query.scope : "";
++  try {
++    res.json({ models: imageClient.forScope(scope).listModels() });
++  } catch (error) {
++    res.status(400).json(imageErrorBody(error));
++  }
++});
++
+ // API: Process Collage Generation via Tokyo Cloud Run server proxy
+ app.post("/api/generate-collage", async (req, res) => {
+   try {
+-    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+-    if (!apiKey) {
+-      return res.status(401).json({ error: "Missing backend Gemini API Key" });
+-    }
+ 
+     const {
+       templateAssets,
+@@ -102,11 +69,11 @@ app.post("/api/generate-collage", async (req, res) => {
+       prohibitPretrainedData = true
+     } = req.body;
+ 
+-    const ai = new GoogleGenAI({ 
+-      apiKey,
+-      httpOptions: { headers: { "User-Agent": "aistudio-build" } }
+-    });
+-    const parts: any[] = [];
++    if (!(String(ratio) in OUTPUT_SPECS)) {
++      return res.status(400).json({ error: `不支援的圖片比例「${ratio}」。`, details: { code: "invalid_request" } });
++    }
++
++    const parts: ImagePart[] = [];
+ 
+     if (templateAssets && templateAssets.length > 0) {
+       templateAssets.forEach((tmpl: any, idx: number) => {
+@@ -312,89 +279,42 @@ app.post("/api/generate-collage", async (req, res) => {
+     
+     parts.push({ text: finalPrompt });
+ 
+-    const models = (selectedModel === "gemini-nano-banana-2.1" || selectedModel === "nano-banana-2.1")
+-      ? ["gemini-nano-banana-2.1", "gemini-3.1-flash-image", "gemini-3-pro-image"]
+-      : (selectedModel === "nano-banana-2"
+-        ? ["gemini-3.1-flash-image", "gemini-3-pro-image"]
+-        : ["gemini-3-pro-image", "gemini-3.1-flash-image"]);
+-
+-    let rawImageBase64: string | null = null;
+-    let lastError: any = null;
+-
+-    for (const modelName of models) {
+-      try {
+-        console.log(`[PROXY] Attempting collage generation with model: ${modelName}`);
+-        const response = await ai.models.generateContent({
+-          model: modelName,
+-          contents: { parts },
+-          config: {
+-            systemInstruction: systemInstruction,
+-            temperature: typeof temperature === 'number' ? temperature : 0.7,
+-            imageConfig: buildImageConfig(modelName, ratio, quality)
+-          }
+-        });
+-
+-        for (const part of response.candidates?.[0]?.content?.parts || []) {
+-          if (part.inlineData) {
+-            rawImageBase64 = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+-            break;
+-          }
+-        }
+-
+-        if (rawImageBase64) {
+-          break;
+-        }
+-
+-        const textPart = response.candidates?.[0]?.content?.parts?.find(p => p.text);
+-        const finishReason = response.candidates?.[0]?.finishReason;
+-        let errorMsg = `Model ${modelName} returned no image.`;
+-        if (textPart?.text) {
+-          errorMsg += ` Refusal: ${textPart.text.slice(0, 200)}`;
+-        }
+-        if (finishReason && finishReason !== "STOP") {
+-          errorMsg += ` Finish Reason: ${finishReason}`;
+-        }
+-        lastError = new Error(errorMsg);
+-
+-      } catch (err: any) {
+-        console.warn(`[PROXY] Model ${modelName} failed:`, err);
+-        lastError = err;
+-      }
+-    }
+-
+-    if (!rawImageBase64) {
+-      const errorMsg = lastError?.message || lastError?.toString() || "Unknown reason";
+-      return res.status(500).json({ error: errorMsg });
+-    }
+-
+-    return res.json({ rawImageBase64 });
+-  } catch (error: any) {
+-    console.error("[PROXY ERROR] generate-collage failed:", error);
+-    return res.status(500).json({ error: error?.message || error?.toString() });
++    // One attempt with the selected provider/model: no fallback model and no retry.
++    const appModelId = String(selectedModel ?? "");
++    await handleImageRequest(
++      res,
++      collageImages,
++      {
++        appModelId,
++        parts,
++        systemInstruction,
++        // The ratio preset ("16:9", "300x250", …): image-kit sends the model's exact ratio or the
++        // nearest one, and the browser centre-crops the result to the exact output size.
++        aspectRatio: String(ratio),
++        resolution: outputSpec(String(ratio)).resolution,
++        // Only models that accept temperature get the slider value (the UI disables it for the others).
++        temperature: collageImages.findModel(appModelId)?.temperature ? temperature : undefined,
++      },
++      async (image) => ({ imageUrl: image.dataUrl }),
++    );
++  } catch (error) {
++    sendImageError(res, "generate-collage", error);
+   }
+ });
+ 
+ // API: Process Local Mask-based/Reflective Image Editing via Tokyo Cloud Run server proxy
+ app.post("/api/edit-image", async (req, res) => {
+   try {
+-    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+-    if (!apiKey) {
+-      return res.status(401).json({ error: "Missing backend Gemini API Key" });
+-    }
+-
+     const {
+       imageUrl,
+       maskBase64,
+       prompt,
+       isMultiMask,
+-      selectedModel
++      selectedModel,
++      sourceAspect
+     } = req.body;
+ 
+-    const ai = new GoogleGenAI({ 
+-      apiKey,
+-      httpOptions: { headers: { "User-Agent": "aistudio-build" } }
+-    });
+-    const parts: any[] = [];
++    const parts: ImagePart[] = [];
+     
+     const systemInstruction = `
+       ROLE: Expert Professional Photo Retoucher.
+@@ -409,22 +329,16 @@ app.post("/api/edit-image", async (req, res) => {
+       6. NO FUNCTION CALLING: Do not generate function calls. Return only the image.
+     `;
+ 
+-    const imageAsset = await urlToAsset(imageUrl);
+-    parts.push({
+-      inlineData: {
+-        data: imageAsset.data,
+-        mimeType: imageAsset.mimeType,
+-      }
+-    });
++    // Images arrive as data URLs from the browser; any other URL is refused, never fetched.
++    const baseImage = inlineImage(imageUrl);
++    const maskImage = maskBase64 ? inlineImage(maskBase64) : null;
++    if (!baseImage || (maskBase64 && !maskImage)) {
++      return res.status(400).json({ error: "圖片必須以 base64 data URL 傳送。", details: { code: "invalid_request" } });
++    }
++    parts.push(baseImage);
+ 
+     if (maskBase64) {
+-      const maskAsset = await urlToAsset(maskBase64);
+-      parts.push({
+-        inlineData: {
+-          data: maskAsset.data,
+-          mimeType: maskAsset.mimeType
+-        }
+-      });
++      parts.push(maskImage!);
+       
+       if (isMultiMask) {
+         let instructions = [];
+@@ -468,66 +382,25 @@ app.post("/api/edit-image", async (req, res) => {
+       parts.push({ text: `Global Edit Instruction: ${prompt}. \n\nEnsure the result maintains the high quality and resolution of the original image.` });
+     }
+ 
+-    const models = (selectedModel === "gemini-nano-banana-2.1" || selectedModel === "nano-banana-2.1")
+-      ? ["gemini-nano-banana-2.1", "gemini-3.1-flash-image", "gemini-3-pro-image"]
+-      : (selectedModel === "nano-banana-2-lite"
+-        ? ["gemini-3.1-flash-lite-image", "gemini-3.1-flash-image"]
+-        : (selectedModel === "nano-banana-2"
+-          ? ["gemini-3.1-flash-image", "gemini-3-pro-image"]
+-          : ["gemini-3-pro-image", "gemini-3.1-flash-image"]));
+-
+-    let rawImageBase64: string | null = null;
+-    let lastError: any = null;
+-
+-    for (const modelName of models) {
+-      try {
+-        console.log(`[PROXY] Attempting edit layout with model: ${modelName}`);
+-        const response = await ai.models.generateContent({
+-          model: modelName,
+-          contents: { parts },
+-          config: {
+-            systemInstruction,
+-            imageConfig: buildImageConfig(modelName, undefined, undefined)
+-          }
+-        });
+-
+-        for (const part of response.candidates?.[0]?.content?.parts || []) {
+-          if (part.inlineData) {
+-            rawImageBase64 = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+-            break;
+-          }
+-        }
+-
+-        if (rawImageBase64) {
+-          break;
+-        }
+-
+-        const textOutput = response.candidates?.[0]?.content?.parts?.find(p => p.text)?.text;
+-        const finishReason = response.candidates?.[0]?.finishReason;
+-        let errorMsg = `Model ${modelName} returned no image in edit.`;
+-        if (textOutput) {
+-          errorMsg += ` Refusal/Text: ${textOutput.slice(0, 200)}`;
+-        }
+-        if (finishReason && finishReason !== "STOP") {
+-          errorMsg += ` Finish Reason: ${finishReason}`;
+-        }
+-        lastError = new Error(errorMsg);
+-
+-      } catch (err: any) {
+-        console.warn(`[PROXY] Model ${modelName} edit failed:`, err);
+-        lastError = err;
+-      }
+-    }
+-
+-    if (!rawImageBase64) {
+-      const errorMsg = lastError?.message || lastError?.toString() || "Unknown reason";
+-      return res.status(500).json({ error: errorMsg });
+-    }
+-
+-    return res.json({ rawImageBase64 });
+-  } catch (error: any) {
+-    console.error("[PROXY ERROR] edit-image failed:", error);
+-    return res.status(500).json({ error: error?.message || error?.toString() });
++    // One attempt with the selected provider/model: no fallback model and no retry.
++    await handleImageRequest(
++      res,
++      editImages,
++      {
++        appModelId: String(selectedModel ?? ""),
++        parts,
++        systemInstruction,
++        // The original image's "width:height": the nearest ratio is sent when the model cannot keep
++        // the input aspect by itself, and the browser crops the result back to the original size.
++        aspectRatio: typeof sourceAspect === "string" ? sourceAspect : undefined,
++        keepInputAspect: true,
++        // Edits have always requested 1K.
++        resolution: "1K",
++      },
++      async (image) => ({ imageUrl: image.dataUrl }),
++    );
++  } catch (error) {
++    sendImageError(res, "edit-image", error);
+   }
+ });
+ 
+diff --git a/services/geminiService.ts b/services/geminiService.ts
+index 9c797ca..ac1be1f 100644
+--- a/services/geminiService.ts
++++ b/services/geminiService.ts
+@@ -1,4 +1,5 @@
+-import { GoogleGenAI } from "@google/genai";
++import { postImageRequest } from '@hk01/pi-ai-extra-image-kit/browser';
++import { DEFAULT_IMAGE_MODEL_ID } from '../shared/imageModels';
+ import { AspectRatio, ImageQuality, TitleConfig, ImageAsset, TitleConfigItem, ImageModelType } from "../types";
+ 
+ // Helper to convert File to Base64 with resizing to prevent 413 errors
+@@ -62,9 +63,9 @@ export const fileToBase64 = (file: File): Promise<ImageAsset> => {
+   });
+ };
+ 
+-// Helper to resize image to strict dimensions and convert to JPEG
++// Helper to centre-crop an image to strict dimensions (scale to cover, no stretching) and convert to JPEG
+ export const resizeAndConvertToJpeg = (dataUrl: string, targetWidth: number, targetHeight: number): Promise<string> => {
+-  return new Promise((resolve) => {
++  return new Promise((resolve, reject) => {
+     const img = new Image();
+     img.onload = () => {
+       const canvas = document.createElement('canvas');
+@@ -75,18 +76,21 @@ export const resizeAndConvertToJpeg = (dataUrl: string, targetWidth: number, tar
+         resolve(dataUrl); // Fallback
+         return;
+       }
+-      
++
+       // Draw background white (for transparency handling if any)
+       ctx.fillStyle = '#FFFFFF';
+       ctx.fillRect(0, 0, targetWidth, targetHeight);
+-      
+-      // Draw image stretch to fit strict dimensions
+-      ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+-      
++
++      // Scale to cover the target and centre-crop: a model's nearest ratio is never stretched
++      const scale = Math.max(targetWidth / img.width, targetHeight / img.height);
++      const drawWidth = img.width * scale;
++      const drawHeight = img.height * scale;
++      ctx.drawImage(img, (targetWidth - drawWidth) / 2, (targetHeight - drawHeight) / 2, drawWidth, drawHeight);
++
+       // Force JPEG quality 0.9
+       resolve(canvas.toDataURL('image/jpeg', 0.9));
+     };
+-    img.onerror = () => resolve(dataUrl);
++    img.onerror = () => reject(new Error('無法解碼生成的圖片 (Failed to decode the generated image)。'));
+     img.src = dataUrl;
+   });
+ };
+@@ -207,9 +211,10 @@ export const generateCollage = async (
+   prohibitLogo: boolean = true,
+   eraseText: boolean = true,
+   titleConfig?: TitleConfig,
+-  selectedModel: ImageModelType = 'gemini-nano-banana-2.1',
++  selectedModel: ImageModelType = DEFAULT_IMAGE_MODEL_ID,
+   temperature: number = 0.7,
+-  prohibitPretrainedData: boolean = true
++  prohibitPretrainedData: boolean = true,
++  signal?: AbortSignal
+ ): Promise<string> => {
+   const payload = {
+     templateAssets,
+@@ -229,33 +234,23 @@ export const generateCollage = async (
+     prohibitPretrainedData
+   };
+ 
+-  let response: Response;
+-  try {
+-    response = await fetch('/api/generate-collage', {
+-      method: 'POST',
+-      headers: {
+-        'Content-Type': 'application/json'
+-      },
+-      body: JSON.stringify(payload)
+-    });
+-  } catch (netErr: any) {
+-    throw new Error(`網絡連線或伺服器傳輸失敗 (Failed to fetch)。請確認圖片檔案大小不超過限制，或檢查 API Key 設定。`);
+-  }
+-
+-  if (!response.ok) {
+-    const data = await response.json().catch(() => ({}));
+-    const errorMsg = data.error || `Server returned status ${response.status}: ${response.statusText}`;
+-    throw new Error(errorMsg);
+-  }
+-
+-  const { rawImageBase64 } = await response.json();
+-  if (!rawImageBase64) {
+-    throw new Error("No image was returned from server collage generation.");
+-  }
++  // One attempt with the selected model. The server streams NDJSON; failures throw an
++  // ImageRequestError with the provider, model, error code and task id.
++  const { imageUrl } = await postImageRequest('/api/generate-collage', payload, signal);
+ 
+-  // Post-Processing: Resize to strictly requested dimensions and convert to JPEG on the client side
++  // Post-Processing: centre-crop to the requested dimensions and convert to JPEG on the client side
+   const dimensions = getTargetDimensions(ratio);
+-  return await resizeAndConvertToJpeg(rawImageBase64, dimensions.width, dimensions.height);
++  return await resizeAndConvertToJpeg(imageUrl, dimensions.width, dimensions.height);
++};
++
++/** Natural width and height of an image URL. */
++const imageSize = (url: string): Promise<{ width: number; height: number }> => {
++  return new Promise((resolve, reject) => {
++    const img = new Image();
++    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
++    img.onerror = () => reject(new Error('無法讀取原圖尺寸 (Failed to read the image size)。'));
++    img.src = url;
++  });
+ };
+ 
+ export const editImage = async (
+@@ -263,49 +258,26 @@ export const editImage = async (
+   maskBase64: string | null,
+   prompt: string,
+   isMultiMask: boolean = false,
+-  selectedModel: ImageModelType = 'gemini-nano-banana-2.1'
++  selectedModel: ImageModelType = DEFAULT_IMAGE_MODEL_ID
+ ): Promise<string> => {
+   const safeImageUrl = await ensureDataUrl(imageUrl);
+   const safeMaskBase64 = maskBase64 ? await ensureDataUrl(maskBase64) : null;
++  // The edited image keeps the original's aspect and pixel size.
++  const { width, height } = await imageSize(safeImageUrl);
+ 
+   const payload = {
+     imageUrl: safeImageUrl,
+     maskBase64: safeMaskBase64,
+     prompt,
+     isMultiMask,
+-    selectedModel
++    selectedModel,
++    sourceAspect: `${width}:${height}`
+   };
+ 
+-  let response: Response;
+-  try {
+-    response = await fetch('/api/edit-image', {
+-      method: 'POST',
+-      headers: {
+-        'Content-Type': 'application/json'
+-      },
+-      body: JSON.stringify(payload)
+-    });
+-  } catch (netErr: any) {
+-    throw new Error(`網絡連線或伺服器傳輸失敗 (Failed to fetch)。請確認圖片檔案大小不超過限制，或檢查 API Key 設定。`);
+-  }
++  // One attempt with the selected model (NDJSON stream, see generateCollage).
++  const { imageUrl: editedUrl } = await postImageRequest('/api/edit-image', payload);
+ 
+-  if (!response.ok) {
+-    const data = await response.json().catch(() => ({}));
+-    const errorMsg = data.error || `Server returned status ${response.status}: ${response.statusText}`;
+-    throw new Error(errorMsg);
+-  }
+-
+-  const { rawImageBase64 } = await response.json();
+-  if (!rawImageBase64) {
+-    throw new Error("No image was returned from server image editing.");
+-  }
+-
+-  // Convert edited image to JPEG as well to match system standard
+-  return new Promise((resolve) => {
+-    const img = new Image();
+-    img.onload = () => {
+-      resizeAndConvertToJpeg(rawImageBase64, img.width, img.height).then(resolve);
+-    };
+-    img.src = rawImageBase64;
+-  });
++  // A model that cannot keep the input aspect returns its nearest ratio: centre-crop it back to
++  // the original size, as JPEG to match the system standard.
++  return resizeAndConvertToJpeg(editedUrl, width, height);
+ };
+\ No newline at end of file
+diff --git a/services/presetService.ts b/services/presetService.ts
+new file mode 100644
+index 0000000..4ec7329
+--- /dev/null
++++ b/services/presetService.ts
+@@ -0,0 +1,55 @@
++import { PresetGroup } from '../types';
++
++/**
++ * Stores the style-template preset groups (組合儲存庫) in IndexedDB. Five groups of up to six
++ * compressed templates are about 10 MB of base64, more than localStorage holds (about 5 MB).
++ */
++const DB_NAME = 'og_collage_presets_db';
++const STORE_NAME = 'presets';
++const DB_VERSION = 1;
++const PRESETS_KEY = 'collage_preset_groups';
++
++let dbPromise: Promise<IDBDatabase> | null = null;
++
++const getDB = (): Promise<IDBDatabase> => {
++  if (!dbPromise) {
++    dbPromise = new Promise((resolve, reject) => {
++      const request = indexedDB.open(DB_NAME, DB_VERSION);
++      request.onupgradeneeded = () => {
++        const db = request.result;
++        if (!db.objectStoreNames.contains(STORE_NAME)) {
++          db.createObjectStore(STORE_NAME);
++        }
++      };
++      request.onsuccess = () => resolve(request.result);
++      request.onerror = () => {
++        dbPromise = null;
++        reject(request.error);
++      };
++    });
++  }
++  return dbPromise;
++};
++
++export const PresetService = {
++  /** The saved groups, or null when nothing has been saved to IndexedDB yet. */
++  async load(): Promise<PresetGroup[] | null> {
++    const db = await getDB();
++    return new Promise((resolve, reject) => {
++      const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(PRESETS_KEY);
++      request.onsuccess = () => resolve((request.result as PresetGroup[] | undefined) ?? null);
++      request.onerror = () => reject(request.error);
++    });
++  },
++
++  async save(groups: PresetGroup[]): Promise<void> {
++    const db = await getDB();
++    return new Promise((resolve, reject) => {
++      const transaction = db.transaction(STORE_NAME, 'readwrite');
++      transaction.objectStore(STORE_NAME).put(groups, PRESETS_KEY);
++      transaction.oncomplete = () => resolve();
++      transaction.onerror = () => reject(transaction.error);
++      transaction.onabort = () => reject(transaction.error);
++    });
++  }
++};
+diff --git a/services/usageService.ts b/services/usageService.ts
+index 6ff25c5..50bc293 100644
+--- a/services/usageService.ts
++++ b/services/usageService.ts
+@@ -1,3 +1,4 @@
++import { USD_TO_HKD } from '../shared/imageModels';
+ 
+ export interface MonthlyUsageData {
+   inputTokens: number;
+@@ -6,6 +7,8 @@ export interface MonthlyUsageData {
+   totalCostHKD: number;
+   requestCount: number;
+   lastUpdated: number;
++  /** Images from models without a verified price; not included in the cost totals. */
++  unpricedImages?: number;
+ }
+ 
+ export interface UsageHistory {
+@@ -14,10 +17,7 @@ export interface UsageHistory {
+ 
+ const STORAGE_KEY = 'og_collage_usage_history';
+ 
+-// Pricing Constants (Aligned with App.tsx estimation)
+-const PRICE_PER_1M_INPUT_TOKENS_USD = 5.00;
+-const PRICE_PER_OUTPUT_IMAGE_USD = 0.134;
+-const HKD_EXCHANGE_RATE = 7.8;
++// Estimates only: prices come from GET /api/image-models (see shared/imageModels.ts estimateCostUsd).
+ 
+ export const UsageService = {
+   // Get the current YYYY-MM string (e.g., "2023-10")
+@@ -53,53 +53,25 @@ export const UsageService = {
+     return history[yearMonth];
+   },
+ 
+-  // Record a transaction
+-  trackTransaction: (
+-    inputTokens: number, 
+-    outputImages: number, 
+-    selectedModel: 'gemini-nano-banana-2.1' | 'nano-banana-pro' | 'nano-banana-2' | 'nano-banana-2-lite' = 'gemini-nano-banana-2.1',
+-    quality: '1K' | '2K' = '1K'
+-  ) => {
++  // Record an estimated transaction. costUsd is null when the model's price is unknown (未計價).
++  trackTransaction: (inputTokens: number, outputImages: number, costUsd: number | null) => {
+     const history = UsageService.getHistory();
+     const currentKey = UsageService.getCurrentMonthKey();
+-    
+-    // Initialize if needed
+-    if (!history[currentKey]) {
+-      history[currentKey] = {
+-        inputTokens: 0,
+-        outputImages: 0,
+-        totalCostUSD: 0,
+-        totalCostHKD: 0,
+-        requestCount: 0,
+-        lastUpdated: Date.now()
+-      };
+-    }
+-
+-    // Calculate Costs for this specific transaction based on the model selected and quality
+-    let pricePerImage = 0.134;
+-    if (selectedModel === 'nano-banana-2-lite') {
+-      pricePerImage = quality === '1K' ? 0.034 : 0.050;
+-    } else if (selectedModel === 'gemini-nano-banana-2.1' || selectedModel === 'nano-banana-2') {
+-      pricePerImage = quality === '1K' ? 0.067 : 0.101;
+-    } else {
+-      pricePerImage = 0.134;
+-    }
+-    const inputCost = (inputTokens / 1000000) * PRICE_PER_1M_INPUT_TOKENS_USD;
+-    const outputCost = outputImages * pricePerImage;
+-    const totalTxCostUSD = inputCost + outputCost;
+-    const totalTxCostHKD = totalTxCostUSD * HKD_EXCHANGE_RATE;
+-
+-    // Update Accumulators
+-    history[currentKey].inputTokens += inputTokens;
+-    history[currentKey].outputImages += outputImages;
+-    history[currentKey].totalCostUSD += totalTxCostUSD;
+-    history[currentKey].totalCostHKD += totalTxCostHKD;
+-    history[currentKey].requestCount += 1;
+-    history[currentKey].lastUpdated = Date.now();
++    const current = history[currentKey] ?? UsageService.getMonthData(currentKey);
++    const txCostUSD = costUsd ?? 0;
++    const updated: MonthlyUsageData = {
++      ...current,
++      inputTokens: current.inputTokens + inputTokens,
++      outputImages: current.outputImages + outputImages,
++      totalCostUSD: current.totalCostUSD + txCostUSD,
++      totalCostHKD: current.totalCostHKD + txCostUSD * USD_TO_HKD,
++      requestCount: current.requestCount + 1,
++      lastUpdated: Date.now(),
++      unpricedImages: (current.unpricedImages ?? 0) + (costUsd === null ? outputImages : 0),
++    };
+ 
+-    // Save
+     try {
+-      localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
++      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...history, [currentKey]: updated }));
+     } catch (e) {
+       console.error("Failed to save usage history", e);
+     }
+@@ -114,7 +86,7 @@ export const UsageService = {
+       maximumFractionDigits: 2
+     }).format(amount);
+   },
+-  
++
+   // Helper to calculate tokens for a standard request (used in App.tsx estimation)
+   calculateEstimatedTokens: (numImages: number, textLength: number): number => {
+       const INPUT_IMAGE_TOKENS = 258;
+diff --git a/shared/imageModels.ts b/shared/imageModels.ts
+new file mode 100644
+index 0000000..c129319
+--- /dev/null
++++ b/shared/imageModels.ts
+@@ -0,0 +1,32 @@
++import { estimateImageCostUsd, type ImageModelView } from '@hk01/pi-ai-extra-image-kit';
++import { outputSpec } from './imageOutput';
++
++/**
++ * og-master's own image-model constants and cost estimate. Model views, limits and the other
++ * helpers come from @hk01/pi-ai-extra-image-kit. Safe in the browser bundle.
++ */
++
++export const DEFAULT_IMAGE_MODEL_ID = 'google:gemini-nano-banana-2.1';
++export const USD_TO_HKD = 7.8;
++
++/**
++ * Estimated USD for one request per entry of `ratios`, or null when the model's price is unknown.
++ * Each output image is its own request, so input tokens are counted once per image.
++ */
++export function estimateCostUsd(
++  model: ImageModelView | undefined,
++  input: { inputImages: number; promptChars: number; ratios: readonly string[] },
++): number | null {
++  if (!model?.price) return null;
++  let total = 0;
++  for (const ratio of input.ratios) {
++    const cost = estimateImageCostUsd(model, {
++      resolution: outputSpec(ratio).resolution,
++      inputImages: input.inputImages,
++      promptChars: input.promptChars,
++    });
++    if (cost === null) return null;
++    total += cost;
++  }
++  return total;
++}
+diff --git a/shared/imageOutput.ts b/shared/imageOutput.ts
+new file mode 100644
+index 0000000..3f36ebe
+--- /dev/null
++++ b/shared/imageOutput.ts
+@@ -0,0 +1,28 @@
++import type { AspectRatio } from '../types';
++
++/**
++ * Final output size for each ratio preset, and the generation resolution that covers it.
++ * Shared by the server (what to request) and the browser (cost estimates).
++ */
++export type OutputResolution = '1K' | '2K';
++
++export interface OutputSpec {
++  width: number;
++  height: number;
++  resolution: OutputResolution;
++}
++
++export const OUTPUT_SPECS: Record<AspectRatio, OutputSpec> = {
++  '16:9': { width: 1200, height: 675, resolution: '1K' },
++  '4:5': { width: 1600, height: 2000, resolution: '2K' },
++  '9:16': { width: 1080, height: 1920, resolution: '2K' },
++  '1:1': { width: 1080, height: 1080, resolution: '1K' },
++  '300x250': { width: 300, height: 250, resolution: '1K' },
++  '300x300': { width: 300, height: 300, resolution: '1K' },
++};
++
++const FALLBACK_SPEC: OutputSpec = { width: 1024, height: 1024, resolution: '1K' };
++
++export function outputSpec(ratio: string): OutputSpec {
++  return OUTPUT_SPECS[ratio as AspectRatio] ?? FALLBACK_SPEC;
++}
+diff --git a/types.ts b/types.ts
+index 67ba2f4..b44d973 100644
+--- a/types.ts
++++ b/types.ts
+@@ -13,7 +13,8 @@ export type AspectRatio = '16:9' | '9:16' | '1:1' | '4:5' | '300x250' | '300x300
+ 
+ export type ImageQuality = '1K' | '2K';
+ 
+-export type ImageModelType = 'gemini-nano-banana-2.1' | 'nano-banana-2' | 'nano-banana-pro';
++/** Canonical image model ID, `provider:familyId` (for example 'google:gemini-nano-banana-2.1'). */
++export type ImageModelType = string;
+ 
+ export interface GeneratedImage {
+   id: string;
+diff --git a/vite.config.ts b/vite.config.ts
+index ee5fb8d..c49f770 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -1,19 +1,15 @@
+ import path from 'path';
+-import { defineConfig, loadEnv } from 'vite';
++import { defineConfig } from 'vite';
+ import react from '@vitejs/plugin-react';
+ 
+-export default defineConfig(({ mode }) => {
+-    const env = loadEnv(mode, '.', '');
++// No `define` for API keys: keys stay on the server and never enter the browser bundle.
++export default defineConfig(() => {
+     return {
+       server: {
+         port: 3000,
+         host: '0.0.0.0',
+       },
+       plugins: [react()],
+-      define: {
+-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+-      },
+       resolve: {
+         alias: {
+           '@': path.resolve(__dirname, '.'),
