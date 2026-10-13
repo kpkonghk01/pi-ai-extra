@@ -4,7 +4,7 @@ You are editing the current Google AI Studio Auto OG app (OG 拼貼大師): Reac
 
 Auto OG still carries app-local copies of the image client: a hand-written model registry (`server/imageModels.ts`), provider calls (`server/imageClient.ts`), an NDJSON writer (`server/ndjson.ts`) and browser copies of the reader, selector, hook and error panel. Two parts are unsafe:
 
-- `server/imageModels.ts` copies Google's Nano Banana 2.1 catalogue entry (`GOOGLE_2_1_MODEL_INFO`, `ALL_GOOGLE_IMAGE_MODELS`) and accepts the alias `nano-banana-2.1`;
+- `server/imageModels.ts` copies Google's Nano Banana 2.1 catalogue entry (`GOOGLE_2_1_MODEL_INFO`, `ALL_GOOGLE_IMAGE_MODELS`) and accepts the aliases `nano-banana-2.1`, `gpt-image-2.5`, `gpt-2.5` and `toapis-gpt-2.5` (the last three also in `components/useImageModels.ts`);
 - `server/imageClient.ts` sends Nano Banana 2.1 through `generateGoogleDirectImage()`, a direct `fetch` to Google's `v1beta` endpoint, because the installed Google package (0.2.0) does not know the model.
 
 This migration replaces all of these with `@hk01/pi-ai-extra-image-kit` 0.2 and Google 0.3.2, which owns Nano Banana 2.1. image-kit 0.2 offers every model **family** declared by the installed Google, ToAPIs and KIE packages, minus the families a scope excludes, so a later provider package upgrade adds new models without editing this app. A family is one selector entry; image-kit chooses the provider's text-to-image or image-to-image operation from whether the request has reference images.
@@ -94,7 +94,7 @@ const POLICY: CataloguePolicy = {
     'toapis:gpt-image-2': { label: 'GPT Image 2 (ToAPIs)', description: 'ToAPIs 提供的 GPT Image 2。' },
     'toapis:gpt-image-2.5-flare': {
       label: 'GPT Image 2.5 Flare (ToAPIs)',
-      description: 'ToAPIs 提供的 GPT Image 2.5 Flare。',
+      description: 'ToAPIs 提供的 GPT Image 2.5 Flare，預設高效率生圖模型。',
       // ToAPIs GPT Image 2.5 doc (2026-09-09).
       price: { perImageUsd: { '1K': 0.015, '2K': 0.02 }, inputPerMillionTokensUsd: 0 },
     },
@@ -247,7 +247,7 @@ Notes:
     * helpers come from @hk01/pi-ai-extra-image-kit. Safe in the browser bundle.
     */
 
-   export const DEFAULT_IMAGE_MODEL_ID = 'google:gemini-nano-banana-2.1';
+   export const DEFAULT_IMAGE_MODEL_ID = 'toapis:gpt-image-2.5-flare';
    export const USD_TO_HKD = 7.8;
 
    /**
@@ -272,6 +272,8 @@ Notes:
      return total;
    }
    ```
+
+   The default stays GPT Image 2.5 Flare (ToAPIs), the app's current default, under its canonical ID. Today's selector lists ToAPIs first (`PROVIDER_ORDER`); image-kit always groups Google, ToAPIs, then KIE. This order change is intended: do not re-add `PROVIDER_ORDER`.
 
 2. Replace the whole of `services/errorReporter.ts` with the following. It keeps Auto OG's operation names, so its callers need no change, and sends every error to image-kit's `ErrorPanel`:
 
@@ -303,7 +305,7 @@ Notes:
 
 ## Step 5: components
 
-Use this table for every changed import and call. TypeScript reports each call site the table changes, so run `npm run lint` until it is clean.
+Use this table for every changed import and call. Auto OG has no `@types/react`, so `npm run lint` does not check JSX props or values that come from React hooks: it will not report most of these call sites. Search `App.tsx`, `components/AutopilotStudio.tsx` and `components/ImageEditor.tsx` for `referenceCount=`, `modelIssue(`, `modelView=`, `<ImageModelSelector`, `<ImageModelIssue` and `useImageModels(`, convert every hit by the table, then run `npm run lint`.
 
 | Before (app-local) | After (image-kit) |
 | --- | --- |
@@ -323,7 +325,7 @@ Use this table for every changed import and call. TypeScript reports each call s
 File-specific changes:
 
 1. `App.tsx`: apply the table. Keep the effect that resets an unknown `selectedModel` to `DEFAULT_IMAGE_MODEL_ID`; with canonical IDs it also resets IDs restored from older drafts. Keep `<ErrorPanel />` where it is (outside `AppContent`). Stop passing `modelView` to `ImageEditor`.
-2. `components/AutopilotStudio.tsx`: apply the table. Its `imageModels` prop is still the collage list from `App.tsx`, so it needs no `useImageModels()` call of its own.
+2. `components/AutopilotStudio.tsx`: apply the table. Its `imageModels` prop is still the collage list from `App.tsx`, so it needs no `useImageModels()` call of its own. It also renders `<ImageEditor … modelView={currentImageModel} />` for template and source images: remove `modelView={currentImageModel}` there too (Step 5.3 removes that prop).
 3. `components/ImageEditor.tsx`: remove the `modelView` prop. The editor reads the list for the route it calls:
 
    ```tsx
@@ -331,7 +333,7 @@ File-specific changes:
    const modelView = findImageModel(editModels, selectedModel);
    ```
 
-   Import both from `@hk01/pi-ai-extra-image-kit/react`, and `MASK_REFERENCE_ONLY_NOTE`, `temperatureFor`, `type ImageModelView` from `@hk01/pi-ai-extra-image-kit`. The existing `temperatureFor(modelView, 0.5)` and mask-note code then work unchanged. The `/api/edit-image` route validates `selectedModel` against the `edit` scope and returns a structured error, which the existing `reportError(e, 'edit', …)` shows in the `ErrorPanel`.
+   Import both from `@hk01/pi-ai-extra-image-kit/react`, and `MASK_REFERENCE_ONLY_NOTE`, `temperatureFor` from `@hk01/pi-ai-extra-image-kit`. Keep importing `DEFAULT_IMAGE_MODEL_ID` from `../shared/imageModels`. The existing `temperatureFor(modelView, 0.5)` and mask-note code then work unchanged. The `/api/edit-image` route validates `selectedModel` against the `edit` scope and returns a structured error, which the existing `reportError(e, 'edit', …)` shows in the `ErrorPanel`.
 4. Delete these files once nothing imports them: `components/ErrorPanel.tsx`, `components/ImageModelSelector.tsx`, `components/useImageModels.ts`, `services/imageApi.ts`.
 
 Keep `components/TemperatureControl.tsx`, `services/usageService.ts` and `shared/imageOutput.ts` unchanged.
@@ -362,6 +364,6 @@ Keep `components/TemperatureControl.tsx`, `services/usageService.ts` and `shared
 7. Edit a result with a mask using Nano Banana 2.1, then using GPT Image 2 (KIE). Both succeed; the KIE edit shows the mask reference-only note.
 8. With an invalid `GEMINI_API_KEY`, generate with Nano Banana 2.1. The ErrorPanel shows `google/gemini-nano-banana-2.1`, the error code and `App model: google:gemini-nano-banana-2.1`, and its report can be copied. A failed title generation shows `操作: 標題生成` in the same panel.
 9. Select ToAPIs GPT Image 2 (limit 6 references) with 7 template + source images. The option is disabled with its limit, the red hint appears, and Generate stays disabled; no image is dropped and no other model is called.
-10. Restore a saved Autopilot draft whose `imageModel` is `nano-banana-2`. The selector switches to Nano Banana 2.1 after the list loads.
-11. Search the app. None of these remain: `GOOGLE_2_1_MODEL_INFO`, `ALL_GOOGLE_IMAGE_MODELS`, `generateGoogleDirectImage`, `generativelanguage.googleapis.com`, `v1beta`, `findRegistryEntry`, `prepareAppImage`, `runAppImage`, `listImageModels`, `imageModelView`, `rawImageBase64`, `PROVIDER_ORDER`, an import of a deleted file, or an image model ID without its `provider:` prefix. `@google/genai` is imported only for the text routes.
+10. Restore a saved Autopilot draft whose `imageModel` is `nano-banana-2`. The selector switches to the default, GPT Image 2.5 Flare (ToAPIs), after the list loads.
+11. Search the app's source files, excluding `node_modules/`, `dist/`, `package-lock.json`, `migrated_prompt_history/` and `pi-ai-migration/` (do not edit those). None of these remain: `GOOGLE_2_1_MODEL_INFO`, `ALL_GOOGLE_IMAGE_MODELS`, `generateGoogleDirectImage`, `generativelanguage.googleapis.com`, `v1beta`, `findRegistryEntry`, `prepareAppImage`, `runAppImage`, `listImageModels`, `imageModelView`, `rawImageBase64`, `PROVIDER_ORDER`, an import of a deleted file, or an image model ID without its `provider:` prefix (the prompt-profile name `'nano-banana-2'` is not a model ID). `@google/genai` is imported only for the text routes.
 12. Report every file created, changed or deleted, and any step whose excerpt did not match the current code together with how you applied it.

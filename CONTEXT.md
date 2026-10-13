@@ -46,6 +46,12 @@ The published description of the options and limits that vary between image mode
 
 Automatically changing provider, model, or file-storage provider after a request fails. Fallback is prohibited: the selected provider/model either succeeds or reports its own failure.
 
+## Backup app
+
+A separately deployed consumer application that users open by their own choice when the primary app is unusable, such as opengraph2 for open-graph-single. Switching to it is a human decision, never a fallback.
+
+_Avoid_: fallback app, 後備方案 app
+
 ## Release artifact
 
 A versioned `.tgz` package attached to a GitHub Release. It is the consumer-installable delivery unit while no npm registry is used.
