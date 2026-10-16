@@ -297,7 +297,7 @@ describe("KIE catalogue and pi-ai adapters", () => {
   it("prices chat models from KIE's published credits (1 credit = $0.005 per 1M tokens)", () => {
     assertRateTable(createKieProvider({ apiKey: "kie-key" }).getModels(), {
       // id: [input, output, cacheRead, cacheWrite] in USD per 1M tokens. Codex cache rates are
-      // published; Claude's are not: cache reads at the input rate, cache writes at 1.25 × input.
+      // published; Claude's are derived by the cache fill-in rule (see toModelCost).
       "gpt-6-astra": [2.8, 14, 0.28, 3.5],
       "gpt-5-6-sol": [1.4, 8.4, 0.14, 1.75],
       "gpt-5-6-terra": [0.56, 3.36, 0.056, 0.7],

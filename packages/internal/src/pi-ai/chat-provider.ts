@@ -4,7 +4,7 @@ import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.l
 import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
 import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
 import { explicitApiKeyAuth } from "./auth.ts";
-import { UNPRICED_MODEL_COST } from "./cost.ts";
+import { INTERIM_ZERO_COST } from "./cost.ts";
 import type { HelperImages } from "./images-provider.ts";
 
 export type ChatProtocol = "openai-responses" | "anthropic-messages";
@@ -26,8 +26,9 @@ export interface ChatModelDefinition {
   /**
    * USD per million tokens, used for pi-ai usage accounting. Never copied from pi-ai's catalogue
    * (provider prices differ from list prices). The packages' default model lists set it from each
-   * provider's published rates and offer no model without one. When omitted: the interim zero
-   * described at `fillCacheRates`.
+   * provider's published rates and offer no model without one. When omitted, every rate is `0`
+   * and pi-ai reports a zero `usage.cost` for the model. That zero is not a published rate: it is
+   * an interim value, because pi-ai's `Model.cost` cannot be absent.
    */
   cost?: ModelCost | undefined;
 }
@@ -74,8 +75,8 @@ export function createChatProvider(input: ChatProviderInput): Provider<ChatProto
  * Builds a pi-ai model. Capability metadata (reasoning, context window, thinking
  * levels, request compatibility) is copied from pi-ai's built-in catalogue when the
  * id (or `catalogueId`) matches; Anthropic "allowed fallback models" are removed because
- * fallback is prohibited. Prices are never copied: they come from `definition.cost`, or the
- * interim zero described at `fillCacheRates`.
+ * fallback is prohibited. Prices are never copied: they come from `definition.cost`, or are
+ * `INTERIM_ZERO_COST` without it.
  */
 export function buildChatModel(provider: string, baseUrl: string, definition: ChatModelDefinition): Model<ChatProtocol> {
   const builtin = findBuiltinModel(definition);
@@ -88,7 +89,7 @@ export function buildChatModel(provider: string, baseUrl: string, definition: Ch
     baseUrl,
     reasoning: definition.reasoning ?? builtin?.reasoning ?? true,
     input: definition.input ?? builtin?.input ?? ["text", "image"],
-    cost: definition.cost ?? UNPRICED_MODEL_COST,
+    cost: definition.cost ?? INTERIM_ZERO_COST,
     contextWindow: definition.contextWindow ?? builtin?.contextWindow ?? defaults.contextWindow,
     maxTokens: definition.maxTokens ?? builtin?.maxTokens ?? defaults.maxTokens,
     ...(builtin?.thinkingLevelMap ? { thinkingLevelMap: builtin.thinkingLevelMap } : {}),

@@ -220,7 +220,7 @@ describe("ToAPIs catalogue and pi-ai adapters", () => {
   it("prices chat models from the pricing API ratios", () => {
     assertRateTable(createToapisProvider({ apiKey: "toapis-key" }).getModels(), {
       // id: [input, output, cacheRead, cacheWrite] in USD per 1M tokens. Cache rates are not
-      // published: cache reads at the input rate, cache writes at 1.25 × input.
+      // published; they are derived by the cache fill-in rule (see toModelCost).
       "gpt-5.3-codex-official": [1.4, 11.2, 1.4, 1.75],
       "claude-opus-4-6": [1.5, 7.5, 1.5, 1.875],
       "claude-sonnet-4-6": [0.9, 4.5, 0.9, 1.125],

@@ -1,5 +1,5 @@
 import type { Provider } from "@earendil-works/pi-ai";
-import { createChatProvider, fillCacheRates, helperImages, type ChatModelDefinition, type ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
+import { createChatProvider, helperImages, toModelCost, type ChatModelDefinition, type ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
 import {
   KIE_API_BASE_URL,
   KIE_CLAUDE_BASE_URL,
@@ -18,12 +18,12 @@ export type { ChatModelDefinition, ChatProtocol } from "@hk01/pi-ai-extra-intern
  * Rates as of 2026-10-16, source: https://kie.ai/pricing, read from
  * `POST https://api.kie.ai/client/v1/model-pricing/page` with
  * `{"pageNum":1,"pageSize":100,"interfaceType":"chat"}`. KIE prices chat in credits per
- * 1M tokens; 1 credit = $0.005 (the same listing's `usdPrice`). Unpublished cache rates are
- * filled in by `fillCacheRates`, which explains the rule.
+ * 1M tokens; 1 credit = $0.005 (the same listing's `usdPrice`). `toModelCost` derives the cache
+ * rates KIE does not publish.
  */
 const USD_PER_CREDIT = 0.005;
 
-/** KIE credits per 1M tokens to USD per 1M tokens (`fillCacheRates` rounds the result). */
+/** KIE credits per 1M tokens to USD per 1M tokens (`toModelCost` rounds the result). */
 function usd(credits: number): number {
   return credits * USD_PER_CREDIT;
 }
@@ -42,7 +42,7 @@ function codex(
     id,
     ...(catalogueId === undefined ? {} : { catalogueId }),
     protocol: "openai-responses",
-    cost: fillCacheRates({
+    cost: toModelCost({
       input: usd(credits.input),
       output: usd(credits.output),
       cacheRead: usd(credits.cacheRead),
@@ -53,7 +53,7 @@ function codex(
 
 /** A Claude model on Anthropic Messages, with input and output credits per 1M tokens; KIE publishes no cache rates for Claude. */
 function claude(id: string, inputCredits: number, outputCredits: number): ChatModelDefinition {
-  return { id, protocol: "anthropic-messages", cost: fillCacheRates({ input: usd(inputCredits), output: usd(outputCredits) }) };
+  return { id, protocol: "anthropic-messages", cost: toModelCost({ input: usd(inputCredits), output: usd(outputCredits) }) };
 }
 
 /**

@@ -7,6 +7,6 @@ export {
   type ChatProtocol,
   type ChatProviderInput,
 } from "./chat-provider.ts";
-export { fillCacheRates, type PublishedRates } from "./cost.ts";
+export { toModelCost, type PublishedRates } from "./cost.ts";
 export { helperImages, type HelperImages, type HelperImagesInput } from "./images-provider.ts";
 export { toPiAiUsage } from "./usage.ts";
