@@ -14,7 +14,7 @@ import { createGoogleProvider, googleChatRate } from "@hk01/pi-ai-extra-google/p
 import { catalogueRate, type ModelRate } from "@hk01/pi-ai-extra-internal/rates";
 import { createKieProvider, KIE_CHAT_MODELS } from "@hk01/pi-ai-extra-kie/pi-ai";
 import { createToapisProvider, TOAPIS_CHAT_MODELS } from "@hk01/pi-ai-extra-toapis/pi-ai";
-import { fetchGeminiModels } from "./models/gemini.ts";
+import { fetchGeminiModels, isGeminiChatModel } from "./models/gemini.ts";
 import { createModelList, type ListedModel, type ModelList } from "./models/list.ts";
 import { fetchOpenRouterModels } from "./models/openrouter.ts";
 import { fetchKieModels, fetchToapisModels } from "./models/resellers.ts";
@@ -52,6 +52,8 @@ interface ProviderKindSpec {
   readonly nativeStructuredOutput: boolean;
   /** The pi-ai provider for an explicit key; `root` (no trailing slash) replaces its default API root. */
   create(apiKey: string, root: string | undefined): Provider;
+  /** Which installed models are listed and run until a live list is read. Gemini keeps the plain chat models its live list keeps. */
+  listsInstalled(model: Model<Api>): boolean;
   /** The rate schedule of an installed model: the package definitions' rates, Gemini's rate table, or OpenRouter's catalogue price. */
   rateOf(model: Model<Api>): ModelRate | undefined;
   /** Reads the provider's live model list. */
@@ -73,6 +75,7 @@ const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> 
     fileDocuments: true,
     nativeStructuredOutput: false,
     create: (apiKey, root) => createGoogleProvider({ apiKey, ...(root ? { baseUrl: root } : {}) }),
+    listsInstalled: (model) => isGeminiChatModel(model.id),
     rateOf: (model) => googleChatRate(model.id),
     fetchLive: (context) => fetchGeminiModels({ ...context, baseUrl: context.provider.baseUrl ?? context.root ?? "" }),
   },
@@ -80,6 +83,7 @@ const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> 
     fileDocuments: true,
     nativeStructuredOutput: true,
     create: explicitOpenRouterProvider,
+    listsInstalled: () => true,
     rateOf: (model) => catalogueRate(model.cost),
     fetchLive: (context) => fetchOpenRouterModels({ ...context, root: context.root ?? OPENROUTER_API_ROOT }),
   },
@@ -88,6 +92,7 @@ const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> 
     nativeStructuredOutput: false,
     create: (apiKey, root) =>
       createKieProvider({ apiKey, ...(root ? { responsesBaseUrl: `${root}/openai/v1`, claudeBaseUrl: `${root}/anthropic` } : {}) }),
+    listsInstalled: () => true,
     rateOf: definitionRate(KIE_CHAT_MODELS),
     fetchLive: (context) => fetchKieModels({ ...context, host: context.root ?? KIE_HOST }),
   },
@@ -95,6 +100,7 @@ const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> 
     fileDocuments: false,
     nativeStructuredOutput: false,
     create: (apiKey, root) => createToapisProvider({ apiKey, ...(root ? { baseUrl: root } : {}) }),
+    listsInstalled: () => true,
     rateOf: definitionRate(TOAPIS_CHAT_MODELS),
     fetchLive: (context) => fetchToapisModels({ ...context, host: context.root ?? TOAPIS_HOST }),
   },
@@ -142,7 +148,10 @@ export function createProviderRegistry(configs: readonly ChatProviderConfig[], o
     const provider = spec.create(config.apiKey, root);
     const models = createModels({ authContext: NO_AMBIENT_AUTH });
     models.setProvider(provider);
-    const installed = provider.getModels().map((model): ListedModel => ({ model, rate: spec.rateOf(model), input: inputOf(model) }));
+    const installed = provider
+      .getModels()
+      .filter((model) => spec.listsInstalled(model))
+      .map((model): ListedModel => ({ model, rate: spec.rateOf(model), input: inputOf(model) }));
     registry.set(config.name, {
       name: config.name,
       kind: config.provider,

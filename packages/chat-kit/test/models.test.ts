@@ -365,6 +365,62 @@ describe("Gemini live list", () => {
   });
 });
 
+describe("Gemini chat-only filter", () => {
+  /** pi-ai's Gemini catalogue ids that are not plain text chat models (embedding, Imagen, Veo and TTS ones come from the live list). */
+  const NOT_CHAT = [
+    "deep-research-max-preview-04-2026",
+    "deep-research-preview-04-2026",
+    "gemini-2.5-computer-use-preview-10-2025",
+    "gemini-3.1-flash-lite-image",
+    "gemini-3.1-flash-live-preview",
+  ];
+
+  it("leaves Live, computer use, image-output and Deep Research models out of the live list", async () => {
+    const generate = ["generateContent"];
+    const fake = createFakeFetch([
+      {
+        method: "GET",
+        url: GEMINI_MODELS_URL,
+        respond: () =>
+          jsonResponse({
+            models: [
+              ...NOT_CHAT.map((id) => ({ name: `models/${id}`, supportedGenerationMethods: generate })),
+              { name: "models/gemini-live-2.5-flash-preview", supportedGenerationMethods: generate },
+              { name: "models/gemini-3-pro-image-preview", supportedGenerationMethods: generate },
+              { name: "models/gemini-2.0-flash-preview-image-generation", supportedGenerationMethods: generate },
+              { name: "models/gemini-3.8-flash", supportedGenerationMethods: generate },
+              { name: "models/gemini-3.1-pro-preview-customtools", supportedGenerationMethods: generate },
+              { name: "models/gemma-4-31b-it", supportedGenerationMethods: generate },
+            ],
+          }),
+      },
+    ]);
+    const chat = createChatKit({ providers: [{ name: "gemini", provider: "google", apiKey: "gemini-key" }], fetch: fake.fetch });
+    const models = byId((await chat.listModels())[0]);
+    assert.deepEqual([...models.keys()], ["gemini-3.8-flash", "gemini-3.1-pro-preview-customtools", "gemma-4-31b-it"]);
+  });
+
+  it("filters the installed catalogue the same way when models.list fails (a region block, for example)", async () => {
+    const fake = createFakeFetch([
+      {
+        method: "GET",
+        url: GEMINI_MODELS_URL,
+        respond: () => jsonResponse({ error: { code: 400, message: "User location is not supported for the API use." } }, 400),
+      },
+    ]);
+    const chat = createChatKit({ providers: [{ name: "gemini", provider: "google", apiKey: "gemini-key" }], fetch: fake.fetch });
+    const [entry] = await chat.listModels();
+    assert.ok(entry && "models" in entry);
+    assert.equal(entry.source, "installed");
+    assert.match(entry.refreshError ?? "", /HTTP 400 .*User location is not supported/);
+    const listedIds = entry.models.map((model) => model.id);
+    assert.ok(listedIds.includes("gemini-3.8-flash"));
+    for (const id of NOT_CHAT) assert.ok(!listedIds.includes(id), id);
+    const turnResult = lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.1-flash-live-preview" }))));
+    assert.equal(turnResult.type === "failed" && turnResult.error.code, "UNKNOWN_MODEL", "turns resolve against the filtered list");
+  });
+});
+
 describe("KIE and ToAPIs live lists", () => {
   it("keeps only the KIE definitions its two model lists name, matching dotted and dashed ids", async () => {
     const fake = createFakeFetch([

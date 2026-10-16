@@ -389,7 +389,7 @@ for (const entry of await chat.listModels({ signal })) {
 | `kind` | Live list | Kept |
 | --- | --- | --- |
 | `openrouter` | Public `GET <root>/v1/models` (no key) | Every model that answers in text, tool support or not; not `:batch` models |
-| `google` | `models.list` (`GET <base>/models`) with the key | `generateContent` models, `models/` prefix stripped; not embedding, Imagen, Veo or TTS models |
+| `google` | `models.list` (`GET <base>/models`) with the key | `generateContent` models, `models/` prefix stripped; plain text chat only: not embedding, Imagen, Veo, TTS, Live (`-live-`), computer use, image-output (`-image`) or Deep Research models. The installed catalogue is filtered the same way |
 | `kie` | `GET <host>/openai/v1/models` (Codex) and `GET <host>/anthropic/v1/models` (Claude) with the key | Only ids with a package definition (`KIE_CHAT_MODELS`), matched across `.` and `-` spellings |
 | `toapis` | `GET <host>/v1/models?type=text` with the key | Only ids with a package definition (`TOAPIS_CHAT_MODELS`) |
 

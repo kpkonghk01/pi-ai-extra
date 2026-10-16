@@ -5,8 +5,19 @@ import { isRecord } from "../guards.ts";
 import { getModelListJson } from "./http.ts";
 import type { ListedModel } from "./list.ts";
 
-/** Ids of Gemini models that are not chat models, though some list `generateContent`. */
-const NOT_CHAT = /embedding|imagen|veo|tts/i;
+/**
+ * Ids of Gemini models that are not plain text chat models, though many list `generateContent`
+ * and pi-ai's catalogue has some: embedding, Imagen, Veo and TTS models; Live API models
+ * (`gemini-3.1-flash-live-preview`); computer use (`gemini-2.5-computer-use-preview-10-2025`);
+ * image-output models (`gemini-3.1-flash-lite-image`, `*-image-preview`); and the Deep Research
+ * agents (`deep-research-preview-04-2026`).
+ */
+const NOT_PLAIN_CHAT = /embedding|imagen|veo|tts|(?:^|-)live(?:-|$)|computer-use|(?:^|-)image(?:-|$)|deep-research/i;
+
+/** Whether a Gemini model id is a plain text chat model. The live list and the installed catalogue both keep only these. */
+export function isGeminiChatModel(id: string): boolean {
+  return !NOT_PLAIN_CHAT.test(id);
+}
 
 /** `models.list` pages; a key sees well under this many models. */
 const MAX_PAGES = 10;
@@ -17,8 +28,8 @@ const UNKNOWN_MAX_OUTPUT_TOKENS = 8_192;
 
 /**
  * Gemini's live chat list: the ids `GET <base>/models` lists for the key (`x-goog-api-key`), with
- * the `models/` prefix stripped, kept when the model supports `generateContent` and is not an
- * embedding, Imagen, Veo or TTS model. A model pi-ai's catalogue knows keeps its catalogue entry
+ * the `models/` prefix stripped, kept when the model supports `generateContent` and is a plain
+ * text chat model (`isGeminiChatModel`). A model pi-ai's catalogue knows keeps its catalogue entry
  * (thinking levels, limits) and rate. A new id gets conservative defaults: text input only, the
  * limits Gemini reports (else small ones), no thinking levels, and its rate from the Gemini rate
  * table, which usually means no rate.
@@ -53,7 +64,7 @@ function geminiModel(entry: unknown, installed: ReadonlyMap<string, ListedModel>
   if (!isRecord(entry) || typeof entry.name !== "string") return undefined;
   const id = entry.name.replace(/^models\//, "");
   const methods = Array.isArray(entry.supportedGenerationMethods) ? entry.supportedGenerationMethods : [];
-  if (!id || !methods.includes("generateContent") || NOT_CHAT.test(id)) return undefined;
+  if (!id || !methods.includes("generateContent") || !isGeminiChatModel(id)) return undefined;
   const known = installed.get(id);
   if (known !== undefined) return known;
   const rate = googleChatRate(id);
