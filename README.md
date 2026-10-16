@@ -319,12 +319,12 @@ for await (const event of chat.runTurn(
   { signal: abortController.signal },
 )) {
   if (event.type === "text") res.write(event.delta);
-  else if (event.type === "done") await usageLog.record(event.usage);
+  else if (event.type === "done") await usageLog.record(event.usage); // event.truncated: cut off at the output-token limit
   else await session.saveFailedTurn(event.error, event.usage); // "failed" is always the last event
 }
 ```
 
-A turn emits `text` deltas (thinking is never streamed), then exactly one `done` (with `usage`) or `failed` (with `error`, and `usage` when the provider reported it). It never throws. Aborting the signal, or stopping the iteration, cancels the request. `settings.reasoning` is pi-ai's `ThinkingLevel` (`minimal` to `max`), clamped to what the model supports; without it, thinking is off where the model allows. Unknown keys in the input, `responseSchema` and `settings` are rejected.
+A turn emits `text` deltas (thinking is never streamed), then exactly one `done` (with `usage`) or `failed` (with `error`, and `usage` when the provider reported it). It never throws. A free-form answer that stops at the output-token limit (`settings.maxOutputTokens` or the model's maximum) still ends `done`, with `truncated: true`; the text already streamed is the whole, cut-off answer. `truncated` is absent on a normal stop. A turn with a `responseSchema` fails there instead, with `PROVIDER_ERROR`, because a cut-off JSON answer cannot be parsed. Aborting the signal, or stopping the iteration, cancels the request. `settings.reasoning` is pi-ai's `ThinkingLevel` (`minimal` to `max`), clamped to what the model supports; without it, thinking is off where the model allows. Unknown keys in the input, `responseSchema` and `settings` are rejected.
 
 ### Documents
 
@@ -361,13 +361,13 @@ The request is ordered: system prompt, documents, history, new message. The docu
 | `error.code` | Meaning |
 | --- | --- |
 | `CONTENT_BLOCKED` | A safety system blocked the prompt or the answer. `reason` is the provider's value: Gemini `SAFETY`, `PROHIBITED_CONTENT`, `BLOCKLIST` or `SPII` (finish reason) or the prompt's `promptFeedback.blockReason`; `content_filter` on the OpenAI APIs, and `refusal` on OpenAI Responses; `refusal` or `sensitive` on Anthropic. |
-| `PROVIDER_ERROR` | The provider failed (`status` is its HTTP status, when there was one), or the answer stopped early: Gemini `RECITATION`, the output token limit (`reason` `MAX_TOKENS`, `length` or `max_tokens`), a broken stream. |
+| `PROVIDER_ERROR` | The provider failed (`status` is its HTTP status, when there was one), or the answer stopped early: Gemini `RECITATION`, a broken stream, or a `responseSchema` answer cut off at the output-token limit (`reason` is the raw stop reason: `MAX_TOKENS`, `length`, `max_tokens` or `incomplete.max_output_tokens`), including a forced tool call on Anthropic Messages. |
 | `UNSUPPORTED` | The provider or model cannot take this request (documents, a schema with thinking). Nothing was sent. |
 | `UNKNOWN_MODEL` | The provider name is not configured, or the model is not in its catalogue. Nothing was sent. |
 | `INVALID_REQUEST` | The input is malformed, or a document's `load()` failed. Nothing was sent. |
 | `ABORTED` | The signal aborted the turn. |
 
-`error.message` starts with `[provider/model]`, the configured name and the model id. A turn cut off after partial text still ends `failed`; the text already streamed is the consumer's to keep or drop. Gemini bills blocked prompts, so `failed` carries `usage` whenever the provider reported it.
+`error.message` starts with `[provider/model]`, the configured name and the model id. A turn that fails after partial text still ends `failed`; the text already streamed is the consumer's to keep or drop. Gemini bills blocked prompts, so `failed` carries `usage` whenever the provider reported it.
 
 Only the initial request is retried, before the response stream starts: up to twice, by pi-ai, for 408, 409, 429, 5xx and connection errors, honouring `Retry-After`. A turn is never re-sent after its first token, and never to another provider or model.
 

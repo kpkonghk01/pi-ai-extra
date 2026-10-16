@@ -107,4 +107,39 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
     assert.equal(last.type === "failed" && last.error.reason, "content_filter");
     assert.equal(last.type === "failed" && last.usage?.inputTokens, 5);
   });
+
+  function maxOutputTokensStop(text: string[]): Response {
+    return responsesStream(text, {
+      type: "response.incomplete",
+      response: {
+        id: "resp_1",
+        status: "incomplete",
+        incomplete_details: { reason: "max_output_tokens" },
+        output: [],
+        usage: { input_tokens: 5, output_tokens: 16, total_tokens: 21 },
+      },
+    });
+  }
+
+  it("ends a free-form answer cut off at max_output_tokens with done and truncated, keeping its text", async () => {
+    const { chat } = kit([{ method: "POST", url: KIE_RESPONSES_URL, respond: () => maxOutputTokensStop(["Once upon", " a ti"]) }]);
+    const events = await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol" })));
+    assert.equal(textOf(events), "Once upon a ti");
+    const last = lastEvent(events);
+    assert.equal(last.type === "done" && last.truncated, true);
+    assert.equal(last.type === "done" && last.usage.outputTokens, 16);
+  });
+
+  it("fails a response-schema answer cut off at max_output_tokens, with the raw stop reason", async () => {
+    const { chat } = kit([{ method: "POST", url: KIE_RESPONSES_URL, respond: () => maxOutputTokensStop(['{"ok":']) }]);
+    const last = lastEvent(
+      await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol", responseSchema: { name: "verdict", schema: SCHEMA } }))),
+    );
+    assert.equal(last.type, "failed");
+    if (last.type !== "failed") return;
+    assert.equal(last.error.code, "PROVIDER_ERROR");
+    assert.equal(last.error.reason, "incomplete.max_output_tokens");
+    assert.match(last.error.message, /output-token limit/);
+    assert.equal(last.usage?.outputTokens, 16);
+  });
 });

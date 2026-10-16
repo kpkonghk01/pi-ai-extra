@@ -90,12 +90,20 @@ export interface ChatTurnInput {
 
 export type ChatTurnEvent =
   | { type: "text"; delta: string }
-  | { type: "done"; usage: ChatUsage }
+  | {
+      type: "done";
+      usage: ChatUsage;
+      /**
+       * Present only when a free-form answer stopped at the output-token limit: the text already
+       * streamed is the whole answer, cut off. A response-schema turn fails there instead.
+       */
+      truncated?: true;
+    }
   | { type: "failed"; error: ChatTurnError; usage?: ChatUsage };
 
 /**
  * - `CONTENT_BLOCKED`: a provider safety system blocked the prompt or the answer (`reason` is the provider's own value).
- * - `PROVIDER_ERROR`: the provider failed, or the answer was cut off (for example at the output token limit).
+ * - `PROVIDER_ERROR`: the provider failed, or the answer stopped early (for example a response-schema answer at the output-token limit, or Gemini `RECITATION`).
  * - `UNSUPPORTED`: the selected provider or model cannot take this request (documents, schema, settings). Nothing was sent.
  * - `UNKNOWN_MODEL`: the provider name is not configured, or the model is not in its catalogue. Nothing was sent.
  * - `INVALID_REQUEST`: the turn input is malformed, or a document could not be loaded. Nothing was sent.

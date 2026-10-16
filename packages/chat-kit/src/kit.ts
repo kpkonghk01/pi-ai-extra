@@ -292,13 +292,21 @@ function finish(
       ? message.stopReason === "toolUse" && message.content.some((block) => block.type === "toolCall")
       : message.stopReason === "stop";
     if (answered) return { type: "done", usage };
-    const text =
-      message.stopReason === "length"
-        ? "The answer was cut off at the output token limit."
-        : turn.schemaAsToolCall
-          ? "The model answered without the response-schema tool call."
-          : `The provider stopped with ${message.stopReason}.`;
-    return failed(turn.label, "PROVIDER_ERROR", text, { reason: rawReason ?? message.stopReason, usage: reported });
+    const reason = rawReason ?? message.stopReason;
+    if (message.stopReason === "length") {
+      // A free-form answer cut off at the output-token limit is still an answer: the text already
+      // streamed stands, marked `truncated`. A cut-off response-schema answer (JSON text, or a forced
+      // tool call's arguments on Anthropic Messages) cannot be parsed, so that turn fails.
+      if (turn.plan.responseSchema === undefined) return { type: "done", usage, truncated: true };
+      return failed(turn.label, "PROVIDER_ERROR", "The answer hit the output-token limit, so its response-schema JSON is incomplete.", {
+        reason,
+        usage: reported,
+      });
+    }
+    const text = turn.schemaAsToolCall
+      ? "The model answered without the response-schema tool call."
+      : `The provider stopped with ${message.stopReason}.`;
+    return failed(turn.label, "PROVIDER_ERROR", text, { reason, usage: reported });
   }
   const errorMessage = message.errorMessage ?? "The provider request failed.";
   return failed(turn.label, "PROVIDER_ERROR", errorMessage, {

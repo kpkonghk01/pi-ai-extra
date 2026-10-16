@@ -125,6 +125,42 @@ describe("runTurn on Anthropic Messages", () => {
     assert.match(last.type === "failed" ? last.error.message : "", /without the response-schema tool call/);
   });
 
+  it("ends a free-form answer cut off at max_tokens with done and truncated, keeping its text", async () => {
+    const { chat } = kit([
+      {
+        method: "POST",
+        url: KIE_MESSAGES_URL,
+        respond: () => sseResponse(anthropicEvents({ blocks: [{ type: "text", text: "A long ans" }], stopReason: "max_tokens" })),
+      },
+    ]);
+    const events = await collect(chat.runTurn(turn({ provider: "kie", model: "claude-sonnet-4-6" })));
+    assert.equal(textOf(events), "A long ans");
+    const last = lastEvent(events);
+    assert.equal(last.type === "done" && last.truncated, true);
+    assert.equal(last.type === "done" && last.usage.outputTokens, 9);
+  });
+
+  it("fails a forced tool call cut off at max_tokens, with the raw stop reason", async () => {
+    const { chat } = kit([
+      {
+        method: "POST",
+        url: OPENROUTER_MESSAGES_URL,
+        respond: () =>
+          sseResponse(anthropicEvents({ blocks: [{ type: "tool_use", name: "answer", json: ['{"ti', 'tle":"H'] }], stopReason: "max_tokens" })),
+      },
+    ]);
+    const events = await collect(
+      chat.runTurn(turn({ model: "anthropic/claude-sonnet-4.6", responseSchema: { name: "answer", schema: SCHEMA } })),
+    );
+    const last = lastEvent(events);
+    assert.equal(last.type, "failed");
+    if (last.type !== "failed") return;
+    assert.equal(last.error.code, "PROVIDER_ERROR");
+    assert.equal(last.error.reason, "max_tokens");
+    assert.match(last.error.message, /^\[router\/anthropic\/claude-sonnet-4\.6\] The answer hit the output-token limit/);
+    assert.equal(last.usage?.outputTokens, 9);
+  });
+
   it("reports a refusal as CONTENT_BLOCKED with usage, and keeps KIE's credits_consumed in raw usage", async () => {
     const { chat, fake } = kit([
       {

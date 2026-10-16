@@ -278,23 +278,36 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
     assert.equal(last.usage, undefined);
   });
 
-  it("reports an answer cut off at the token limit as failed", async () => {
-    const { chat } = kit([
-      {
-        method: "POST",
-        url: COMPLETIONS_URL,
-        respond: () =>
-          sseResponse([
-            completionsChunk({ content: "Long" }, "length"),
-            completionsUsageChunk({ prompt_tokens: 3, completion_tokens: 5 }),
-            "[DONE]",
-          ]),
-      },
-    ]);
-    const last = lastEvent(await collect(chat.runTurn(turn())));
-    assert.equal(last.type === "failed" && last.error.code, "PROVIDER_ERROR");
-    assert.equal(last.type === "failed" && last.error.reason, "length");
-    assert.equal(last.type === "failed" && last.usage?.outputTokens, 5);
+  function lengthStop(content: string) {
+    return () =>
+      sseResponse([
+        completionsChunk({ content: content.slice(0, 4) }),
+        completionsChunk({ content: content.slice(4) }, "length"),
+        completionsUsageChunk({ prompt_tokens: 3, completion_tokens: 5 }),
+        "[DONE]",
+      ]);
+  }
+
+  it("ends a free-form answer cut off at the output-token limit with done and truncated, keeping its text", async () => {
+    const { chat } = kit([{ method: "POST", url: COMPLETIONS_URL, respond: lengthStop("Long answ") }]);
+    const events = await collect(chat.runTurn(turn()));
+    assert.equal(textOf(events), "Long answ");
+    const last = lastEvent(events);
+    assert.equal(last.type, "done");
+    if (last.type !== "done") return;
+    assert.equal(last.truncated, true);
+    assert.equal(last.usage.outputTokens, 5);
+  });
+
+  it("fails a response-schema answer cut off at the output-token limit, with the raw stop reason", async () => {
+    const { chat } = kit([{ method: "POST", url: COMPLETIONS_URL, respond: lengthStop('{"title":"Lo') }]);
+    const last = lastEvent(await collect(chat.runTurn(turn({ responseSchema: { name: "answer", schema: SCHEMA } }))));
+    assert.equal(last.type, "failed");
+    if (last.type !== "failed") return;
+    assert.equal(last.error.code, "PROVIDER_ERROR");
+    assert.equal(last.error.reason, "length");
+    assert.match(last.error.message, /^\[router\/openai\/gpt-4o-mini\] The answer hit the output-token limit/);
+    assert.equal(last.usage?.outputTokens, 5);
   });
 
   it("ends with ABORTED when the caller aborts mid-stream", async () => {

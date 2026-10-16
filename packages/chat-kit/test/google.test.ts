@@ -128,6 +128,39 @@ describe("runTurn on Gemini", () => {
     assert.equal(last.type === "failed" && last.usage, undefined, "no usage was reported");
   });
 
+  function maxTokensStop(parts: string[]) {
+    return () =>
+      sseResponse([
+        JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: parts[0] }] } }] }),
+        JSON.stringify({
+          candidates: [{ content: { role: "model", parts: [{ text: parts[1] }] }, finishReason: "MAX_TOKENS" }],
+          usageMetadata: { promptTokenCount: 4, candidatesTokenCount: 32, totalTokenCount: 36 },
+        }),
+      ]);
+  }
+
+  it("ends a free-form answer cut off at MAX_TOKENS with done and truncated, keeping its text", async () => {
+    const { chat } = kit([{ method: "POST", url: STREAM_URL, respond: maxTokensStop(["The first", " half"]) }]);
+    const events = await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash" })));
+    assert.equal(textOf(events), "The first half");
+    const last = lastEvent(events);
+    assert.equal(last.type === "done" && last.truncated, true);
+    assert.equal(last.type === "done" && last.usage.outputTokens, 32);
+  });
+
+  it("fails a response-schema answer cut off at MAX_TOKENS, with the raw stop reason", async () => {
+    const { chat } = kit([{ method: "POST", url: STREAM_URL, respond: maxTokensStop(['{"tags":', '["a",']) }]);
+    const last = lastEvent(
+      await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash", responseSchema: { name: "tags", schema: SCHEMA } }))),
+    );
+    assert.equal(last.type, "failed");
+    if (last.type !== "failed") return;
+    assert.equal(last.error.code, "PROVIDER_ERROR");
+    assert.equal(last.error.reason, "MAX_TOKENS");
+    assert.match(last.error.message, /^\[gemini\/gemini-3\.5-flash\] The answer hit the output-token limit/);
+    assert.equal(last.usage?.outputTokens, 32);
+  });
+
   it("reports a candidate SAFETY stop after partial text as CONTENT_BLOCKED", async () => {
     const { chat } = kit([
       {
