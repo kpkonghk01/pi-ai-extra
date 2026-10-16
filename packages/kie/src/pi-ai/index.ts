@@ -14,7 +14,17 @@ import { kieEnvelopeStreams } from "./envelope-fetch.ts";
 
 export type { ChatModelDefinition, ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
 
-const CODEX_MODELS = ["gpt-5-codex", "gpt-5.1-codex", "gpt-5.2-codex", "gpt-5.3-codex", "gpt-5.4-codex"];
+/**
+ * Codex models on `POST /codex/v1/responses`. KIE documents dashed ids (it also accepts the
+ * dotted ones); `catalogueId` points at pi-ai's dotted catalogue entry for capability metadata.
+ */
+const CODEX_MODELS: readonly ChatModelDefinition[] = [
+  { id: "gpt-6-astra", protocol: "openai-responses" },
+  { id: "gpt-5-6-sol", catalogueId: "gpt-5.6-sol", protocol: "openai-responses" },
+  { id: "gpt-5-6-terra", catalogueId: "gpt-5.6-terra", protocol: "openai-responses" },
+  { id: "gpt-5-6-luna", catalogueId: "gpt-5.6-luna", protocol: "openai-responses" },
+  { id: "gpt-5-5", catalogueId: "gpt-5.5", protocol: "openai-responses" },
+];
 const CLAUDE_MODELS = [
   "claude-fable-5",
   "claude-opus-5",
@@ -28,9 +38,9 @@ const CLAUDE_MODELS = [
   "claude-haiku-4-5",
 ];
 
-/** Chat models documented by KIE: GPT Codex (OpenAI Responses) and Claude (Anthropic Messages). */
+/** Chat models documented by KIE: Codex (OpenAI Responses) and Claude (Anthropic Messages). */
 export const KIE_CHAT_MODELS: readonly ChatModelDefinition[] = [
-  ...CODEX_MODELS.map((id): ChatModelDefinition => ({ id, protocol: "openai-responses" })),
+  ...CODEX_MODELS,
   ...CLAUDE_MODELS.map((id): ChatModelDefinition => ({ id, protocol: "anthropic-messages" })),
 ];
 
@@ -39,9 +49,9 @@ export interface KieProviderOptions {
   apiKey: string;
   /** Replaces the default chat model list. The image models are always `KIE_IMAGE_MODELS`. */
   models?: readonly ChatModelDefinition[] | undefined;
-  /** Default `https://api.kie.ai/api/v1`. */
+  /** Codex (OpenAI Responses) parent path; pi-ai appends `/responses`. Default `https://api.kie.ai/codex/v1`. */
   responsesBaseUrl?: string | undefined;
-  /** Default `https://api.kie.ai/claude`. */
+  /** Claude (Anthropic Messages) base URL; pi-ai appends `/v1/messages`. Default `https://api.kie.ai/anthropic`. */
   claudeBaseUrl?: string | undefined;
   /** Image helper settings (`apiBaseUrl`, `uploadBaseUrl`, `poll`) applied to every image request. */
   imageSettings?: KieImageSettings | undefined;

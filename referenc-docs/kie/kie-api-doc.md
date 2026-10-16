@@ -1,7 +1,7 @@
 # docs.kie.ai
 
 ## Docs
-- [Getting Started with KIE API (Important)](https://docs.kie.ai/1973359m0.md):
+- [Getting Started with KIE API (Important)](https://docs.kie.ai/getting-started.md):
 - [Market](https://docs.kie.ai/market/quickstart.md):
 - Image    Models > 4o Image API [4o Image Generation Callbacks](https://docs.kie.ai/4o-image-api/generate-4-o-image-callbacks.md):
 - Image    Models > Flux Kontext API [Image Generation or Editing Callbacks](https://docs.kie.ai/flux-kontext-api/generate-or-edit-image-callbacks.md):
@@ -21,20 +21,29 @@
 - Music Models > Suno > WAV Conversion [Convert to WAV Callbacks](https://docs.kie.ai/suno-api/convert-to-wav-callbacks.md):
 - Music Models > Suno > Music Video Generation [Music Video Generation Callbacks](https://docs.kie.ai/suno-api/create-music-video-callbacks.md):
 - Music Models > Suno > Lyrics Generation [Lyrics Generation Callbacks](https://docs.kie.ai/suno-api/generate-lyrics-callbacks.md):
-- Music Models > Suno > voice [Suno Voice Generation Callback](https://docs.kie.ai/suno-api/suno-voice-generate-callback.md):
 - Music Models > Suno > voice [Suno Voice Validation Phrase Callback](https://docs.kie.ai/suno-api/suno-voice-validate-callback.md):
+- Music Models > Suno > voice [Suno Voice Generation Callback](https://docs.kie.ai/suno-api/suno-voice-generate-callback.md):
 - Music Models > Suno > Vocal Removal [Audio Separation Callbacks](https://docs.kie.ai/suno-api/separate-vocals-callbacks.md):
 - Music Models > Suno > Vocal Removal [MIDI Generation Callbacks](https://docs.kie.ai/suno-api/generate-midi-callbacks.md):
-- Chat  Models > Claude [Claude Code + kie.ai Integration Guide](https://docs.kie.ai/2152008m0.md):
+- Chat  Models > Claude [Claude Code + kie.ai Integration Guide](https://docs.kie.ai/market/chat/claude-code-integration.md):
 - [File Upload API Quickstart](https://docs.kie.ai/file-upload-api/quickstart.md):
 - [Common API Quickstart](https://docs.kie.ai/common-api/quickstart.md):
 - [Webhook Security Verification](https://docs.kie.ai/common-api/webhook-verification.md):
+- [Overview](https://docs.kie.ai/ai-agent/overview.md):
+- Build with KIE models [Install kie-models](https://docs.kie.ai/ai-agent/install-kie-models.md):
+- Build with KIE models [What your agent can do](https://docs.kie.ai/ai-agent/what-can-do.md):
+- Run coding agents on KIE [Install kie-chat-agents](https://docs.kie.ai/ai-agent/install-kie-chat-agents.md):
+- Run coding agents on KIE [Claude Code](https://docs.kie.ai/ai-agent/claude-code.md):
+- Run coding agents on KIE [Codex CLI](https://docs.kie.ai/ai-agent/codex-cli.md):
+- Run coding agents on KIE [Grok Build](https://docs.kie.ai/ai-agent/grok-build.md):
+- Help [Troubleshooting](https://docs.kie.ai/ai-agent/troubleshooting.md):
+- Help [Changelog](https://docs.kie.ai/ai-agent/changelog.md):
 - [KIE A​​PI 入门指南（重要）](https://docs.kie.ai/cn.md):
 - [Market](https://docs.kie.ai/cn/market/quickstart.md):
 - Image    Models > 4o Image API [4o 图片生成回调](https://docs.kie.ai/cn/4o-image-api/generate-4-o-image-callbacks.md):
 - Image    Models > Flux Kontext API [图像生成或编辑回调](https://docs.kie.ai/cn/flux-kontext-api/generate-or-edit-image-callbacks.md):
-- Video Models > Runway API [AI 视频扩展回调](https://docs.kie.ai/cn/runway-api/extend-ai-video-callbacks.md):
 - Video Models > Runway API [AI 视频生成回调](https://docs.kie.ai/cn/runway-api/generate-ai-video-callbacks.md):
+- Video Models > Runway API [AI 视频扩展回调](https://docs.kie.ai/cn/runway-api/extend-ai-video-callbacks.md):
 - Video Models > Runway API > Aleph [Aleph 视频生成回调](https://docs.kie.ai/cn/runway-api/generate-aleph-video-callbacks.md):
 - Video Models > Veo3.1 API [Veo3.1 视频生成回调](https://docs.kie.ai/cn/veo3-api/generate-veo-3-video-callbacks.md):
 - Video Models > Veo3.1 API [获取 4K 视频回调](https://docs.kie.ai/cn/veo3-api/get-veo-3-4k-video-callbacks.md):
@@ -53,10 +62,19 @@
 - Music Models > Suno > Lyrics Generation [生成歌词回调](https://docs.kie.ai/cn/suno-api/generate-lyrics-callbacks.md):
 - Music Models > Suno > voice [Suno Voice 生成回调](https://docs.kie.ai/cn/suno-api/suno-voice-generate-callback.md):
 - Music Models > Suno > voice [Suno Voice 验证短句回调](https://docs.kie.ai/cn/suno-api/suno-voice-validate-callback.md):
-- Chat  Models > Claude [Claude Code 对接 kie.ai 使用指南](https://docs.kie.ai/2151374m0.md):
+- Chat  Models > Claude [Claude Code 对接 kie.ai 使用指南](https://docs.kie.ai/cn/market/chat/claude-code-integration.md):
 - [文件上传 API 快速开始](https://docs.kie.ai/cn/file-upload-api/quickstart.md):
 - [通用 API 快速入门](https://docs.kie.ai/cn/common-api/quickstart.md):
 - [Webhook 安全校验](https://docs.kie.ai/cn/common-api/webhook-verification.md):
+- [概览](https://docs.kie.ai/cn/ai-agent/overview.md):
+- Build with KIE models [安装 kie-models](https://docs.kie.ai/cn/ai-agent/install-kie-models.md):
+- Build with KIE models [Agent 能做什么](https://docs.kie.ai/cn/ai-agent/what-can-do.md):
+- Run coding agents on KIE [安装 kie-chat-agents](https://docs.kie.ai/cn/ai-agent/install-kie-chat-agents.md):
+- Run coding agents on KIE [Claude Code](https://docs.kie.ai/cn/ai-agent/claude-code.md):
+- Run coding agents on KIE [Codex CLI](https://docs.kie.ai/cn/ai-agent/codex-cli.md):
+- Run coding agents on KIE [Grok Build](https://docs.kie.ai/cn/ai-agent/grok-build.md):
+- Help [常见问题排查](https://docs.kie.ai/cn/ai-agent/troubleshooting.md):
+- Help [更新日志](https://docs.kie.ai/cn/ai-agent/changelog.md):
 
 ## API Docs
 - Image    Models > Seedream [Seedream4.0 - Text to Image](https://docs.kie.ai/market/seedream/seedream-v4-text-to-image.md): High-quality photorealistic image generation powered by Seedream4.0's advanced AI model
@@ -64,11 +82,14 @@
 - Image    Models > Seedream [Seedream4.5 - Text to Image](https://docs.kie.ai/market/seedream/4-5-text-to-image.md): High-quality photorealistic image generation powered by Seedream's advanced AI model
 - Image    Models > Seedream [Seedream4.5 - Edit](https://docs.kie.ai/market/seedream/4-5-edit.md): Image editing by Seedream4.5
 - Image    Models > Seedream [Seedream5.0 Lite - Text to Image](https://docs.kie.ai/market/seedream/5-lite-text-to-image.md): High-quality photorealistic image generation powered by Seedream's advanced AI model
-- Image    Models > Seedream [Seedream5.0 Lite - Image to Image](https://docs.kie.ai/market/seedream-5-lite-image-to-image.md): High-quality photorealistic image generation powered by Seedream's advanced AI model
+- Image    Models > Seedream [Seedream5.0 Lite - Image to Image](https://docs.kie.ai/market/seedream-5-lite-image-to-image.md): Image editing with Seedream 5.0 Lite
 - Image    Models > Seedream [Seedream5.0 Pro - Text to Image](https://docs.kie.ai/market/seedream/5-pro-text-to-image.md): High-quality photorealistic image generation powered by Seedream's advanced AI model
-- Image    Models > Seedream [Seedream5.0 Pro - Image to Image](https://docs.kie.ai/market/seedream/5-pro-image-to-image.md): High-quality photorealistic image generation powered by Seedream's advanced AI model
-- Image    Models > Seedream [Seedream 5.0 Pro -  Layer Decomposition](https://docs.kie.ai/market/seedream/5-pro-layer-decomposition.md): High-quality photorealistic image generation powered by Seedream's advanced AI model
+- Image    Models > Seedream [Seedream5.0 Pro - Image to Image](https://docs.kie.ai/market/seedream/5-pro-image-to-image.md): Image editing with Seedream 5.0 Pro
+- Image    Models > Seedream [Seedream5.0 Pro -  Layer Decomposition](https://docs.kie.ai/market/seedream/5-pro-layer-decomposition.md): Layer decomposition with Seedream 5.0 Pro: split an image into a base image and separate layers.
 - Image    Models > Seedream [Seedream3.0 - Text to Image](https://docs.kie.ai/market/seedream/seedream.md): Image generation by Seedream3.0
+- Image    Models > Seedream [Seedream5.0 Flash - Text to Image](https://docs.kie.ai/market/seedream/5-flash-text-to-image.md): High-quality photorealistic image generation powered by Seedream's advanced AI model
+- Image    Models > Seedream [Seedream5.0 Flash - Image to Image](https://docs.kie.ai/market/seedream/5-flash-image-to-image.md): Image editing with Seedream 5.0 Flash
+- Image    Models > Seedream [Seedream5.0 Flash -  Layer Decomposition](https://docs.kie.ai/market/seedream/5-flash-layer-decomposition.md): Layer decomposition with Seedream 5.0 Flash: split an image into a base image and separate layers.
 - Image    Models > Z-image [Z-Image](https://docs.kie.ai/market/z-image/z-image.md): Image generation by z-image
 - Image    Models > Google [Google - imagen4-fast](https://docs.kie.ai/market/google/imagen4-fast.md): Image generation by Google imagen4-fast
 - Image    Models > Google [Google - imagen4-ultra](https://docs.kie.ai/market/google/imagen4-ultra.md): Image generation by Google imagen4-ultra
@@ -77,6 +98,7 @@
 - Image    Models > Google [Google - Nano Banana](https://docs.kie.ai/market/google/nano-banana.md): Content generation using google/nano-banana
 - Image    Models > Google [Google - Nano Banana Pro](https://docs.kie.ai/market/google/pro-image-to-image.md): Image generation using Google's Pro Image to Image model
 - Image    Models > Google [Google - Nano Banana 2](https://docs.kie.ai/market/google/nanobanana2.md): Image generation by Nano Banana 2
+- Image    Models > Google [Google - Nano Banana 2.1](https://docs.kie.ai/market/google/nanobanana-2-1.md): Image generation by Nano Banana 2.1
 - Image    Models > Google [Google - Nano Banana 2 Lite](https://docs.kie.ai/market/google/nano-banana-2-lite.md): ## Create Task
 - Image    Models > Flux-2 [Flux-2 - Pro Image to Image](https://docs.kie.ai/market/flux2/pro-image-to-image.md): Image generation by flux-2/pro-image-to-image
 - Image    Models > Flux-2 [Flux-2 - Pro Text to Image](https://docs.kie.ai/market/flux2/pro-text-to-image.md): High-quality photorealistic image generation powered by Flux-2's advanced AI model
@@ -120,26 +142,26 @@
 - Image    Models > Wan [Wan 2.7 Image Pro](https://docs.kie.ai/market/wan/2-7-image-pro.md): Based on wan/2-7-image-pro, image generation and editing are achieved.
 - Image    Models > 4o Image API [Generate 4o Image](https://docs.kie.ai/4o-image-api/generate-4-o-image.md): :::warning
 - Image    Models > Flux Kontext API [Generate or Edit Image](https://docs.kie.ai/flux-kontext-api/generate-or-edit-image.md): :::warning
-- Video Models > Grok Imagine [Grok Imagine Text to Video](https://docs.kie.ai/market/grok-imagine/text-to-video.md): ## Query Task Status
-- Video Models > Grok Imagine [Grok Imagine Image to Video](https://docs.kie.ai/market/grok-imagine/image-to-video.md): ## Query Task Status
-- Video Models > Grok Imagine [Grok Imagine - Video Upscale](https://docs.kie.ai/market/grok-imagine/upscale.md):
-- Video Models > Grok Imagine [Grok Imagine - Video Extend](https://docs.kie.ai/market/grok-imagine/extend.md):
-- Video Models > Grok Imagine [Grok Imagine Video 1.5 Preview](https://docs.kie.ai/market/grok-imagine/1-5-preview.md): ## Create Task
+- Video Models > Grok Imagine [Grok Imagine Text to Video](https://docs.kie.ai/market/grok-imagine/text-to-video.md): Output is an MP4 video with an audio track generated together with the video (dialogue written in the prompt is spoken). Audio cannot be turned off.
+- Video Models > Grok Imagine [Grok Imagine Image to Video](https://docs.kie.ai/market/grok-imagine/image-to-video.md): Output is an MP4 video with an audio track generated together with the video (dialogue written in the prompt is spoken). Audio cannot be turned off.
+- Video Models > Grok Imagine [Grok Imagine - Video Upscale](https://docs.kie.ai/market/grok-imagine/upscale.md): Output is an MP4 video with an audio track generated together with the video (dialogue written in the prompt is spoken). Audio cannot be turned off.
+- Video Models > Grok Imagine [Grok Imagine - Video Extend](https://docs.kie.ai/market/grok-imagine/extend.md): Output is an MP4 video with an audio track generated together with the video (dialogue written in the prompt is spoken). Audio cannot be turned off.
+- Video Models > Grok Imagine [Grok Imagine Video 1.5 Preview](https://docs.kie.ai/market/grok-imagine/1-5-preview.md): Output is an MP4 video with an audio track generated together with the video (dialogue written in the prompt is spoken). Audio cannot be turned off.
 - Video Models > Kling [Kling 2.6 Text to Video](https://docs.kie.ai/market/kling/text-to-video.md): ## Query Task Status
 - Video Models > Kling [Kling 2.6 Image to Video](https://docs.kie.ai/market/kling/image-to-video.md): ## Query Task Status
-- Video Models > Kling [Kling - V2.5 Turbo Image to Video Pro](https://docs.kie.ai/market/kling/v25-turbo-image-to-video-pro.md): ## Query Task Status
-- Video Models > Kling [Kling - V2.5 Turbo Text to Video Pro](https://docs.kie.ai/market/kling/v25-turbo-text-to-video-pro.md): ## Query Task Status
-- Video Models > Kling [Kling AI Avatar Standard](https://docs.kie.ai/market/kling/ai-avatar-standard.md): ## Query Task Status
-- Video Models > Kling [Kling AI Avatar Pro](https://docs.kie.ai/market/kling/ai-avatar-pro.md): ## Query Task Status
+- Video Models > Kling [Kling - V2.5 Turbo Image to Video Pro](https://docs.kie.ai/market/kling/v25-turbo-image-to-video-pro.md): ## Overview
+- Video Models > Kling [Kling - V2.5 Turbo Text to Video Pro](https://docs.kie.ai/market/kling/v25-turbo-text-to-video-pro.md): ## Overview
+- Video Models > Kling [Kling AI Avatar Standard](https://docs.kie.ai/market/kling/ai-avatar-standard.md): ## Overview
+- Video Models > Kling [Kling AI Avatar Pro](https://docs.kie.ai/market/kling/ai-avatar-pro.md): ## Overview
 - Video Models > Kling [Kling V2.1 Master Image to Video](https://docs.kie.ai/market/kling/v2-1-master-image-to-video.md): ## Query Task Status
 - Video Models > Kling [Kling V2.1 Master Text to Video](https://docs.kie.ai/market/kling/v2-1-master-text-to-video.md): ## Query Task Status
 - Video Models > Kling [Kling V2.1 Pro](https://docs.kie.ai/market/kling/v2-1-pro.md): ## Query Task Status
 - Video Models > Kling [Kling V2.1 Standard](https://docs.kie.ai/market/kling/v2-1-standard.md): ## Query Task Status
-- Video Models > Kling [Kling 2.6 motion-control](https://docs.kie.ai/market/kling/motion-control.md): ## File Upload Requirements
+- Video Models > Kling [Kling 2.6 motion-control](https://docs.kie.ai/market/kling/motion-control.md): ## Overview
 - Video Models > Kling [Kling-3.0 motion-control](https://docs.kie.ai/market/kling/motion-control-v3.md): ## File Upload Requirements
 - Video Models > Kling [Kling 3.0](https://docs.kie.ai/market/kling/kling-3-0.md): Generate high-quality videos with advanced multi-shot capabilities and element references using Kling 3.0 AI
-- Video Models > Kling [Kling - V3 Turbo Text to Video](https://docs.kie.ai/market/kling/v3-turbo-text-to-video.md): ## Query Task Status
-- Video Models > Kling [Kling - V3 Turbo Image to Video](https://docs.kie.ai/market/kling/v3-turbo-image-to-video.md): ## Query Task Status
+- Video Models > Kling [Kling - V3 Turbo Text to Video](https://docs.kie.ai/market/kling/v3-turbo-text-to-video.md): ## Overview
+- Video Models > Kling [Kling - V3 Turbo Image to Video](https://docs.kie.ai/market/kling/v3-turbo-image-to-video.md): ## Overview
 - Video Models > Kling [Kling 3.0 Omni Reference To Video](https://docs.kie.ai/market/kling/v3-omni-reference-to-video.md): ## Query Task Status
 - Video Models > Kling [Kling 3.0 Omni Transformation](https://docs.kie.ai/market/kling/v3-omni-transformation.md): ## Query Task Status
 - Video Models > Kling [Kling 3.0 Omni  Image To Video](https://docs.kie.ai/market/kling/v3-omni-image-to-video.md): ## Query Task Status
@@ -148,6 +170,7 @@
 - Video Models > Bytedance [Bytedance Seedance 2.0 Fast](https://docs.kie.ai/market/bytedance/seedance-2-fast.md): ## Query Task Status
 - Video Models > Bytedance [Bytedance Seedance 2.0 Mini](https://docs.kie.ai/market/bytedance/seedance-2-mini.md): ## Query Task Status
 - Video Models > Bytedance [Bytedance Seedance 2.5](https://docs.kie.ai/market/bytedance/seedance-2-5.md): ## Query Task Status
+- Video Models > Bytedance [Bytedance Seedance 2.5 Draft](https://docs.kie.ai/market/bytedance/seedance-2-5-draft.md): ## Query Task Status
 - Video Models > Bytedance [Bytedance Seedance 1.5 Pro](https://docs.kie.ai/market/bytedance/seedance-1-5-pro.md): ## Query Task Status
 - Video Models > Bytedance [Bytedance V1 Pro Fast Image to Video](https://docs.kie.ai/market/bytedance/v1-pro-fast-image-to-video.md): ## Query Task Status
 - Video Models > Bytedance [Bytedance V1 Pro Image to Video](https://docs.kie.ai/market/bytedance/v1-pro-image-to-video.md): Content generation using bytedance/v1-pro-image-to-video
@@ -185,23 +208,23 @@
 - Video Models > PixVerse [PixVerse V6 First & Last Frame Transition](https://docs.kie.ai/market/pixverse/transition.md): ## Query Task Status
 - Video Models > PixVerse [PixVerse V6 Video Extension](https://docs.kie.ai/market/pixverse/extend.md): ## Query Task Status
 - Video Models > PixVerse [PixVerse V6 Fusion / Reference-to-Video](https://docs.kie.ai/market/pixverse/reference-to-video.md): ## Query Task Status
-- Video Models > MiniMax H3 [MiniMax H3 Text-to-Video](https://docs.kie.ai/market/minimax-h3/text-to-video.md): ## Query Task Status
-- Video Models > MiniMax H3 [MiniMax H3 Image-to-Video](https://docs.kie.ai/market/minimax-h3/image-to-video.md): ## Query Task Status
-- Video Models > MiniMax H3 [MiniMax H3 Reference-to-Video](https://docs.kie.ai/market/minimax-h3/reference-to-video.md): ## Query Task Status
+- Video Models > MiniMax H3 [MiniMax H3 Text-to-Video](https://docs.kie.ai/market/minimax-h3/text-to-video.md): Output videos include a stereo audio track generated with the video; dialogue, music and sound effects can be described in the prompt. Audio cannot be turned off.
+- Video Models > MiniMax H3 [MiniMax H3 Image-to-Video](https://docs.kie.ai/market/minimax-h3/image-to-video.md): Output videos include a stereo audio track generated with the video; dialogue, music and sound effects can be described in the prompt. Audio cannot be turned off.
+- Video Models > MiniMax H3 [MiniMax H3 Reference-to-Video](https://docs.kie.ai/market/minimax-h3/reference-to-video.md): Output videos include a stereo audio track generated with the video; dialogue, music and sound effects can be described in the prompt. Audio cannot be turned off.
 - Video Models > Runway API > Aleph [Generate Aleph Video](https://docs.kie.ai/runway-api/generate-aleph-video.md): :::warning
 - Video Models > Runway API [Generate AI Video](https://docs.kie.ai/runway-api/generate-ai-video.md): :::warning
 - Video Models > Runway API [Extend AI Video](https://docs.kie.ai/runway-api/extend-ai-video.md): :::warning
 - Video Models > HappyHorse [happyhorse-text-to-video](https://docs.kie.ai/market/happyhorse/text-to-video.md): ## Query Task Status
 - Video Models > HappyHorse [happyhorse-image-to-video](https://docs.kie.ai/market/happyhorse/image-to-video.md): ## Query Task Status
 - Video Models > HappyHorse [happyhorse/reference-to-video](https://docs.kie.ai/market/happyhorse/reference-to-video.md): ## Query Task Status
-- Video Models > HappyHorse [happyhorse/video-edit](https://docs.kie.ai/market/happyhorse/video-edit.md): ## Query Task Status
+- Video Models > HappyHorse [happyhorse/video-edit](https://docs.kie.ai/market/happyhorse/video-edit.md): ## Overview
 - Video Models > HappyHorse [HappyHorse-1-1 image-to-video](https://docs.kie.ai/market/happyhorse-1-1/image-to-video.md):
 - Video Models > HappyHorse [HappyHorse-1-1 text-to-video](https://docs.kie.ai/market/happyhorse-1-1/text-to-video.md):
 - Video Models > HappyHorse [HappyHorse-1-1 reference-to-video](https://docs.kie.ai/market/happyhorse-1-1/reference-to-video.md):
 - Video Models > Gemini Omni [Gemini Omni 1.1 Flash](https://docs.kie.ai/market/google/gemini-omni-flash-1-1.md): ## Create Task
 - Video Models > Gemini Omni [Gemini Omni Video](https://docs.kie.ai/market/gemini-omni-video.md): ## Create Task
-- Video Models > Gemini Omni [Gemini Omni Audio](https://docs.kie.ai/market/gemini-omni-audio.md): ## Create Task
-- Video Models > Gemini Omni [Gemini Omni Character](https://docs.kie.ai/market/gemini-omni-character.md): - `image_urls` supports only `1` image, and each image must be no larger than `20MB`
+- Video Models > Gemini Omni [Gemini Omni Audio](https://docs.kie.ai/market/gemini-omni-audio.md): Synchronous. Registers a voice preset and returns data.audioId immediately; no audio file is generated. Pass audioId in audio_ids of the video and character endpoints.
+- Video Models > Gemini Omni [Gemini Omni Character](https://docs.kie.ai/market/gemini-omni-character.md): - image_urls supports 1–2 images (index 0 portrait, index 1 optional full-body), each up to 20MB.
 - Video Models > OmniHuman [Omnihuman 1.5](https://docs.kie.ai/market/omnihuman-1-5.md): ## Create Task
 - Video Models > OmniHuman [Omnihuman 1.5 Human Identification](https://docs.kie.ai/market/omnihuman-1-5/human-identification.md): ## Create Task
 - Video Models > OmniHuman [OmniHuman 1.5 Subject Detection](https://docs.kie.ai/market/omnihuman-1-5/subject-detection.md): ## Create Task
@@ -210,12 +233,16 @@
 - Video Models > Veo3.1 API [Get 1080P Video](https://docs.kie.ai/veo3-api/get-veo-3-1080-p-video.md): :::warning
 - Video Models > Veo3.1 API [Get 4K Video](https://docs.kie.ai/veo3-api/get-veo-3-4k-video.md): :::warning
 - Video Models > Veo3.1 API [Extend Veo3.1 Video](https://docs.kie.ai/veo3-api/extend-video.md): :::warning
-- Music Models > ElevenLabs [elevenlabs/audio-isolation](https://docs.kie.ai/market/elevenlabs/audio-isolation.md): Content generation using elevenlabs/audio-isolation
+- Video Models > Vidu [Vidu Q4 Image To Video](https://docs.kie.ai/market/vidu-q4/image-to-video.md):
+- Video Models > Vidu [Vidu Q4 Reference To Video](https://docs.kie.ai/market/vidu-q4/reference-to-video.md):
+- Music Models > ElevenLabs [elevenlabs/audio-isolation](https://docs.kie.ai/market/elevenlabs/audio-isolation.md): :::warning
 - Music Models > ElevenLabs [elevenlabs/text-to-dialogue-v3](https://docs.kie.ai/market/elevenlabs/text-to-dialogue-v3.md): Dialogue text-to-speech generation using elevenlabs/text-to-dialogue-v3
 - Music Models > ElevenLabs [elevenlabs/text-to-speech-multilingual-v2](https://docs.kie.ai/market/elevenlabs/text-to-speech-multilingual-v2.md): Content generation using elevenlabs/text-to-speech-multilingual-v2
 - Music Models > ElevenLabs [elevenlabs/text-to-speech-turbo-2-5](https://docs.kie.ai/market/elevenlabs/text-to-speech-turbo-2-5.md): Content generation using elevenlabs/text-to-speech-turbo-2-5
-- Music Models > Gemini [Gemini 3.1 Flash Text to speech](https://docs.kie.ai/market/google/gemini-3-1-flash-tts.md): Content generation using elevenlabs/audio-isolation
-- Music Models > Gemini [Gemini 2.5 Pro Text to Speech](https://docs.kie.ai/google/gemini-2-5-pro-tts.md): Content generation using elevenlabs/audio-isolation
+- Music Models > Gemini [Gemini 3.8 Flash Text to speech](https://docs.kie.ai/market/google/gemini-3-8-flash-tts.md): Text-to-speech with Gemini 3.8 Flash.
+- Music Models > Gemini [Gemini 3.1 Flash Text to speech](https://docs.kie.ai/market/google/gemini-3-1-flash-tts.md): Text-to-speech with Gemini 3.1 Flash.
+- Music Models > Gemini [Gemini 3.8 Flash Lite Text to speech](https://docs.kie.ai/market/google/gemini-3-8-flash-lite-tts.md): Text-to-speech with Gemini 3.8 Flash Lite.
+- Music Models > Gemini [Gemini 2.5 Pro Text to Speech](https://docs.kie.ai/market/google/gemini-2-5-pro-tts.md): Text-to-speech with Gemini 2.5 Pro.
 - Music Models > Suno > Music Generation [Generate Music](https://docs.kie.ai/suno-api/generate-music.md): :::warning Document updated
 - Music Models > Suno > Music Generation [Extend Music](https://docs.kie.ai/suno-api/extend-music.md): :::warning Document updated
 - Music Models > Suno > Music Generation [Upload And Cover Audio](https://docs.kie.ai/suno-api/upload-and-cover-audio.md): :::warning Document updated
@@ -239,43 +266,48 @@
 - Music Models > Suno > Vocal Removal [Vocal & Instrument Stem Separation](https://docs.kie.ai/suno-api/separate-vocals.md): :::warning Document updated
 - Music Models > Suno > Vocal Removal [Generate MIDI from Audio](https://docs.kie.ai/suno-api/generate-midi.md): :::warning Document updated
 - Music Models > Suno > Sounds Generation [Generate sounds](https://docs.kie.ai/suno-api/generate-sounds.md): :::warning Document updated
-- Chat  Models > GPT [GPT 5.2](https://docs.kie.ai/market/chat/gpt-5-2.md): > GPT-5-2 API is a next-generation multimodal model with exceptional reasoning capabilities, supporting text and image inputs with Web Search grounding and adjustable reasoning effort.
-- Chat  Models > GPT [GPT 5.4 (response)](https://docs.kie.ai/market/chat/gpt-5-4.md): > GPT-5-4 is a multimodal chat-completions style endpoint that accepts structured input arrays, supports adjustable reasoning effort, and integrates web search or function calling tools.
-- Chat  Models > GPT [GPT 5.5 (response)](https://docs.kie.ai/market/chat/gpt-5-5.md): > GPT-5.5 is OpenAI’s advanced reasoning model for agentic coding, knowledge work, scientific research, and complex multi-step task execution.
-- Chat  Models > GPT [GPT 5.6 Luna](https://docs.kie.ai/market/chat/gpt-5-6-luna.md): > GPT 5.6 Luna API is a multimodal chat-completions style endpoint that accepts structured input arrays, supports adjustable reasoning effort, and integrates web search or function calling tools.
-- Chat  Models > GPT [Gpt 6 Astra](https://docs.kie.ai/market/chat/gpt-6-astra.md): >Gpt 6 Astra API is a multimodal chat-completions style endpoint that accepts structured input arrays, supports adjustable reasoning effort, and integrates web search or function calling tools.
-- Chat  Models > GPT [GPT 6 Luna](https://docs.kie.ai/market/chat/gpt-6-luna.md): > GPT 6 Luna API is a multimodal chat-completions style endpoint that accepts structured input arrays, supports adjustable reasoning effort, and integrates web search or function calling tools.
-- Chat  Models > GPT [GPT 6 Sol](https://docs.kie.ai/market/chat/gpt-6-sol.md): > GPT 6 Sol API is a multimodal chat-completions style endpoint that accepts structured input arrays, supports adjustable reasoning effort, and integrates web search or function calling tools.
-- Chat  Models > GPT [GPT 5.6 Terra](https://docs.kie.ai/market/chat/gpt-5-6-terra.md): > GPT 5.6 Terra API is a multimodal chat-completions style endpoint that accepts structured input arrays, supports adjustable reasoning effort, and integrates web search or function calling tools.
-- Chat  Models > GPT [GPT 5.6 Sol](https://docs.kie.ai/market/chat/gpt-5-6-sol.md): > GPT 5.6 Sol API is a multimodal chat-completions style endpoint that accepts structured input arrays, supports adjustable reasoning effort, and integrates web search or function calling tools.
+- Chat  Models > GPT [GPT 5.2](https://docs.kie.ai/market/chat/gpt-5-2.md): :::warning
+- Chat  Models > GPT [GPT 5.5 (response)](https://docs.kie.ai/market/chat/gpt-5-5.md): > GPT-5.5 uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
+- Chat  Models > GPT [GPT 5.6 Luna](https://docs.kie.ai/market/chat/gpt-5-6-luna.md): > GPT 5.6 Luna uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
+- Chat  Models > GPT [Gpt 6 Astra](https://docs.kie.ai/market/chat/gpt-6-astra.md): > GPT 6 Astra uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
+- Chat  Models > GPT [GPT 6 Luna](https://docs.kie.ai/market/chat/gpt-6-luna.md): > GPT 6 Luna uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
+- Chat  Models > GPT [GPT 6 Sol](https://docs.kie.ai/market/chat/gpt-6-sol.md): > GPT 6 Sol uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
+- Chat  Models > GPT [GPT 5.6 Terra](https://docs.kie.ai/market/chat/gpt-5-6-terra.md): > GPT 5.6 Terra uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
+- Chat  Models > GPT [GPT 5.6 Sol](https://docs.kie.ai/market/chat/gpt-5-6-sol.md): > GPT 5.6 Sol uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
+- Chat  Models > GPT [GPT 6.1 Sol](https://docs.kie.ai/market/chat/gpt-6-1-sol.md): > GPT 6.1 Sol uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
 - Chat  Models > Claude [Claude Opus 4.7](https://docs.kie.ai/market/claude/claude-opus-4-7.md): ### Streaming Support
 - Chat  Models > Claude [Claude Opus 4.8](https://docs.kie.ai/market/claude/claude-opus-4-8.md): ### Streaming Support
-- Chat  Models > Claude [Claude Fable 5](https://docs.kie.ai/market/claude/cluade-fable-5.md): ### Streaming Support
-- Chat  Models > Claude [Claude Sonnet 5](https://docs.kie.ai/market/claude/cluade-sonnet-5.md): ### Streaming Support
+- Chat  Models > Claude [Claude Fable 5](https://docs.kie.ai/market/claude/claude-fable-5.md): ### Streaming Support
+- Chat  Models > Claude [Claude Sonnet 5](https://docs.kie.ai/market/claude/claude-sonnet-5.md): ### Streaming Support
+- Chat  Models > Claude [Claude Opus 5.5](https://docs.kie.ai/market/claude/claude-opus-5-5.md): ### Streaming Support
+- Chat  Models > Claude [Claude Sonnet 5.5](https://docs.kie.ai/market/claude/claude-sonnet-5-5.md): ### Streaming Support
+- Chat  Models > Claude [Claude Haiku 5.5](https://docs.kie.ai/market/claude/claude-haiku-5-5.md): ### Streaming Support
 - Chat  Models > Claude [Claude Haiku 4.5](https://docs.kie.ai/market/claude/claude-haiku-4-5.md): ### Streaming Support
 - Chat  Models > Claude [Claude Opus 4.5](https://docs.kie.ai/market/claude/claude-opus-4-5.md): ### Streaming Support
 - Chat  Models > Claude [Claude Opus 4.6](https://docs.kie.ai/market/claude/claude-opus-4-6.md): ### Streaming Support
 - Chat  Models > Claude [Claude Opus 5](https://docs.kie.ai/market/claude/claude-opus-5.md): ### Streaming Support
 - Chat  Models > Claude [Claude Sonnet 4.5](https://docs.kie.ai/market/claude/claude-sonnet-4-5.md): ### Streaming Support
 - Chat  Models > Claude [Claude Sonnet 4.6](https://docs.kie.ai/market/claude/claude-sonnet-4-6.md): ### Streaming Support
-- Chat  Models > Codex [GPT Codex](https://docs.kie.ai/market/codex/gpt-codex.md): > GPT Codex API is a multimodal chat-completions style endpoint that accepts structured input arrays, supports adjustable reasoning effort, and integrates web search or function calling tools.
-- Chat  Models > Gemini [Gemini  2.5 Pro (openai)](https://docs.kie.ai/market/gemini/gemini-2-5-pro.md): ### Streaming Support
-- Chat  Models > Gemini [Gemini 3 Pro (openai)](https://docs.kie.ai/market/gemini/gemini-3-pro.md): ### Streaming Support
-- Chat  Models > Gemini [Gemini 3.1 Pro (openai)](https://docs.kie.ai/market/gemini/gemini-3-1-pro.md): ### Streaming Support
-- Chat  Models > Gemini [Gemini 3.5 Flash](https://docs.kie.ai/market/gemini/gemini-3-5-flash.md): ### Streaming Support
-- Chat  Models > Gemini [Gemini 3.5 Flash (openai)](https://docs.kie.ai/market/gemini/gemini-3-5-flash-openai.md): ### Streaming Support
-- Chat  Models > Gemini [Gemini 3.6 Flash](https://docs.kie.ai/market/gemini/gemini-3-6-flash.md): ### Streaming Support
-- Chat  Models > Gemini [Gemini 3.6 Flash (openai)](https://docs.kie.ai/market/gemini/gemini-3-6-flash-openai.md): ### Streaming Support
-- Chat  Models > Gemini [Gemini 3.7 Flash](https://docs.kie.ai/market/gemini/gemini-3-7-flash.md): ### Streaming Support
-- Chat  Models > Gemini [Gemini 3.7 Flash (openai)](https://docs.kie.ai/market/gemini/gemini-3-7-flash-openai.md): ### Streaming Support
-- Chat  Models > Gemini [Gemini 3.8 Flash](https://docs.kie.ai/market/gemini/gemini-3-8-flash.md): ### Streaming Support
-- Chat  Models > Gemini [Gemini 3.8 Flash (openai)](https://docs.kie.ai/market/gemini/gemini-3-8-flash-openai.md): ### Streaming Support
-- Chat  Models > Grok [Grok 4.7](https://docs.kie.ai/market/grok/grok-4-7.md): > GPT Grok 4.7 API is a multimodal chat-completions style endpoint that accepts structured input arrays, supports adjustable reasoning effort, and integrates web search or function calling tools.
-- Chat  Models > Grok [Grok 4.3](https://docs.kie.ai/market/grok/grok-4-3.md): > GPT Grok 4.3 API is a multimodal chat-completions style endpoint that accepts structured input arrays, supports adjustable reasoning effort, and integrates web search or function calling tools.
-- Chat  Models > Grok [Grok 4.5](https://docs.kie.ai/market/grok/grok-4-5.md): > GPT Grok 4.5 API is a multimodal chat-completions style endpoint that accepts structured input arrays, supports adjustable reasoning effort, and integrates web search or function calling tools.
-- Chat  Models > Grok [Grok 4.6](https://docs.kie.ai/market/grok/grok-4-6.md): > GPT Grok 4.6 API is a multimodal chat-completions style endpoint that accepts structured input arrays, supports adjustable reasoning effort, and integrates web search or function calling tools.
-- Chat  Models > Deepseek [DeepSeek V4.1 Flash](https://docs.kie.ai/market/deepseek-v4-1-flash.md): > DeepSeek V4.1 Flash API is an OpenAI Responses–compatible endpoint that accepts a plain string or a structured input array, thinks deeply by default, and supports function calling, image understanding, and structured JSON output.
-- Chat  Models > Kimi [Kimi K3](https://docs.kie.ai/market/kimi/kimi-k3.md): > Kimi K3 is an OpenAI Responses–compatible endpoint that supports chat, function calling, image input, streaming, and reasoning, with a **1M-token** context window.
+- Chat  Models > Codex [Codex API](https://docs.kie.ai/market/codex/gpt-codex.md): > This endpoint works the same as the GPT model pages; see each model page for parameters and responses: [GPT 6 Astra](/market/chat/gpt-6-astra), [GPT 5.6 Sol](/market/chat/gpt-5-6-sol), [GPT 5.6 Terra](/market/chat/gpt-5-6-terra), [GPT 5.6 Luna](/market/chat/gpt-5-6-luna), [GPT 5.5](/market/chat/gpt-5-5).
+- Chat  Models > Gemini [Gemini  2.5 Pro (openai)](https://docs.kie.ai/market/gemini/gemini-2-5-pro.md): :::warning
+- Chat  Models > Gemini [Gemini 3 Pro (openai)](https://docs.kie.ai/market/gemini/gemini-3-pro.md): :::warning
+- Chat  Models > Gemini [Gemini 3.1 Pro (openai)](https://docs.kie.ai/market/gemini/gemini-3-1-pro.md): :::warning
+- Chat  Models > Gemini [Gemini 3.5 Flash](https://docs.kie.ai/market/gemini/gemini-3-5-flash.md): :::warning
+- Chat  Models > Gemini [Gemini 3.5 Flash (openai)](https://docs.kie.ai/market/gemini/gemini-3-5-flash-openai.md): :::warning
+- Chat  Models > Gemini [Gemini 3.6 Flash](https://docs.kie.ai/market/gemini/gemini-3-6-flash.md): :::warning
+- Chat  Models > Gemini [Gemini 3.6 Flash (openai)](https://docs.kie.ai/market/gemini/gemini-3-6-flash-openai.md): :::warning
+- Chat  Models > Gemini [Gemini 3.7 Flash](https://docs.kie.ai/market/gemini/gemini-3-7-flash.md): :::warning
+- Chat  Models > Gemini [Gemini 3.7 Flash (openai)](https://docs.kie.ai/market/gemini/gemini-3-7-flash-openai.md): :::warning
+- Chat  Models > Gemini [Gemini 3.8 Flash](https://docs.kie.ai/market/gemini/gemini-3-8-flash.md): :::warning
+- Chat  Models > Gemini [Gemini 3.8 Flash (openai)](https://docs.kie.ai/market/gemini/gemini-3-8-flash-openai.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Argon](https://docs.kie.ai/market/gemini/gemini-4-argon.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Argon (openai)](https://docs.kie.ai/market/gemini/gemini-4-argon-openai.md): :::warning
+- Chat  Models > Grok [Grok 4.7](https://docs.kie.ai/market/grok/grok-4-7.md): > Grok 4.7 uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
+- Chat  Models > Grok [Grok 4.3](https://docs.kie.ai/market/grok/grok-4-3.md): > Grok 4.3 uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
+- Chat  Models > Grok [Grok 4.5](https://docs.kie.ai/market/grok/grok-4-5.md): > Grok 4.5 uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
+- Chat  Models > Grok [Grok 4.6](https://docs.kie.ai/market/grok/grok-4-6.md): > Grok 4.6 uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
+- Chat  Models > Deepseek [DeepSeek V4.1 Flash](https://docs.kie.ai/market/deepseek-v4-1-flash.md): :::warning
+- Chat  Models > Kimi [Kimi K3](https://docs.kie.ai/market/kimi/kimi-k3.md): :::warning
 - [Get Task Details](https://docs.kie.ai/market/common/get-task-detail.md): Query the status and results of any task created in the Market models. This is a unified query interface that works with all models under the Market category.
 - [Base64 File Upload](https://docs.kie.ai/file-upload-api/upload-file-base-64.md): :::info[]
 - [File Stream Upload](https://docs.kie.ai/file-upload-api/upload-file-stream.md): :::info[]
@@ -291,7 +323,10 @@
 - Image    Models > Seedream [Seedream5.0 Lite 图片编辑](https://docs.kie.ai/cn/market/seedream/5-lite-image-to-image.md): 使用 Seedream5.0 Lite 进行图片编辑
 - Image    Models > Seedream [Seedream5.0 Pro 文生图](https://docs.kie.ai/cn/market/seedream/5-pro-text-to-image.md): 基于 Seedream 先进 AI 模型的高质量写实风格图像生成
 - Image    Models > Seedream [Seedream5.0 Pro 图片编辑](https://docs.kie.ai/cn/market/seedream/5-pro-image-to-image.md): 使用 Seedream5.0 Pro 进行图片编辑
-- Image    Models > Seedream [Seedream 5.0 Pro 图层分离](https://docs.kie.ai/41313512e0.md): 使用 Seedream5.0 Pro 进行图层分离
+- Image    Models > Seedream [Seedream5.0 Pro 图层分离](https://docs.kie.ai/cn/market/seedream/5-pro-layer-decomposition.md): 使用 Seedream5.0 Pro 进行图层分离
+- Image    Models > Seedream [Seedream5.0 Flash  文生图](https://docs.kie.ai/cn/market/seedream/5-flash-text-to-image.md): 基于 Seedream 先进 AI 模型的高质量写实风格图像生成
+- Image    Models > Seedream [Seedream5.0 Flash 图片编辑](https://docs.kie.ai/cn/market/seedream/5-flash-image-to-image.md): 使用 Seedream5.0 Flash 进行图片编辑
+- Image    Models > Seedream [Seedream5.0 Flash 图层分离](https://docs.kie.ai/cn/market/seedream/5-flash-layer-decomposition.md): 使用 Seedream 5.0 Flash 进行图层分离
 - Image    Models > Z-image [使用 z-image 生成内容](https://docs.kie.ai/cn/market/z-image/z-image.md): 使用 z-image 进行图片生成
 - Image    Models > Google [使用 nano-banana-2 生成内容](https://docs.kie.ai/cn/market/google/nanobanana2.md): 基于 Nano Banana 2 模型实现图像生成
 - Image    Models > Google [Google Imagen4 Fast](https://docs.kie.ai/cn/market/google/imagen4-fast.md): 基于 Google imagen4-fast 模型实现图像生成
@@ -300,6 +335,7 @@
 - Image    Models > Google [Nano Banana 图片编辑](https://docs.kie.ai/cn/market/google/nano-banana-edit.md): 基于 Google Nano Banana Edit 模型实现图像编辑
 - Image    Models > Google [Google Nano Banana](https://docs.kie.ai/cn/market/google/nano-banana.md): 基于 google/nano-banana 模型实现内容生成
 - Image    Models > Google [Nano Banana Pro 图生图](https://docs.kie.ai/cn/market/google/pro-image-to-image.md): 基于 Nano Banana Pro 模型实现图像生成
+- Image    Models > Google [使用 nano-banana-2-1 生成图片](https://docs.kie.ai/cn/market/google/nanobanana-2-1.md): 基于 Nano Banana 2-1 模型实现图像生成
 - Image    Models > Google [Nano Banana 2 Lite](https://docs.kie.ai/cn/market/google/nano-banana-2-lite.md): ## 创建任务
 - Image    Models > Flux-2 [Flux-2 Pro 图生图](https://docs.kie.ai/cn/market/flux2/pro-image-to-image.md): 使用 flux-2/pro-image-to-image 进行图像生成
 - Image    Models > Flux-2 [Flux-2 Pro 文生图](https://docs.kie.ai/cn/market/flux2/pro-text-to-image.md): 基于 Flux-2 先进 AI 模型的高质量写实风格图像生成
@@ -343,26 +379,26 @@
 - Image    Models > Flux Kontext API [生成或编辑图像](https://docs.kie.ai/cn/flux-kontext-api/generate-or-edit-image.md): :::warning
 - Image    Models > Wan [Wan 2.7 Image](https://docs.kie.ai/cn/market/wan/2-7-image.md): 基于 wan/2-7-image 实现图像生成与编辑
 - Image    Models > Wan [Wan 2.7 Image Pro](https://docs.kie.ai/cn/market/wan/2-7-image-pro.md): 基于 wan/2-7-image-pro 实现图像生成与编辑
-- Video Models > Grok Imagine [Grok Imagine 文生视频](https://docs.kie.ai/cn/market/grok-imagine/text-to-video.md): ## 查询任务状态
-- Video Models > Grok Imagine [Grok Imagine 图生视频](https://docs.kie.ai/cn/market/grok-imagine/image-to-video.md): ## 查询任务状态
-- Video Models > Grok Imagine [放大 Grok Imagine 视频](https://docs.kie.ai/cn/market/grok-imagine/upscale.md): ## 任务ID来源
-- Video Models > Grok Imagine [扩展 Grok Imagine 视频](https://docs.kie.ai/cn/market/grok-imagine/extend.md): ## 任务ID来源
-- Video Models > Grok Imagine [Grok Imagine Video 1.5 Preview](https://docs.kie.ai/cn/market/grok-imagine/1-5-preview.md): ## 创建任务
+- Video Models > Grok Imagine [Grok Imagine 文生视频](https://docs.kie.ai/cn/market/grok-imagine/text-to-video.md): 输出为 MP4 视频，带与画面同步生成的音轨（prompt 中的台词会被念出）。音频无法关闭。
+- Video Models > Grok Imagine [Grok Imagine 图生视频](https://docs.kie.ai/cn/market/grok-imagine/image-to-video.md): 输出为 MP4 视频，带与画面同步生成的音轨（prompt 中的台词会被念出）。音频无法关闭。
+- Video Models > Grok Imagine [放大 Grok Imagine 视频](https://docs.kie.ai/cn/market/grok-imagine/upscale.md): 输出为 MP4 视频，带与画面同步生成的音轨（prompt 中的台词会被念出）。音频无法关闭。
+- Video Models > Grok Imagine [扩展 Grok Imagine 视频](https://docs.kie.ai/cn/market/grok-imagine/extend.md): 输出为 MP4 视频，带与画面同步生成的音轨（prompt 中的台词会被念出）。音频无法关闭。
+- Video Models > Grok Imagine [Grok Imagine Video 1.5 Preview](https://docs.kie.ai/cn/market/grok-imagine/1-5-preview.md): 输出为 MP4 视频，带与画面同步生成的音轨（prompt 中的台词会被念出）。音频无法关闭。
 - Video Models > Kling [Kling-2.6 文生视频](https://docs.kie.ai/cn/market/kling/text-to-video.md): ## 查询任务状态
 - Video Models > Kling [Kling-2.6 图生视频](https://docs.kie.ai/cn/market/kling/image-to-video.md): ## 查询任务状态
-- Video Models > Kling [Kling V2.5 Turbo Pro 图生视频](https://docs.kie.ai/cn/market/kling/v25-turbo-image-to-video-pro.md): ## 查询任务状态
-- Video Models > Kling [Kling V2.5 Turbo Pro 文生视频](https://docs.kie.ai/cn/market/kling/v25-turbo-text-to-video-pro.md): ## 查询任务状态
-- Video Models > Kling [Kling AI Avatar Standard](https://docs.kie.ai/cn/market/kling/ai-avatar-standard.md): ## 查询任务状态
-- Video Models > Kling [Kling AI Avatar Pro](https://docs.kie.ai/cn/market/kling/ai-avatar-pro.md): ## 查询任务状态
+- Video Models > Kling [Kling V2.5 Turbo Pro 图生视频](https://docs.kie.ai/cn/market/kling/v25-turbo-image-to-video-pro.md): ## 概述
+- Video Models > Kling [Kling V2.5 Turbo Pro 文生视频](https://docs.kie.ai/cn/market/kling/v25-turbo-text-to-video-pro.md): ## 概述
+- Video Models > Kling [Kling AI Avatar Standard](https://docs.kie.ai/cn/market/kling/ai-avatar-standard.md): ## 概述
+- Video Models > Kling [Kling AI Avatar Pro](https://docs.kie.ai/cn/market/kling/ai-avatar-pro.md): ## 概述
 - Video Models > Kling [Kling V2.1 Master 图生视频](https://docs.kie.ai/cn/market/kling/v2-1-master-image-to-video.md): ## 查询任务状态
 - Video Models > Kling [Kling V2.1 Master 文生视频](https://docs.kie.ai/cn/market/kling/v2-1-master-text-to-video.md): ## 查询任务状态
 - Video Models > Kling [Kling V2.1 Pro](https://docs.kie.ai/cn/market/kling/v2-1-pro.md): ## 查询任务状态
 - Video Models > Kling [Kling V2.1 Standard](https://docs.kie.ai/cn/market/kling/v2-1-standard.md): ## 查询任务状态
-- Video Models > Kling [Kling-2.6 motion-control](https://docs.kie.ai/cn/market/kling/motion-control.md): ## 文件上传要求
+- Video Models > Kling [Kling-2.6 motion-control](https://docs.kie.ai/cn/market/kling/motion-control.md): ## 概述
 - Video Models > Kling [Kling-3.0 motion-control](https://docs.kie.ai/cn/market/kling/motion-control-v3.md): ## 文件上传要求
 - Video Models > Kling [Kling 3.0](https://docs.kie.ai/cn/market/kling/kling-3-0.md): 使用 Kling 3.0 AI 模型生成具有高级多镜头功能和元素引用的高质量视频。
-- Video Models > Kling [Kling V3 Turbo 文生视频](https://docs.kie.ai/cn/market/kling/v3-turbo-text-to-video.md): ## 查询任务状态
-- Video Models > Kling [Kling V3 Turbo 图生视频](https://docs.kie.ai/cn/market/kling/v3-turbo-image-to-video.md): ## 查询任务状态
+- Video Models > Kling [Kling V3 Turbo 文生视频](https://docs.kie.ai/cn/market/kling/v3-turbo-text-to-video.md): ## 概述
+- Video Models > Kling [Kling V3 Turbo 图生视频](https://docs.kie.ai/cn/market/kling/v3-turbo-image-to-video.md): ## 概述
 - Video Models > Kling [Kling 3.0 Omni 文生视频](https://docs.kie.ai/cn/market/kling/v3-omni-text-to-video.md): ## 查询任务状态
 - Video Models > Kling [Kling 3.0 Omni 图生视频](https://docs.kie.ai/cn/market/kling/v3-omni-image-to-video.md): ## 查询任务状态
 - Video Models > Kling [Kling 3.0 Omni Transformation](https://docs.kie.ai/cn/market/kling/v3-omni-transformation.md): ## 查询任务状态
@@ -371,6 +407,7 @@
 - Video Models > Bytedance [Bytedance Seedance 2.0 Fast](https://docs.kie.ai/cn/market/bytedance/seedance-2-fast.md): ## 查询任务状态
 - Video Models > Bytedance [Bytedance Seedance 2.0 Mini](https://docs.kie.ai/cn/market/bytedance/seedance-2-mini.md): ## 查询任务状态
 - Video Models > Bytedance [Bytedance Seedance 2.5](https://docs.kie.ai/cn/market/bytedance/seedance-2-5.md): ## 查询任务状态
+- Video Models > Bytedance [Bytedance Seedance 2.5 Draft](https://docs.kie.ai/cn/market/bytedance/seedance-2-5-draft.md): ## 查询任务状态
 - Video Models > Bytedance [Bytedance Seedance 1.5 Pro](https://docs.kie.ai/cn/market/bytedance/seedance-1-5-pro.md): ## 查询任务状态
 - Video Models > Bytedance [Bytedance V1 Pro Fast 图生视频](https://docs.kie.ai/cn/market/bytedance/v1-pro-fast-image-to-video.md): ## 查询任务状态
 - Video Models > Bytedance [Bytedance V1 Pro 图生视频](https://docs.kie.ai/cn/market/bytedance/v1-pro-image-to-video.md): ## 查询任务状态
@@ -379,9 +416,9 @@
 - Video Models > Bytedance [Bytedance V1 Lite 文生视频](https://docs.kie.ai/cn/market/bytedance/v1-lite-text-to-video.md): ## 查询任务状态
 - Video Models > Hailuo [Hailuo 2.3 Pro 图生视频](https://docs.kie.ai/cn/market/hailuo/2-3-image-to-video-pro.md): ## 查询任务状态
 - Video Models > Hailuo [Hailuo 2.3 Standard 图生视频](https://docs.kie.ai/cn/market/hailuo/2-3-image-to-video-standard.md): ## 查询任务状态
-- Video Models > Hailuo [Hailuo Pro 文生视频](https://docs.kie.ai/cn/market/hailuo/02-text-to-video-pro.md): ## 查询任务状态
-- Video Models > Hailuo [Hailuo Pro 图生视频](https://docs.kie.ai/cn/market/hailuo/02-image-to-video-pro.md): ## 查询任务状态
-- Video Models > Hailuo [Hailuo Standard 文生视频](https://docs.kie.ai/cn/market/hailuo/02-text-to-video-standard.md): ## 查询任务状态
+- Video Models > Hailuo [Hailuo Pro 文生视频](https://docs.kie.ai/cn/market/hailuo/02-text-to-video-pro.md): ## 概述
+- Video Models > Hailuo [Hailuo Pro 图生视频](https://docs.kie.ai/cn/market/hailuo/02-image-to-video-pro.md): ## 概述
+- Video Models > Hailuo [Hailuo Standard 文生视频](https://docs.kie.ai/cn/market/hailuo/02-text-to-video-standard.md): ## 概述
 - Video Models > Hailuo [Hailuo Standard 图生视频](https://docs.kie.ai/cn/market/hailuo/02-image-to-video-standard.md): ## 查询任务状态
 - Video Models > Wan [Wan 2.6 - 图转视频](https://docs.kie.ai/cn/market/wan/2-6-image-to-video.md): ## 概述
 - Video Models > Wan [Wan 2.6 - 文转视频](https://docs.kie.ai/cn/market/wan/2-6-text-to-video.md): ## 概述
@@ -406,22 +443,22 @@
 - Video Models > HappyHorse [HappyHorse-文生视频](https://docs.kie.ai/cn/market/happyhorse/text-to-video.md): ## 查询任务状态
 - Video Models > HappyHorse [HappyHorse-图生视频](https://docs.kie.ai/cn/market/happyhorse/image-to-video.md): ## 查询任务状态
 - Video Models > HappyHorse [HappyHorse-参考生视频](https://docs.kie.ai/cn/market/happyhorse/reference-to-video.md): ## 查询任务状态
-- Video Models > HappyHorse [HappyHorse-视频编辑](https://docs.kie.ai/cn/market/happyhorse/video-edit.md): ## 查询任务状态
-- Video Models > HappyHorse [HappyHorse 1.1 图生视频](https://docs.kie.ai/38308980e0.md):
-- Video Models > HappyHorse [HappyHorse 1.1 文生视频](https://docs.kie.ai/38309290e0.md):
-- Video Models > HappyHorse [HappyHorse 1.1 参考图生成视频](https://docs.kie.ai/38309489e0.md):
-- Video Models > Gemini Omni [Gemini Omni 1.1 Flash  ](https://docs.kie.ai/cn/market/google/gemini-omni-flash-1-1.md): ## 创建任务
+- Video Models > HappyHorse [HappyHorse-视频编辑](https://docs.kie.ai/cn/market/happyhorse/video-edit.md): ## 概述
+- Video Models > HappyHorse [HappyHorse 1.1 图生视频](https://docs.kie.ai/cn/market/happyhorse-1-1/image-to-video.md):
+- Video Models > HappyHorse [HappyHorse 1.1 文生视频](https://docs.kie.ai/cn/market/happyhorse-1-1/text-to-video.md):
+- Video Models > HappyHorse [HappyHorse 1.1 参考图生成视频](https://docs.kie.ai/cn/market/happyhorse-1-1/reference-to-video.md):
+- Video Models > Gemini Omni [Gemini Omni 1.1 Flash](https://docs.kie.ai/cn/market/google/gemini-omni-flash-1-1.md): ## 创建任务
 - Video Models > Gemini Omni [Gemini Omni 生视频](https://docs.kie.ai/cn/market/gemini-omni-video.md): ## 创建任务
-- Video Models > Gemini Omni [Gemini Omni Audio 生语音](https://docs.kie.ai/cn/market/gemini-omni-audio.md): ## 创建任务
-- Video Models > Gemini Omni [Gemini Omni Character 生角色](https://docs.kie.ai/cn/market/gemini-omni-character.md): - `image_urls` 仅支持上传 `1` 张图片，单张图片不超过 `20MB`
+- Video Models > Gemini Omni [Gemini Omni Audio 生语音](https://docs.kie.ai/cn/market/gemini-omni-audio.md): 同步接口。登记一个音色配置并立即返回 data.audioId，不生成音频文件。将 audioId 填入视频、角色接口的 audio_ids 使用。
+- Video Models > Gemini Omni [Gemini Omni Character 生角色](https://docs.kie.ai/cn/market/gemini-omni-character.md): - image_urls 支持 1–2 张（索引 0 为肖像，索引 1 为可选全身图），单张不超过 20MB。
 - Video Models > PixVerse [PixVerse V6 文生视频](https://docs.kie.ai/cn/market/pixverse/text-to-video.md):  ## 查询任务状态
 - Video Models > PixVerse [PixVerse V6 图生视频](https://docs.kie.ai/cn/market/pixverse/image-to-video.md):  ## 查询任务状态
 - Video Models > PixVerse [PixVerse V6 首尾帧/转场](https://docs.kie.ai/cn/market/pixverse/transition.md):  ## 查询任务状态
 - Video Models > PixVerse [PixVerse V6 视频扩展](https://docs.kie.ai/cn/market/pixverse/extend.md):  ## 查询任务状态
-- Video Models > PixVerse [PixVerse V6 Reference-to-video/参考图生成](https://docs.kie.ai/cnmarket/pixverse/reference-to-video.md):  ## 查询任务状态
-- Video Models > MiniMax-H3 [MiniMax H3 文生视频](https://docs.kie.ai/cn/market/minimax-h3/text-to-video.md):  ## 查询任务状态
-- Video Models > MiniMax-H3 [MiniMax H3 图生视频](https://docs.kie.ai/cn/market/minimax-h3/image-to-video.md):  ## 查询任务状态
-- Video Models > MiniMax-H3 [MiniMax H3 参考生视频](https://docs.kie.ai/cn/market/minimax-h3/reference-to-video.md):  ## 查询任务状态
+- Video Models > PixVerse [PixVerse V6 参考图生视频](https://docs.kie.ai/cn/market/pixverse/reference-to-video.md):  ## 查询任务状态
+- Video Models > MiniMax-H3 [MiniMax H3 文生视频](https://docs.kie.ai/cn/market/minimax-h3/text-to-video.md): 输出视频带与画面同步生成的立体声音轨，可在提示词中描述对白、音乐、音效。音频无法关闭。
+- Video Models > MiniMax-H3 [MiniMax H3 图生视频](https://docs.kie.ai/cn/market/minimax-h3/image-to-video.md): 输出视频带与画面同步生成的立体声音轨，可在提示词中描述对白、音乐、音效。音频无法关闭。
+- Video Models > MiniMax-H3 [MiniMax H3 参考生视频](https://docs.kie.ai/cn/market/minimax-h3/reference-to-video.md): 输出视频带与画面同步生成的立体声音轨，可在提示词中描述对白、音乐、音效。音频无法关闭。
 - Video Models > Runway API > Aleph [生成 Aleph 视频](https://docs.kie.ai/cn/runway-api/generate-aleph-video.md): :::warning
 - Video Models > Runway API [生成AI视频](https://docs.kie.ai/cn/runway-api/generate-ai-video.md): :::warning
 - Video Models > Runway API [延长AI视频](https://docs.kie.ai/cn/runway-api/extend-ai-video.md): :::warning
@@ -433,12 +470,16 @@
 - Video Models > Veo3.1 API [扩展veo3.1视频](https://docs.kie.ai/cn/veo3-api/extend-video.md): :::warning
 - Video Models > Veo3.1 API [获取1080P视频](https://docs.kie.ai/cn/veo3-api/get-veo-3-1080-p-video.md): :::warning
 - Video Models > Veo3.1 API [获取4K视频](https://docs.kie.ai/cn/veo3-api/get-veo-3-4k-video.md): :::warning
+- Video Models > Vidu [Vidu Q4 图生视频](https://docs.kie.ai/cn/market/vidu-q4/image-to-video.md): ## 查询任务状态
+- Video Models > Vidu [Vidu Q4 参考生视频](https://docs.kie.ai/cn/market/vidu-q4/reference-to-video.md): ## 查询任务状态
 - Music Models > ElevenLabs [ElevenLabs对话文生语音V3](https://docs.kie.ai/cn/market/elevenlabs/text-to-dialogue-v3.md): ## 查询任务状态
 - Music Models > ElevenLabs [ElevenLabs Turbo 2.5文生语音](https://docs.kie.ai/cn/market/elevenlabs/text-to-speech-turbo-2-5.md): ## 查询任务状态
 - Music Models > ElevenLabs [ElevenLabs文生语音 多语言V2](https://docs.kie.ai/cn/market/elevenlabs/text-to-speech-multilingual-v2.md): ## 查询任务状态
-- Music Models > ElevenLabs [ElevenLabs音频分离](https://docs.kie.ai/cn/market/elevenlabs/audio-isolation.md): ## 查询任务状态
-- Music Models > Gemini [Gemini 3.1 Flash文生语音](https://docs.kie.ai/cn/market/google/gemini-3-1-flash-tts.md): ## 查询任务状态
-- Music Models > Gemini [Gemini 2.5 Pro文生语音](https://docs.kie.ai/cn/google/gemini-2-5-pro-tts.md): ## 查询任务状态
+- Music Models > ElevenLabs [ElevenLabs音频分离](https://docs.kie.ai/cn/market/elevenlabs/audio-isolation.md): :::warning
+- Music Models > Gemini [Gemini 3.1 Flash文生语音](https://docs.kie.ai/cn/market/google/gemini-3-1-flash-tts.md): 使用 Gemini 3.1 Flash 进行文本转语音。
+- Music Models > Gemini [Gemini 2.5 Pro文生语音](https://docs.kie.ai/cn/market/google/gemini-2-5-pro-tts.md): 使用 Gemini 2.5 Pro 进行文本转语音。
+- Music Models > Gemini [Gemini 3.8 Flash 文生语音](https://docs.kie.ai/cn/market/google/gemini-3-8-flash-tts.md): 使用 Gemini 3.8 Flash 进行文本转语音。
+- Music Models > Gemini [Gemini 3.8 Flash Lite 文生语音](https://docs.kie.ai/cn/market/google/gemini-3-8-flash-lite-tts.md): 使用 Gemini 3.8 Flash Lite 进行文本转语音。
 - Music Models > Suno > Music Generation [生成音乐](https://docs.kie.ai/cn/suno-api/generate-music.md): :::warning 文档已更新
 - Music Models > Suno > Music Generation [延长音乐](https://docs.kie.ai/cn/suno-api/extend-music.md): :::warning 文档已更新
 - Music Models > Suno > Music Generation [上传并翻唱音乐](https://docs.kie.ai/cn/suno-api/upload-and-cover-audio.md): :::warning 文档已更新
@@ -462,8 +503,7 @@
 - Music Models > Suno > voice [Suno Voice 重新生成验证短句](https://docs.kie.ai/cn/suno-api/suno-voice-regenerate.md): :::warning 文档已更新
 - Music Models > Suno > voice [Suno Voice检查是否可用接口](https://docs.kie.ai/cn/suno-api/suno-voice-check-voice.md): :::warning 文档已更新
 - Music Models > Suno > Sounds Generation [生成声音](https://docs.kie.ai/cn/suno-api/generate-sounds.md): :::warning 文档已更新
-- Chat  Models > GPT [GPT 5.2](https://docs.kie.ai/cn/market/chat/gpt-5-2.md): > GPT-5-2 API 是新一代多模态模型，具备卓越的推理能力，支持文本和图像输入，提供联网搜索增强功能并支持调节推理力度。
-- Chat  Models > GPT [GPT 5.4 (response)](https://docs.kie.ai/cn/market/chat/gpt-5-4.md): # GPT-5-4
+- Chat  Models > GPT [GPT 5.2](https://docs.kie.ai/cn/market/chat/gpt-5-2.md): :::warning
 - Chat  Models > GPT [GPT 5.5 (response)](https://docs.kie.ai/cn/market/chat/gpt-5-5.md): # GPT-5-5
 - Chat  Models > GPT [GPT 5.6 Luna](https://docs.kie.ai/cn/market/chat/gpt-5-6-luna.md): # GPT 5.6 Luna
 - Chat  Models > GPT [Gpt 6 Astra](https://docs.kie.ai/cn/market/chat/gpt-6-astra.md): # Gpt 6 Astra
@@ -471,34 +511,40 @@
 - Chat  Models > GPT [ GPT 6 Sol](https://docs.kie.ai/cn/market/chat/gpt-6-sol.md): # GPT 6 Sol
 - Chat  Models > GPT [GPT 5.6 Terra](https://docs.kie.ai/cn/market/chat/gpt-5-6-terra.md): # GPT 5.6 Terra
 - Chat  Models > GPT [GPT 5.6 Sol](https://docs.kie.ai/cn/market/chat/gpt-5-6-sol.md): # GPT 5.6 Sol
+- Chat  Models > GPT [GPT 6.1 Sol ](https://docs.kie.ai/cn/market/chat/gpt-6-1-sol.md): > GPT 6.1 Sol 通过兼容 OpenAI Responses 协议的端点提供（input/output 结构，流式为 response.* 事件）。
 - Chat  Models > Claude [Claude Opus 4.7](https://docs.kie.ai/cn/market/claude/claude-opus-4-7.md): ### Streaming Support
 - Chat  Models > Claude [Claude Opus 4.8](https://docs.kie.ai/cn/market/claude/claude-opus-4-8.md): ### Streaming Support
-- Chat  Models > Claude [Claude Fable 5](https://docs.kie.ai/cn/market/claude/cluade-fable-5.md): ### Streaming Support
-- Chat  Models > Claude [Claude Sonnet 5](https://docs.kie.ai/39041537e0.md): ### Streaming Support
+- Chat  Models > Claude [Claude Fable 5](https://docs.kie.ai/cn/market/claude/claude-fable-5.md): ### Streaming Support
+- Chat  Models > Claude [Claude Sonnet 5](https://docs.kie.ai/cn/market/claude/claude-sonnet-5.md): ### Streaming Support
+- Chat  Models > Claude [Claude Opus 5.5](https://docs.kie.ai/cn/market/claude/claude-opus-5-5.md): ### Streaming Support
+- Chat  Models > Claude [Claude Sonnet 5.5](https://docs.kie.ai/cn/market/claude/claude-sonnet-5-5.md): ### Streaming Support
+- Chat  Models > Claude [Claude Haiku 5.5](https://docs.kie.ai/cn/market/claude/claude-haiku-5-5.md): ### Streaming Support
 - Chat  Models > Claude [Claude Haiku 4.5](https://docs.kie.ai/cn/market/claude/claude-haiku-4-5.md): ### Streaming Support
 - Chat  Models > Claude [Claude Opus 4.5](https://docs.kie.ai/cn/market/claude/claude-opus-4-5.md): ### Streaming Support
 - Chat  Models > Claude [Claude Opus 4.6](https://docs.kie.ai/cn/market/claude/claude-opus-4-6.md): ### Streaming Support
-- Chat  Models > Claude [Claude Opus 5](https://docs.kie.ai/cn/market/claude/cluade-opus-5.md): ### Streaming Support
+- Chat  Models > Claude [Claude Opus 5](https://docs.kie.ai/cn/market/claude/claude-opus-5.md): ### Streaming Support
 - Chat  Models > Claude [Claude Sonnet 4.5](https://docs.kie.ai/cn/market/claude/claude-sonnet-4-5.md): ### Streaming Support
 - Chat  Models > Claude [Claude Sonnet 4.6](https://docs.kie.ai/cn/market/claude/claude-sonnet-4-6.md): ### Streaming Support
-- Chat  Models > Gemini [Gemini 2.5 Pro (openai)](https://docs.kie.ai/cn/market/gemini/gemini-2-5-pro.md): ### 流式响应支持
-- Chat  Models > Gemini [Gemini 3 Pro (openai)](https://docs.kie.ai/cn/market/gemini/gemini-3-pro.md): ### 流式响应支持
-- Chat  Models > Gemini [Gemini 3.1 Pro (openai)](https://docs.kie.ai/cn/market/gemini/gemini-3-1-pro.md): ### 流式响应支持
-- Chat  Models > Gemini [Gemini 3.5 Flash](https://docs.kie.ai/cn/market/gemini/gemini-3-5-flash.md): ### Streaming Support
-- Chat  Models > Gemini [Gemini 3.5 Flash (openai)](https://docs.kie.ai/cn/market/gemini/gemini-3-5-flash-openai.md): ### 流式响应支持
-- Chat  Models > Gemini [Gemini 3.6 Flash](https://docs.kie.ai/40573326e0.md): ### Streaming Support
-- Chat  Models > Gemini [Gemini 3.6 Flash (openai)](https://docs.kie.ai/40573330e0.md): ### 流式响应支持
-- Chat  Models > Gemini [Gemini 3.7 Flash](https://docs.kie.ai/cn/market/gemini/gemini-3-7-flash.md): ### Streaming Support
-- Chat  Models > Gemini [Gemini 3.7 Flash (openai) ](https://docs.kie.ai/cn/market/gemini/gemini-3-7-flash-openai.md): ### 流式响应支持
-- Chat  Models > Gemini [Gemini 3.8 Flash](https://docs.kie.ai/42969104e0.md): ### Streaming Support
-- Chat  Models > Gemini [Gemini 3.8 Flash (openai)](https://docs.kie.ai/42969115e0.md): ### 流式响应支持
-- Chat  Models > Codex [GPT Codex](https://docs.kie.ai/cn/market/codex/gpt-codex.md): # GPT Codex
+- Chat  Models > Gemini [Gemini 2.5 Pro (openai)](https://docs.kie.ai/cn/market/gemini/gemini-2-5-pro.md): :::warning
+- Chat  Models > Gemini [Gemini 3 Pro (openai)](https://docs.kie.ai/cn/market/gemini/gemini-3-pro.md): :::warning
+- Chat  Models > Gemini [Gemini 3.1 Pro (openai)](https://docs.kie.ai/cn/market/gemini/gemini-3-1-pro.md): :::warning
+- Chat  Models > Gemini [Gemini 3.5 Flash](https://docs.kie.ai/cn/market/gemini/gemini-3-5-flash.md): :::warning
+- Chat  Models > Gemini [Gemini 3.5 Flash (openai)](https://docs.kie.ai/cn/market/gemini/gemini-3-5-flash-openai.md): :::warning
+- Chat  Models > Gemini [Gemini 3.6 Flash](https://docs.kie.ai/cn/market/gemini/gemini-3-6-flash.md): :::warning
+- Chat  Models > Gemini [Gemini 3.6 Flash (openai)](https://docs.kie.ai/cn/market/gemini/gemini-3-6-flash-openai.md): :::warning
+- Chat  Models > Gemini [Gemini 3.7 Flash](https://docs.kie.ai/cn/market/gemini/gemini-3-7-flash.md): :::warning
+- Chat  Models > Gemini [Gemini 3.7 Flash (openai) ](https://docs.kie.ai/cn/market/gemini/gemini-3-7-flash-openai.md): :::warning
+- Chat  Models > Gemini [Gemini 3.8 Flash](https://docs.kie.ai/cn/market/gemini/gemini-3-8-flash.md): :::warning
+- Chat  Models > Gemini [Gemini 3.8 Flash (openai)](https://docs.kie.ai/cn/market/gemini/gemini-3-8-flash-openai.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Argon](https://docs.kie.ai/cn/market/gemini/gemini-4-argon.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Argon (openai)](https://docs.kie.ai/cn/market/gemini/gemini-4-argon-openai.md): :::warning
+- Chat  Models > Codex [Codex API(Responses)](https://docs.kie.ai/cn/market/codex/gpt-codex.md): # Codex API
 - Chat  Models > Grok [Grok 4.7](https://docs.kie.ai/cn/market/grok/grok-4-7.md):
 - Chat  Models > Grok [Grok 4.3](https://docs.kie.ai/cn/market/grok/grok-4-3.md): # Grok 4.3
 - Chat  Models > Grok [Grok 4.5](https://docs.kie.ai/cn/market/grok/grok-4-5.md): # Grok 4.5
 - Chat  Models > Grok [Grok 4.6](https://docs.kie.ai/cn/market/grok/grok-4-6.md):
-- Chat  Models > Deepseek [DeepSeek V4.1 Flash](https://docs.kie.ai/cn/market/deepseek-v4-1-flash.md): > DeepSeek V4.1 Flash 是兼容 OpenAI Responses 协议的端点，接受纯文本字符串或结构化输入数组，默认开启深度思考，支持函数调用、图像理解与结构化 JSON 输出。
-- Chat  Models > Kimi [Kimi K3](https://docs.kie.ai/cn/market/kimi/kimi-k3.md): > Kimi K3 是兼容 OpenAI Responses 协议的端点，支持对话、工具调用、图片输入、流式输出与思考，上下文窗口 **1M tokens**。
+- Chat  Models > Deepseek [DeepSeek V4.1 Flash](https://docs.kie.ai/cn/market/deepseek-v4-1-flash.md): :::warning
+- Chat  Models > Kimi [Kimi K3](https://docs.kie.ai/cn/market/kimi/kimi-k3.md): :::warning
 - [获取任务详情](https://docs.kie.ai/cn/market/common/get-task-detail.md): ## 概述
 - [Base64 文件上传](https://docs.kie.ai/cn/file-upload-api/upload-file-base-64.md): :::info[]
 - [文件流上传](https://docs.kie.ai/cn/file-upload-api/upload-file-stream.md): :::info[]

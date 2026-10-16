@@ -274,10 +274,64 @@ describe("KIE catalogue and pi-ai adapters", () => {
   it("registers Codex on OpenAI Responses and Claude on Anthropic Messages with KIE base URLs", () => {
     const provider = createKieProvider({ apiKey: "kie-key" });
     const byId = new Map(provider.getModels().map((model) => [model.id, model]));
-    assert.equal(byId.get("gpt-5.3-codex")?.api, "openai-responses");
-    assert.equal(byId.get("gpt-5.3-codex")?.baseUrl, "https://api.kie.ai/api/v1");
+    assert.deepEqual(
+      provider.getModels().filter((model) => model.api === "openai-responses").map((model) => model.id),
+      ["gpt-6-astra", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-5-6-luna", "gpt-5-5"],
+    );
+    assert.equal(byId.get("gpt-5-6-sol")?.baseUrl, "https://api.kie.ai/codex/v1");
     assert.equal(byId.get("claude-sonnet-5")?.api, "anthropic-messages");
-    assert.equal(byId.get("claude-sonnet-5")?.baseUrl, "https://api.kie.ai/claude");
+    assert.equal(byId.get("claude-sonnet-5")?.baseUrl, "https://api.kie.ai/anthropic");
     assert.throws(() => createKieProvider({ apiKey: "" }), /apiKey is required/);
+  });
+
+  it("takes Codex capability metadata from pi-ai's dotted catalogue ids and KIE's 272K context window", () => {
+    const byId = new Map(createKieProvider({ apiKey: "kie-key" }).getModels().map((model) => [model.id, model]));
+    for (const id of ["gpt-6-astra", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-5-6-luna", "gpt-5-5"]) {
+      assert.equal(byId.get(id)?.contextWindow, 272_000, id);
+      assert.equal(byId.get(id)?.thinkingLevelMap?.xhigh, "xhigh", id);
+    }
+    // KIE: `max` is not available for gpt-5-5.
+    assert.equal(byId.get("gpt-5-5")?.thinkingLevelMap?.max, null);
+    assert.equal(byId.get("gpt-5-6-sol")?.thinkingLevelMap?.max, "max");
+  });
+
+  it("streams Codex through the moved endpoint and turns KIE's HTTP-200 envelope into an error", async () => {
+    const urls: string[] = [];
+    const fetch = async (input: string | URL | Request) => {
+      urls.push(String(input instanceof Request ? input.url : input));
+      return new Response(JSON.stringify({ code: 402, msg: "Insufficient credits" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const models = createModels();
+    models.setProvider(createKieProvider({ apiKey: "kie-key" }));
+    const model = models.getModel("kie", "gpt-5-6-sol");
+    assert.ok(model);
+    const message = await models.complete(model, { messages: [{ role: "user", content: "hi", timestamp: 0 }] }, { fetch, maxRetries: 0 });
+    assert.equal(message.stopReason, "error");
+    assert.match(message.errorMessage ?? "", /KIE code 402: Insufficient credits/);
+    assert.deepEqual(urls, ["https://api.kie.ai/codex/v1/responses"]);
+  });
+
+  it("sends Claude to /anthropic/v1/messages with Bearer auth only", async () => {
+    const requests: { url: string; headers: Headers }[] = [];
+    const fetch = async (input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      requests.push({ url: request.url, headers: request.headers });
+      // KIE's /anthropic route answers an invalid key with a real HTTP 401 carrying its envelope.
+      return new Response(JSON.stringify({ code: 401, msg: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+    };
+    const models = createModels();
+    models.setProvider(createKieProvider({ apiKey: "kie-key" }));
+    const model = models.getModel("kie", "claude-sonnet-5");
+    assert.ok(model);
+    const message = await models.complete(model, { messages: [{ role: "user", content: "hi", timestamp: 0 }] }, { fetch, maxRetries: 0 });
+    assert.equal(message.stopReason, "error");
+    assert.equal(requests.length, 1);
+    // pi-ai's Anthropic adapter uses the SDK's beta Messages client, which adds `?beta=true`.
+    assert.equal(requests[0]?.url.split("?")[0], "https://api.kie.ai/anthropic/v1/messages");
+    assert.equal(requests[0]?.headers.get("authorization"), "Bearer kie-key");
+    assert.equal(requests[0]?.headers.get("x-api-key"), null);
   });
 });

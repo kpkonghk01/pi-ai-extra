@@ -4,7 +4,7 @@ Server-only extensions to [`@earendil-works/pi-ai`](https://www.npmjs.com/packag
 
 | Package | Image models | Chat (pi-ai `Models`) |
 | --- | --- | --- |
-| `@hk01/pi-ai-extra-kie` | Grok Imagine Image 2.0 (text-to-image, image edit), GPT Image 2 (text-to-image, image-to-image), Nano Banana 2 | GPT Codex (OpenAI Responses), Claude (Anthropic Messages) |
+| `@hk01/pi-ai-extra-kie` | Grok Imagine Image 2.0 (text-to-image, image edit), GPT Image 2 (text-to-image, image-to-image), Nano Banana 2 | Codex (OpenAI Responses), Claude (Anthropic Messages) |
 | `@hk01/pi-ai-extra-toapis` | Gemini 3.1 Flash Image (preview), GPT Image 2, GPT Image 2.5 Flare / Sunburst, Seedream 5.0 Pro | Codex (OpenAI Responses), Claude (Anthropic Messages) |
 | `@hk01/pi-ai-extra-google` | Gemini 3.1 Flash Image, Gemini 3 Pro Image | Gemini (pi-ai's Gemini adapter and catalogue, explicit key) |
 
@@ -152,7 +152,7 @@ import { createToapisProvider } from "@hk01/pi-ai-extra-toapis/pi-ai";
 import { createGoogleProvider } from "@hk01/pi-ai-extra-google/pi-ai";
 
 const models = createModels();
-models.setProvider(createKieProvider({ apiKey: kieKey }));       // Codex on https://api.kie.ai/api/v1, Claude on https://api.kie.ai/claude (Bearer)
+models.setProvider(createKieProvider({ apiKey: kieKey }));       // Codex on https://api.kie.ai/codex/v1, Claude on https://api.kie.ai/anthropic (Bearer)
 models.setProvider(createToapisProvider({ apiKey: toapisKey })); // Codex on https://toapis.com/v1, Claude on https://toapis.com
 models.setProvider(createGoogleProvider({ apiKey: geminiKey }));  // Gemini chat; never reads GEMINI_API_KEY
 
@@ -170,7 +170,7 @@ pi-ai 1.2 keeps chat and image models in one `Models` collection, so each packag
 
 `createGoogleProvider({ apiKey, modelIds?, baseUrl?, imageSettings? })` serves pi-ai's own Gemini adapter and model catalogue (`GOOGLE_CHAT_MODEL_IDS`) unchanged, including Google's list prices, but authenticates only with the explicit key: unlike pi-ai's `googleProvider()`, it never reads `GEMINI_API_KEY`. `modelIds` restricts the chat list; unknown ids throw.
 
-KIE and ToAPIs chat models use pi-ai's own OpenAI Responses and Anthropic Messages adapters. Capability metadata (context window, thinking levels) is copied from pi-ai's catalogue when the id matches. `ChatModelDefinition.cost` defaults to `0`, because KIE and ToAPIs prices differ from list prices; set it from your provider's current price sheet if you want pi-ai to compute cost:
+KIE and ToAPIs chat models use pi-ai's own OpenAI Responses and Anthropic Messages adapters. Capability metadata (context window, thinking levels) is copied from pi-ai's catalogue when the id, or `ChatModelDefinition.catalogueId`, matches; KIE's dashed Codex ids (`gpt-5-6-sol`) point at pi-ai's dotted ones (`gpt-5.6-sol`). `ChatModelDefinition.cost` defaults to `0`, because KIE and ToAPIs prices differ from list prices; set it from your provider's current price sheet if you want pi-ai to compute cost:
 
 ```ts
 createToapisProvider({
@@ -193,6 +193,8 @@ pi-ai 1.2 removed `createImagesModels()`, `createImagesProvider()`, `ImagesProvi
 | `images.generateImages(model, context, options)` | `models.generateImages(model, context, options)` (same context, options and result) |
 
 Register each package's provider once: a second provider with the same id replaces the first in a `Models` collection.
+
+KIE chat defaults changed as well. Codex moved to `https://api.kie.ai/codex/v1` (`POST /codex/v1/responses`) and now offers `gpt-6-astra`, `gpt-5-6-sol`, `gpt-5-6-terra`, `gpt-5-6-luna` and `gpt-5-5`; the `gpt-5.x-codex` ids are delisted. Claude uses `https://api.kie.ai/anthropic`, the base URL in KIE's Claude Code guides; the model pages still show `/claude/v1/messages`, which `claudeBaseUrl: "https://api.kie.ai/claude"` keeps.
 
 ### Prompt caching
 

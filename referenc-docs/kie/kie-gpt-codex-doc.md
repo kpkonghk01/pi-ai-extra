@@ -1,4 +1,4 @@
-# GPT Codex
+# Codex API
 
 ## OpenAPI Specification
 
@@ -9,14 +9,22 @@ info:
   description: ''
   version: 1.0.0
 paths:
-  /api/v1/responses:
+  /codex/v1/responses:
     post:
-      summary: GPT Codex
+      summary: Codex API
       deprecated: false
-      description: >-
-        > GPT Codex API is a multimodal chat-completions style endpoint that
-        accepts structured input arrays, supports adjustable reasoning effort,
-        and integrates web search or function calling tools.
+      description: >
+        > This endpoint works the same as the GPT model pages; see each model
+        page for parameters and responses: [GPT 6
+        Astra](/market/chat/gpt-6-astra), [GPT 5.6
+        Sol](/market/chat/gpt-5-6-sol), [GPT 5.6
+        Terra](/market/chat/gpt-5-6-terra), [GPT 5.6
+        Luna](/market/chat/gpt-5-6-luna), [GPT 5.5](/market/chat/gpt-5-5).
+
+
+        Context window: 272K tokens. The response's model field uses the dotted
+        name (e.g. gpt-5.6-sol); both spellings are accepted in requests. List
+        the currently available models with GET /openai/v1/models.
 
 
 
@@ -26,7 +34,7 @@ paths:
           </Card>
 
           <Card title="Reasoning Control" icon="🧠">
-            Adjustable reasoning effort from low to xhigh.
+            Adjustable reasoning effort from low to max.
           </Card>
 
           <Card title="Tools & Web Search" icon="✨">
@@ -34,7 +42,7 @@ paths:
           </Card>
 
           <Card title="Unified Endpoint" icon="💻">
-            Uses the unified <code>/api/v1/responses</code> endpoint with <code>model</code> set to one of <code>gpt-5-codex</code>, <code>gpt-5.1-codex</code>, <code>gpt-5.2-codex</code>, <code>gpt-5.3-codex</code>, <code>gpt-5.4-codex</code>.
+            Uses the unified <code>/codex/v1/responses</code> endpoint with <code>model</code> set to one of <code>gpt-6-astra</code>, <code>gpt-5-6-sol</code>, <code>gpt-5-6-terra</code>, <code>gpt-5-6-luna</code>, <code>gpt-5-5</code>.
           </Card>
         </CardGroup>
 
@@ -107,6 +115,15 @@ paths:
             If you do not configure any function tools, omit the `tool_choice` field.
           </Accordion>
         </AccordionGroup>
+
+
+        ## Error handling
+
+
+        Check the response body, not only the HTTP status. Errors are returned
+        either as `{"code": ..., "msg": "..."}` (for example 401 invalid API
+        key, 402 insufficient credits, 429 rate limited; the HTTP status may
+        still be 200) or as `{"error": {"type": "...", "message": "..."}}`.
       operationId: gpt-codex-responses
       tags:
         - docs/en/Market/Chat  Models/Codex
@@ -120,40 +137,39 @@ paths:
                 model:
                   type: string
                   description: >-
-                    Target model name. Allowed values: `gpt-5-codex`,
-                    `gpt-5.1-codex`, `gpt-5.2-codex`,
-                    `gpt-5.3-codex`、`gpt-5.4-codex`.
+                    Target model name. Allowed values: `gpt-6-astra`,
+                    `gpt-5-6-sol`, `gpt-5-6-terra`, `gpt-5-6-luna`, `gpt-5-5`.
+                  default: gpt-6-astra
                   enum:
-                    - gpt-5-codex
-                    - gpt-5.1-codex
-                    - gpt-5.2-codex
-                    - gpt-5.3-codex
-                    - gpt-5.4-codex
-                  examples:
-                    - gpt-5.1-codex
+                    - gpt-6-astra
+                    - gpt-5-6-sol
+                    - gpt-5-6-terra
+                    - gpt-5-6-luna
+                    - gpt-5-5
                   x-apidog-enum:
-                    - value: gpt-5-codex
+                    - value: gpt-6-astra
                       name: ''
                       description: ''
-                    - value: gpt-5.1-codex
+                    - value: gpt-5-6-sol
                       name: ''
                       description: ''
-                    - value: gpt-5.2-codex
+                    - value: gpt-5-6-terra
                       name: ''
                       description: ''
-                    - value: gpt-5.3-codex
+                    - value: gpt-5-6-luna
                       name: ''
                       description: ''
-                    - value: gpt-5.4-codex
+                    - value: gpt-5-5
                       name: ''
                       description: ''
+                  examples:
+                    - gpt-6-astra
                 stream:
                   type: boolean
                   description: >-
-                    When true, responses stream in real time as server-sent
-                    events. When false, the full response is returned at once
-                    after completion. Default is true.
-                  default: false
+                    Defaults to true (Server-Sent Events). Set to false to
+                    receive a single JSON response.
+                  default: true
                 input:
                   oneOf:
                     - type: string
@@ -164,7 +180,29 @@ paths:
                         with role and content.
                       items:
                         type: object
-                        properties: {}
+                        description: A message object with role and content.
+                        properties:
+                          role:
+                            type: string
+                            description: Message role, e.g. `user`.
+                            examples:
+                              - user
+                          content:
+                            type: array
+                            description: >-
+                              Content parts: {"type":"input_text","text":"..."},
+                              {"type":"input_image","image_url":"<URL or
+                              data:image/...;base64,...>"},
+                              {"type":"input_file","file_url":"<URL>"}.
+                            items:
+                              type: object
+                              properties: {}
+                              x-apidog-orders: []
+                              x-apidog-ignore-properties: []
+                        x-apidog-orders:
+                          - role
+                          - content
+                        x-apidog-ignore-properties: []
                       minItems: 1
                 reasoning:
                   type: object
@@ -173,15 +211,15 @@ paths:
                     effort:
                       type: string
                       description: >-
-                        Reasoning effort level. Higher values provide more
-                        thorough reasoning but may increase latency. Defaults to
-                        "low".
+                        Reasoning effort: low, medium, high, xhigh or max.
+                        Defaults to medium. `max` is not available for gpt-5-5.
                       enum:
                         - low
                         - medium
                         - high
                         - xhigh
-                      default: low
+                        - max
+                      default: medium
                       examples:
                         - low
                       x-apidog-enum:
@@ -195,6 +233,9 @@ paths:
                           name: ''
                           description: ''
                         - value: xhigh
+                          name: ''
+                          description: ''
+                        - value: max
                           name: ''
                           description: ''
                   x-apidog-orders:
@@ -218,6 +259,53 @@ paths:
                     to call them.
                   examples:
                     - auto
+                text:
+                  type: object
+                  description: >-
+                    text.format:
+                    {"type":"json_schema","name":"...","strict":true,"schema":{...}}
+                    makes the output follow your JSON Schema.
+                  properties:
+                    format:
+                      type: object
+                      description: Output format definition.
+                      properties:
+                        type:
+                          type: string
+                          description: 'Fixed value: json_schema.'
+                        name:
+                          type: string
+                          description: Schema name, used to identify this schema.
+                        strict:
+                          type: boolean
+                          description: >-
+                            Whether to enable strict mode. When true, the output
+                            must strictly conform to the schema.
+                        schema:
+                          type: object
+                          additionalProperties: true
+                          properties: {}
+                          x-apidog-orders: []
+                          description: >-
+                            JSON Schema of the output object, e.g.
+                            {"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"],"additionalProperties":false}.
+                          x-apidog-ignore-properties: []
+                      x-apidog-orders:
+                        - type
+                        - name
+                        - strict
+                        - schema
+                      required:
+                        - type
+                        - name
+                        - strict
+                        - schema
+                      x-apidog-ignore-properties: []
+                  x-apidog-orders:
+                    - format
+                  required:
+                    - format
+                  x-apidog-ignore-properties: []
               required:
                 - model
                 - input
@@ -228,23 +316,10 @@ paths:
                 - reasoning
                 - tools
                 - tool_choice
-              examples:
-                - model: gpt-5.1-codex
-                  input:
-                    - role: user
-                      content:
-                        - type: input_text
-                          text: What is in this image?
-                        - type: input_image
-                          image_url: >-
-                            https://file.aiquickdraw.com/custom-page/akr/section-images/1759055072437dqlsclj2.png
-                  tools:
-                    - type: web_search
-                  reasoning:
-                    effort: high
+                - text
               x-apidog-ignore-properties: []
             example:
-              model: gpt-5.1-codex
+              model: gpt-6-astra
               stream: false
               input:
                 - role: user
@@ -289,8 +364,8 @@ paths:
                   - **Completion event**: `event: response.completed`
                     - `data.response.usage`: Token usage information, such as `input_tokens` and `output_tokens`
 
-                  The final line `data: [DONE]` is the stream end marker,
-                  indicating that no more events will be sent.
+                  The stream ends with a response.completed event
+                  (response.failed or response.incomplete on failure).
               example: |-
                 {
                   "output": [
@@ -404,7 +479,7 @@ paths:
           headers: {}
           x-apidog-name: ''
         '500':
-          description: 请求失败
+          description: Server error.
           content:
             application/json:
               schema:

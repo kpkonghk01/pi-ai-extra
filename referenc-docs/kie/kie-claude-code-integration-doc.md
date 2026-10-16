@@ -10,13 +10,13 @@ With a simple environment variable setup, you can route your local Claude Code t
 
 | Variable | Value |
 |---|---|
-| `ANTHROPIC_BASE_URL` | `https://api.kie.ai/claude` |
+| `ANTHROPIC_BASE_URL` | `https://api.kie.ai/anthropic` |
 | `ANTHROPIC_API_KEY` | `Bearer <your kie.ai API Key>` |
 | `ANTHROPIC_AUTH_TOKEN` | `<your kie.ai API Key>` (alternative to `ANTHROPIC_API_KEY` — no Bearer prefix needed) |
 
 > **Important Notes**
 >
-> - Set `ANTHROPIC_BASE_URL` to `https://api.kie.ai/claude` only — do **not** append `/v1/messages`. Claude Code appends that automatically.
+> - Set `ANTHROPIC_BASE_URL` to `https://api.kie.ai/anthropic` only — do **not** append `/v1/messages`. Claude Code appends that automatically.
 > - There are two ways to provide your API Key — **choose one**:
 >   - Option 1: Use `ANTHROPIC_API_KEY`. The value **must** start with `Bearer ` (note the space after Bearer). Example: `Bearer sk-kie-abc123xxx`
 >   - Option 2: Use `ANTHROPIC_AUTH_TOKEN`. Set it directly to the Key value — **no Bearer prefix**. Example: `sk-kie-abc123xxx`
@@ -61,14 +61,14 @@ Open Terminal and paste one of the following (replace the key with your own):
 
 ```bash
 # Option 1: ANTHROPIC_API_KEY (Bearer prefix required)
-echo 'export ANTHROPIC_BASE_URL="https://api.kie.ai/claude"' >> ~/.zshrc
+echo 'export ANTHROPIC_BASE_URL="https://api.kie.ai/anthropic"' >> ~/.zshrc
 echo 'export ANTHROPIC_API_KEY="Bearer your_kie_API_Key"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
 ```bash
 # Option 2: ANTHROPIC_AUTH_TOKEN (no Bearer prefix)
-echo 'export ANTHROPIC_BASE_URL="https://api.kie.ai/claude"' >> ~/.zshrc
+echo 'export ANTHROPIC_BASE_URL="https://api.kie.ai/anthropic"' >> ~/.zshrc
 echo 'export ANTHROPIC_AUTH_TOKEN="your_kie_API_Key"' >> ~/.zshrc
 source ~/.zshrc
 ```
@@ -79,13 +79,13 @@ Open PowerShell and paste one of the following (replace the key with your own):
 
 ```powershell
 # Option 1: ANTHROPIC_API_KEY (Bearer prefix required)
-[Environment]::SetEnvironmentVariable("ANTHROPIC_BASE_URL", "https://api.kie.ai/claude", "User")
+[Environment]::SetEnvironmentVariable("ANTHROPIC_BASE_URL", "https://api.kie.ai/anthropic", "User")
 [Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", "Bearer your_kie_API_Key", "User")
 ```
 
 ```powershell
 # Option 2: ANTHROPIC_AUTH_TOKEN (no Bearer prefix)
-[Environment]::SetEnvironmentVariable("ANTHROPIC_BASE_URL", "https://api.kie.ai/claude", "User")
+[Environment]::SetEnvironmentVariable("ANTHROPIC_BASE_URL", "https://api.kie.ai/anthropic", "User")
 [Environment]::SetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN", "your_kie_API_Key", "User")
 ```
 
@@ -102,21 +102,23 @@ Open the file below (create it if it doesn't exist), add the content, and replac
 - **Mac**: `~/.claude/settings.json`
 - **Windows**: `C:\Users\<your-username>\.claude\settings.json`
 
+**Option 1: ANTHROPIC_API_KEY (Bearer prefix required)**
+
 ```json
-// Option 1: ANTHROPIC_API_KEY (Bearer prefix required)
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "https://api.kie.ai/claude",
+    "ANTHROPIC_BASE_URL": "https://api.kie.ai/anthropic",
     "ANTHROPIC_API_KEY": "Bearer your_kie_API_Key"
   }
 }
 ```
 
+**Option 2: ANTHROPIC_AUTH_TOKEN (no Bearer prefix)**
+
 ```json
-// Option 2: ANTHROPIC_AUTH_TOKEN (no Bearer prefix)
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "https://api.kie.ai/claude",
+    "ANTHROPIC_BASE_URL": "https://api.kie.ai/anthropic",
     "ANTHROPIC_AUTH_TOKEN": "your_kie_API_Key"
   }
 }
@@ -142,7 +144,7 @@ Enter the following information:
 
 - API KEY (No Bearer required)
 
-- Request URL 'https://api.kie.ai/claude' (It is recommended to disable the full URL)
+- Request URL 'https://api.kie.ai/anthropic' (It is recommended to disable the full URL)
 
 - Enter the corresponding model name from the KIE documentation in the advanced options.
 
@@ -171,7 +173,7 @@ Once the interactive session starts, send any message (e.g. "Hello").
 |---|---|
 | Still prompted to log in with Anthropic account | Environment variables not loaded. **Fully close all terminal windows** (Mac: right-click Terminal → Quit; Windows: close all PowerShell processes) and reopen. |
 | `401 Unauthorized` error | API Key is wrong or expired. If using `ANTHROPIC_API_KEY`, confirm the `Bearer ` prefix is present. If using `ANTHROPIC_AUTH_TOKEN`, set it to the raw Key with no prefix. Check your key in the kie.ai dashboard. |
-| `model not found` error | Inside Claude, run `/model` and switch to a model supported by kie.ai. |
+| Model not accepted | Run `/model` and pick an id listed by `GET https://api.kie.ai/anthropic/v1/models`. |
 | Windows — changes still not working | Close **all** terminals, including built-in terminals in VSCode, Cursor, and other editors. Fully quit those apps and relaunch. |
 
 To inspect the actual requests Claude Code sends, start with `claude --debug` and review the detailed logs.

@@ -12,6 +12,11 @@ export type ChatProtocol = "openai-responses" | "anthropic-messages";
 export interface ChatModelDefinition {
   id: string;
   protocol: ChatProtocol;
+  /**
+   * pi-ai built-in catalogue id to copy capability metadata from, when the provider spells the
+   * model id differently (for example KIE `gpt-5-6-sol` is pi-ai `gpt-5.6-sol`). Defaults to `id`.
+   */
+  catalogueId?: string | undefined;
   name?: string | undefined;
   reasoning?: boolean | undefined;
   input?: ("text" | "image")[] | undefined;
@@ -64,7 +69,8 @@ export function createChatProvider(input: ChatProviderInput): Provider<ChatProto
 /**
  * Builds a pi-ai model. Capability metadata (reasoning, context window, thinking
  * levels, request compatibility) is copied from pi-ai's built-in catalogue when the
- * id matches; Anthropic "allowed fallback models" are removed because fallback is prohibited.
+ * id (or `catalogueId`) matches; Anthropic "allowed fallback models" are removed because
+ * fallback is prohibited.
  */
 export function buildChatModel(provider: string, baseUrl: string, definition: ChatModelDefinition): Model<ChatProtocol> {
   const builtin = findBuiltinModel(definition);
@@ -106,7 +112,7 @@ function findBuiltinModel(definition: ChatModelDefinition): Model<ChatProtocol> 
     definition.protocol === "anthropic-messages"
       ? (ANTHROPIC_MODELS as unknown as Record<string, Model<ChatProtocol>>)
       : (OPENAI_MODELS as unknown as Record<string, Model<ChatProtocol>>);
-  const candidate = catalog[definition.id];
+  const candidate = catalog[definition.catalogueId ?? definition.id];
   return candidate?.api === definition.protocol ? candidate : undefined;
 }
 
