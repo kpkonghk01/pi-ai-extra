@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-28
-- Related: [DATA-4512](https://hk01-digital.atlassian.net/browse/DATA-4512), [DATA-4513](https://hk01-digital.atlassian.net/browse/DATA-4513), [DATA-4566](https://hk01-digital.atlassian.net/browse/DATA-4566)
+- Related: [DATA-4512](https://hk01-digital.atlassian.net/browse/DATA-4512), [DATA-4513](https://hk01-digital.atlassian.net/browse/DATA-4513), [DATA-4566](https://hk01-digital.atlassian.net/browse/DATA-4566), [DATA-4567](https://hk01-digital.atlassian.net/browse/DATA-4567)
 
 ## Context
 
@@ -18,6 +18,8 @@ TypeScript 7 removed the JavaScript compiler API that tsup's declaration build (
 - Type-checking uses TypeScript 7. tsdown builds JavaScript and declarations, using oxc isolated declarations, so every export carries an explicit type.
 
 Amended 2026-10-16 ([DATA-4566](https://hk01-digital.atlassian.net/browse/DATA-4566)): the exact pi-ai peer moved from `0.87.1` to `1.2.0`, and the Context and the peer-dependency point now name both versions. pi-ai 1.2 is still ESM-only, so the decision stands unchanged: the `/pi-ai` subpath stays ESM-only and the peer stays exact and optional.
+
+Amended 2026-10-16 ([DATA-4567](https://hk01-digital.atlassian.net/browse/DATA-4567)): `@hk01/pi-ai-extra-chat-kit` ([ADR 0008](0008-chat-kit-package.md)) is an exception to the first three points. Its only entry imports pi-ai and ships as ESM only (`.mjs` / `.d.mts`), with no CommonJS build and no `/pi-ai` subpath, and pi-ai is a required exact peer (`1.2.0`), not an optional one. The kit exists only to drive pi-ai, which is ESM-only, so a main entry without pi-ai would have nothing to hold, and a CommonJS build could not load it. Like the `/pi-ai` subpath, the kit needs ESM or a dynamic `import()`; its release smoke test checks that `require()` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`. The provider packages and the image kit keep the decision unchanged.
 
 ## Consequences
 

@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Type-check against the provider packages' sources, so `check` does not need a build.
+    // At run time (tests, consumers) they resolve to their built `/pi-ai` entries.
+    "paths": {
+      "@hk01/pi-ai-extra-google/pi-ai": ["../google/src/pi-ai/index.ts"],
+      "@hk01/pi-ai-extra-kie/pi-ai": ["../kie/src/pi-ai/index.ts"],
+      "@hk01/pi-ai-extra-toapis/pi-ai": ["../toapis/src/pi-ai/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "tsdown.config.ts"]
+}
