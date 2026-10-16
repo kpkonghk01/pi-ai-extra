@@ -182,19 +182,20 @@ KIE and ToAPIs chat models use pi-ai's own OpenAI Responses and Anthropic Messag
 | KIE | `gpt-5-6-sol` | 1.40 | 8.40 | 0.14 | 1.75 |
 | KIE | `gpt-5-6-terra` | 0.56 | 3.36 | 0.056 | 0.70 |
 | KIE | `gpt-5-6-luna` | 0.056 | 0.336 | 0.0056 | 0.07 |
-| KIE | `claude-fable-5` | 4.00 | 20.00 | 4.00* | 4.00* |
-| KIE | `claude-opus-5`, `claude-opus-4-8` | 2.00 | 10.00 | 2.00* | 2.00* |
-| KIE | `claude-opus-4-7`, `claude-opus-4-6`, `claude-opus-4-5` | 1.425 | 7.15 | 1.425* | 1.425* |
-| KIE | `claude-sonnet-5`, `claude-sonnet-4-6`, `claude-sonnet-4-5` | 0.85 | 4.275 | 0.85* | 0.85* |
-| KIE | `claude-haiku-4-5` | 0.275 | 1.425 | 0.275* | 0.275* |
-| ToAPIs | `gpt-5.3-codex-official` | 1.40 | 11.20 | 1.40* | 1.40* |
-| ToAPIs | `claude-opus-4-6` | 1.50 | 7.50 | 1.50* | 1.50* |
-| ToAPIs | `claude-sonnet-4-6` | 0.90 | 4.50 | 0.90* | 0.90* |
-| ToAPIs | `claude-haiku-4-5` | 0.30 | 1.50 | 0.30* | 0.30* |
+| KIE | `claude-fable-5` | 4.00 | 20.00 | 4.00* | 5.00† |
+| KIE | `claude-opus-5`, `claude-opus-4-8` | 2.00 | 10.00 | 2.00* | 2.50† |
+| KIE | `claude-opus-4-7`, `claude-opus-4-6`, `claude-opus-4-5` | 1.425 | 7.15 | 1.425* | 1.78125† |
+| KIE | `claude-sonnet-5`, `claude-sonnet-4-6`, `claude-sonnet-4-5` | 0.85 | 4.275 | 0.85* | 1.0625† |
+| KIE | `claude-haiku-4-5` | 0.275 | 1.425 | 0.275* | 0.34375† |
+| ToAPIs | `gpt-5.3-codex-official` | 1.40 | 11.20 | 1.40* | 1.75† |
+| ToAPIs | `claude-opus-4-6` | 1.50 | 7.50 | 1.50* | 1.875† |
+| ToAPIs | `claude-sonnet-4-6` | 0.90 | 4.50 | 0.90* | 1.125† |
+| ToAPIs | `claude-haiku-4-5` | 0.30 | 1.50 | 0.30* | 0.375† |
 
 - **KIE**: [kie.ai/pricing](https://kie.ai/pricing), read from `POST https://api.kie.ai/client/v1/model-pricing/page` with `{"pageNum":1,"pageSize":100,"interfaceType":"chat"}`. KIE prices chat in credits per 1M tokens, and 1 credit is $0.005 (for example `claude-sonnet-4-6`: 170 credits in, 855 out).
 - **ToAPIs**: `GET https://toapis.com/api/pricing`. Input is 2 × `model_ratio` and output is 2 × `model_ratio` × `completion_ratio` (every group ratio is 1).
-- \* Not published. The cache rate is set to the input rate, a conservative upper bound.
+- \* Not published. Cache reads are charged at the input rate, an upper bound.
+- † Not published. Cache writes are charged at 1.25 × the input rate, the price of a 5-minute cache write on Anthropic and in KIE's own Codex rows. A 1-hour write (`cacheRetention: "long"`) costs 2 × input on Anthropic, so pi-ai under-counts it.
 
 Only models with a published rate are in the default lists. ToAPIs also documents `gpt-5.3-codex` and `gpt-5.3-codex-spark` as chat models, but they have no published price and are not in its public model catalogue, so `TOAPIS_CHAT_MODELS` leaves them out. To use one anyway, pass it in the factory's `models` option. Without a `cost`, pi-ai prices it at 0, so treat its `usage.cost` as unknown, not free:
 

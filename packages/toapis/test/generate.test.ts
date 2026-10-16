@@ -220,11 +220,11 @@ describe("ToAPIs catalogue and pi-ai adapters", () => {
     const cost = new Map(createToapisProvider({ apiKey: "toapis-key" }).getModels().map((model) => [model.id, model.cost]));
     const expected: Record<string, [number, number, number, number]> = {
       // id: [input, output, cacheRead, cacheWrite] in USD per 1M tokens. Cache rates are not
-      // published: they equal the input rate.
-      "gpt-5.3-codex-official": [1.4, 11.2, 1.4, 1.4],
-      "claude-opus-4-6": [1.5, 7.5, 1.5, 1.5],
-      "claude-sonnet-4-6": [0.9, 4.5, 0.9, 0.9],
-      "claude-haiku-4-5": [0.3, 1.5, 0.3, 0.3],
+      // published: cache reads at the input rate, cache writes at 1.25 × input.
+      "gpt-5.3-codex-official": [1.4, 11.2, 1.4, 1.75],
+      "claude-opus-4-6": [1.5, 7.5, 1.5, 1.875],
+      "claude-sonnet-4-6": [0.9, 4.5, 0.9, 1.125],
+      "claude-haiku-4-5": [0.3, 1.5, 0.3, 0.375],
     };
     assert.deepEqual([...cost.keys()].sort(), Object.keys(expected).sort());
     for (const [id, [input, output, cacheRead, cacheWrite]] of Object.entries(expected)) {

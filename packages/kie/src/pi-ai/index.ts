@@ -1,5 +1,5 @@
 import type { Provider } from "@earendil-works/pi-ai";
-import { createChatProvider, helperImages, type ChatModelDefinition, type ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
+import { createChatProvider, helperImages, publishedCost, type ChatModelDefinition, type ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
 import {
   KIE_API_BASE_URL,
   KIE_CLAUDE_BASE_URL,
@@ -22,18 +22,17 @@ export type { ChatModelDefinition, ChatProtocol } from "@hk01/pi-ai-extra-intern
  */
 const USD_PER_CREDIT = 0.005;
 
-/** KIE credits per 1M tokens to USD per 1M tokens, rounded to drop floating-point noise. */
+/** KIE credits per 1M tokens to USD per 1M tokens (`publishedCost` rounds the result). */
 function usd(credits: number): number {
-  return Math.round(credits * USD_PER_CREDIT * 1e6) / 1e6;
+  return credits * USD_PER_CREDIT;
 }
 
 /**
- * KIE publishes no cache rates for Claude: `cacheRead` and `cacheWrite` are set to the input
- * rate as a conservative upper bound.
+ * KIE publishes no cache rates for Claude, so `publishedCost` fills them in: cache reads at the
+ * input rate (an upper bound) and cache writes at 1.25 × input (Anthropic's 5-minute write).
  */
 function claude(id: string, inputCredits: number, outputCredits: number): ChatModelDefinition {
-  const input = usd(inputCredits);
-  return { id, protocol: "anthropic-messages", cost: { input, output: usd(outputCredits), cacheRead: input, cacheWrite: input } };
+  return { id, protocol: "anthropic-messages", cost: publishedCost({ input: usd(inputCredits), output: usd(outputCredits) }) };
 }
 
 /**
@@ -48,25 +47,25 @@ const CODEX_MODELS: readonly ChatModelDefinition[] = [
   {
     id: "gpt-6-astra",
     protocol: "openai-responses",
-    cost: { input: usd(560), output: usd(2800), cacheRead: usd(56), cacheWrite: usd(700) },
+    cost: publishedCost({ input: usd(560), output: usd(2800), cacheRead: usd(56), cacheWrite: usd(700) }),
   },
   {
     id: "gpt-5-6-sol",
     catalogueId: "gpt-5.6-sol",
     protocol: "openai-responses",
-    cost: { input: usd(280), output: usd(1680), cacheRead: usd(28), cacheWrite: usd(350) },
+    cost: publishedCost({ input: usd(280), output: usd(1680), cacheRead: usd(28), cacheWrite: usd(350) }),
   },
   {
     id: "gpt-5-6-terra",
     catalogueId: "gpt-5.6-terra",
     protocol: "openai-responses",
-    cost: { input: usd(112), output: usd(672), cacheRead: usd(11.2), cacheWrite: usd(140) },
+    cost: publishedCost({ input: usd(112), output: usd(672), cacheRead: usd(11.2), cacheWrite: usd(140) }),
   },
   {
     id: "gpt-5-6-luna",
     catalogueId: "gpt-5.6-luna",
     protocol: "openai-responses",
-    cost: { input: usd(11.2), output: usd(67.2), cacheRead: usd(1.12), cacheWrite: usd(14) },
+    cost: publishedCost({ input: usd(11.2), output: usd(67.2), cacheRead: usd(1.12), cacheWrite: usd(14) }),
   },
 ];
 
