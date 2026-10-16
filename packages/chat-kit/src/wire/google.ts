@@ -1,8 +1,8 @@
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
-import { assertMarkerReplaced, renderTextDocument, spliceMarker, type PreparedDocument } from "../documents.ts";
 import { isRecord } from "../guards.ts";
 import type { ChatDocument, ChatUsage } from "../types.ts";
 import { sumReported, tokenCount, toChatUsage } from "../usage.ts";
+import { encodeDocument, replaceDocumentMarker, textOfType, type DocumentEncoder } from "./document-parts.ts";
 import { sanitizeSchemaForGemini } from "./gemini-schema.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
@@ -13,10 +13,6 @@ export const GEMINI_URL_MAX_BYTES = 15_000_000;
 const BLOCKED_FINISH_REASONS = new Set(["SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII"]);
 
 type GooglePart = Record<string, unknown>;
-interface GoogleContent {
-  role?: string;
-  parts?: GooglePart[];
-}
 
 /**
  * Gemini takes a document by URL (`fileData`) only when the URL is set, its size is known to be
@@ -32,12 +28,14 @@ export function placeGoogleDocument(document: ChatDocument, model: Model<Api>): 
   return fetchable ? "url" : "inline";
 }
 
-function googlePart(document: PreparedDocument): GooglePart {
-  if (document.kind === "text") return { text: renderTextDocument(document) };
-  return document.source.type === "url"
-    ? { fileData: { fileUri: document.source.url, mimeType: document.mimeType } }
-    : { inlineData: { mimeType: document.mimeType, data: document.source.data } };
-}
+/** A PDF and an image are the same part: `fileData` by URL, `inlineData` with the bytes. */
+const GOOGLE_PARTS: DocumentEncoder<GooglePart, GooglePart> = {
+  text: (text) => ({ text }),
+  url: (url, document) => ({ fileData: { fileUri: url, mimeType: document.mimeType } }),
+  inline: (data, document) => ({ inlineData: { mimeType: document.mimeType, data } }),
+  pdf: (part) => part,
+  image: (part) => part,
+};
 
 /**
  * Gemini (`GenerateContentParameters` from `@google/genai`): documents replace the marker part,
@@ -48,25 +46,8 @@ export function transformGooglePayload(payload: unknown, plan: PayloadPlan): unk
   if (!isRecord(payload)) return payload;
   const next: Record<string, unknown> = { ...payload };
   if (plan.marker !== undefined) {
-    const marker = plan.marker;
-    const replacement = plan.documents.map(googlePart);
-    const counter = { found: 0 };
-    const contents = Array.isArray(payload.contents) ? (payload.contents as GoogleContent[]) : [];
-    next.contents = contents.map((content) =>
-      Array.isArray(content.parts)
-        ? {
-            ...content,
-            parts: spliceMarker(
-              content.parts,
-              marker,
-              (part) => (typeof part.text === "string" ? part.text : undefined),
-              replacement,
-              counter,
-            ),
-          }
-        : content,
-    );
-    assertMarkerReplaced(counter);
+    const replacement = plan.documents.map((document) => encodeDocument(document, GOOGLE_PARTS));
+    next.contents = replaceDocumentMarker(payload.contents, plan.marker, replacement, { partsKey: "parts", textOf: textOfType() });
   }
   const config: Record<string, unknown> = isRecord(payload.config) ? { ...payload.config } : {};
   if (plan.responseSchema) {

@@ -67,3 +67,39 @@ function reportsBilling(raw: Record<string, unknown>): boolean {
   const billed = (container: Record<string, unknown>) => Object.keys(billingFields(container)).length > 0;
   return billed(raw) || Object.values(raw).some((value) => isRecord(value) && billed(value));
 }
+
+/**
+ * Collects a turn's raw usage record and the cost or credit fields reported next to it, from the
+ * provider's stream events, as one wire's observer sees them.
+ */
+export interface UsageCapture {
+  /** Replaces the usage object with the latest one the provider sent (OpenAI APIs). */
+  replace(usage: Record<string, unknown>): void;
+  /** Overlays the counts the provider sent on the ones before, ignoring `null` (Anthropic Messages). */
+  overlay(usage: Record<string, unknown>): void;
+  /** Keeps the cost or credit fields of the event or object around the usage record. */
+  addBilling(container: Record<string, unknown>): void;
+  /**
+   * The turn's usage from what was captured: `toUsage` reads the counts from the usage object
+   * (`{}` when none was sent); `raw` is `{ usage, ...billing }`, or the billing fields alone.
+   */
+  read(toUsage: (usage: Record<string, unknown>, raw: Record<string, unknown>) => ChatUsage | undefined): ChatUsage | undefined;
+}
+
+export function createUsageCapture(): UsageCapture {
+  let usage: Record<string, unknown> | undefined;
+  let billing: Record<string, unknown> = {};
+  return {
+    replace(next) {
+      usage = next;
+    },
+    overlay(next) {
+      const reported = Object.fromEntries(Object.entries(next).filter(([, value]) => value !== null && value !== undefined));
+      usage = { ...usage, ...reported };
+    },
+    addBilling(container) {
+      billing = { ...billing, ...billingFields(container) };
+    },
+    read: (toUsage) => toUsage(usage ?? {}, usage === undefined ? billing : { usage, ...billing }),
+  };
+}
