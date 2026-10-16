@@ -57,7 +57,7 @@ function thinkingEnabled(thinking: unknown): boolean {
  */
 export function transformAnthropicPayload(payload: unknown, plan: PayloadPlan): unknown {
   if (!isRecord(payload)) return payload;
-  const next: Record<string, unknown> = { ...payload, ...(plan.openRouter ? { plugins: withFileParser(payload.plugins) } : {}) };
+  const next: Record<string, unknown> = { ...payload, ...(plan.targetsOpenRouter ? { plugins: withFileParser(payload.plugins) } : {}) };
   if (plan.marker !== undefined) {
     const marker = plan.marker;
     const replacement = plan.documents.map(anthropicBlock);
@@ -145,8 +145,8 @@ export function anthropicSchemaUnsupported(
 /**
  * The Messages usage object: `input_tokens` excludes cache reads (`cache_read_input_tokens`) and
  * writes (`cache_creation_input_tokens`), so `inputTokens` adds the ones reported. Anthropic
- * reports no total, and reasoning only as `output_tokens_details.thinking_tokens` where a proxy
- * passes it on.
+ * reports no total, so `totalTokens` is omitted, and reasoning only as
+ * `output_tokens_details.thinking_tokens` where a proxy passes it on.
  */
 function anthropicUsage(usage: Record<string, unknown>, raw: Record<string, unknown>): ChatUsage | undefined {
   const input = tokenCount(usage.input_tokens);
@@ -167,26 +167,26 @@ function anthropicUsage(usage: Record<string, unknown>, raw: Record<string, unkn
 
 /**
  * Usage is `message_start.message.usage` overlaid with `message_delta.usage` (pi-ai's own rule);
- * cost or credit fields next to either are kept (KIE reports `credits_consumed`).
+ * cost or credit fields on either event are kept, with or without a usage object beside them
+ * (KIE reports `credits_consumed`).
  */
 export function createAnthropicObserver(): StreamObserver {
   let usage: Record<string, unknown> | undefined;
   let billing: Record<string, unknown> = {};
-  const merge = (next: Record<string, unknown>, container: Record<string, unknown>) => {
-    const reported = Object.fromEntries(Object.entries(next).filter(([, value]) => value !== null && value !== undefined));
-    usage = { ...usage, ...reported };
+  const merge = (next: unknown, container: Record<string, unknown>) => {
+    if (isRecord(next)) {
+      const reported = Object.fromEntries(Object.entries(next).filter(([, value]) => value !== null && value !== undefined));
+      usage = { ...usage, ...reported };
+    }
     billing = { ...billing, ...billingFields(container) };
   };
   return {
     observe(event) {
       if (!isRecord(event)) return;
-      if (event.type === "message_start" && isRecord(event.message) && isRecord(event.message.usage)) {
-        merge(event.message.usage, event.message);
-      } else if (event.type === "message_delta" && isRecord(event.usage)) {
-        merge(event.usage, event);
-      }
+      if (event.type === "message_start" && isRecord(event.message)) merge(event.message.usage, event.message);
+      else if (event.type === "message_delta") merge(event.usage, event);
     },
-    usage: () => (usage === undefined ? undefined : anthropicUsage(usage, { usage, ...billing })),
+    usage: () => anthropicUsage(usage ?? {}, usage === undefined ? billing : { usage, ...billing }),
     blocked(message: AssistantMessage): BlockedTurn | undefined {
       const reason = message.rawStopReason;
       if (reason === undefined || !BLOCKED_STOP_REASONS.has(reason)) return undefined;

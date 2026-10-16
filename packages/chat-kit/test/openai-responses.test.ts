@@ -110,6 +110,24 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
     assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol" })))), { type: "done" });
   });
 
+  it("keeps KIE's credits_consumed and the prompt count when no output_tokens is reported", async () => {
+    const { chat } = kit([
+      {
+        method: "POST",
+        url: KIE_RESPONSES_URL,
+        respond: () =>
+          responsesStream(["ok"], {
+            type: "response.completed",
+            response: { id: "resp_1", status: "completed", output: [], usage: { input_tokens: 30 }, credits_consumed: 0.48 },
+          }),
+      },
+    ]);
+    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol" })))), {
+      type: "done",
+      usage: { inputTokens: 30, raw: { usage: { input_tokens: 30 }, credits_consumed: 0.48 } },
+    });
+  });
+
   it("reports an incomplete content_filter response as CONTENT_BLOCKED", async () => {
     const { chat } = kit([
       {

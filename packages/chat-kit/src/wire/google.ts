@@ -2,7 +2,7 @@ import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { assertMarkerReplaced, renderTextDocument, spliceMarker, type PreparedDocument } from "../documents.ts";
 import { isRecord } from "../guards.ts";
 import type { ChatDocument, ChatUsage } from "../types.ts";
-import { tokenCount, toChatUsage } from "../usage.ts";
+import { sumReported, tokenCount, toChatUsage } from "../usage.ts";
 import { sanitizeSchemaForGemini } from "./gemini-schema.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
@@ -81,19 +81,20 @@ export function transformGooglePayload(payload: unknown, plan: PayloadPlan): unk
 }
 
 /**
- * Usage from the last chunk's `usageMetadata`. `promptTokenCount` already includes
- * `cachedContentTokenCount`, and the answer is `candidatesTokenCount` plus `thoughtsTokenCount`.
- * Gemini has no cache-write count. Its JSON leaves zero-valued counters out, so a missing answer
- * count (a blocked prompt) is a reported zero; a missing cache or thinking count is simply not
- * reported, and is omitted.
+ * Usage from the last chunk's `usageMetadata`. The prompt is `promptTokenCount`, which already
+ * includes `cachedContentTokenCount`, plus `toolUsePromptTokenCount`: the tool results grounding
+ * feeds back to the model, billed as input. The answer is `candidatesTokenCount` plus
+ * `thoughtsTokenCount`. Gemini's `totalTokenCount` is the sum of all four. Each side sums only the
+ * counts Gemini reported and is omitted when it reported none of them, as in the Gemini image
+ * client: Gemini's JSON leaves zero-valued counters out, so a blocked prompt's usage has no
+ * `outputTokens`. Gemini has no cache-write count.
  */
 function googleUsage(usageMetadata: Record<string, unknown>): ChatUsage | undefined {
-  const candidates = tokenCount(usageMetadata.candidatesTokenCount);
   const thoughts = tokenCount(usageMetadata.thoughtsTokenCount);
   return toChatUsage(
     {
-      input: tokenCount(usageMetadata.promptTokenCount),
-      output: (candidates ?? 0) + (thoughts ?? 0),
+      input: sumReported(tokenCount(usageMetadata.promptTokenCount), tokenCount(usageMetadata.toolUsePromptTokenCount)),
+      output: sumReported(tokenCount(usageMetadata.candidatesTokenCount), thoughts),
       total: tokenCount(usageMetadata.totalTokenCount),
       cacheRead: tokenCount(usageMetadata.cachedContentTokenCount),
       reasoning: thoughts,

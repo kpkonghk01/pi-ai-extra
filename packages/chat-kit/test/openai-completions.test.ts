@@ -122,6 +122,18 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
     assert.deepEqual(lastEvent(await collect(chat.runTurn(turn()))), { type: "done" });
   });
 
+  it("keeps OpenRouter's reported cost when the answer count is missing", async () => {
+    const usage = { prompt_tokens: 10, cost: 0.0001 };
+    const { chat } = kit([
+      {
+        method: "POST",
+        url: COMPLETIONS_URL,
+        respond: () => sseResponse([completionsChunk({ content: "Hi" }, "stop"), completionsUsageChunk(usage), "[DONE]"]),
+      },
+    ]);
+    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn()))), { type: "done", usage: { inputTokens: 10, raw: { usage } } });
+  });
+
   it("puts system prompt, documents, history and message in that order, documents opening the first user turn", async () => {
     const pdf = testDocument("brief.pdf", "application/pdf", "%PDF-1.7", { url: "https://cdn.example.com/brief.pdf", size: 9 });
     const png = testDocument("logo.png", "image/png", PNG_BYTES);

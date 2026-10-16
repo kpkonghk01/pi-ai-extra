@@ -144,7 +144,7 @@ async function prepareTurn(
       documents,
       responseSchema: input.responseSchema,
       grounding: provider.grounding,
-      openRouter: targetsOpenRouter(model),
+      targetsOpenRouter: targetsOpenRouter(model),
     },
     settings,
     schemaAsToolCall: wire.schemaAsToolCall && input.responseSchema !== undefined,

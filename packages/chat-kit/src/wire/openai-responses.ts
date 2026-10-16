@@ -81,23 +81,22 @@ function responsesUsage(usage: Record<string, unknown>, raw: Record<string, unkn
 /**
  * A content filter shows as an `incomplete` response with reason `content_filter`; a refusal
  * streams as `response.refusal.delta` on a response that otherwise completes. Usage is on the
- * terminal response, where KIE also reports `credits_consumed`.
+ * terminal response, where KIE also reports `credits_consumed`, kept even without a usage object.
  */
 export function createOpenAIResponsesObserver(): StreamObserver {
   let usage: Record<string, unknown> | undefined;
-  let raw: Record<string, unknown> = {};
+  let billing: Record<string, unknown> = {};
   let refused = false;
   return {
     observe(event) {
       if (!isRecord(event)) return;
       if (event.type === "response.refusal.delta") refused = true;
       const response = event.response;
-      if (isRecord(response) && isRecord(response.usage)) {
-        usage = response.usage;
-        raw = { usage, ...billingFields(response) };
-      }
+      if (!isRecord(response)) return;
+      if (isRecord(response.usage)) usage = response.usage;
+      billing = { ...billing, ...billingFields(response) };
     },
-    usage: () => (usage === undefined ? undefined : responsesUsage(usage, raw)),
+    usage: () => responsesUsage(usage ?? {}, usage === undefined ? billing : { usage, ...billing }),
     blocked(message: AssistantMessage): BlockedTurn | undefined {
       if (message.rawStopReason === "incomplete.content_filter") {
         return { reason: "content_filter", message: "The provider's content filter stopped the answer (content_filter)." };

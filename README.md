@@ -373,19 +373,19 @@ Only the initial request is retried, before the response stream starts: up to tw
 
 ### Usage
 
-`usage` holds only what the provider reported, read from its own usage record, never pi-ai's zero-filled counts ([ADR 0005](docs/adr/0005-provider-reported-usage.md)). A count the provider did not report is absent, not `0`; a turn whose provider reported no usage (or no prompt and answer counts) has no `usage` at all.
+`usage` holds only what the provider reported, read from its own usage record, never pi-ai's zero-filled counts ([ADR 0005](docs/adr/0005-provider-reported-usage.md)). Every count is optional: one the provider did not report is absent, never `0` and never computed from the others. A turn has `usage` whenever the provider reported any token count or a cost or credit, and `raw` then keeps the provider's record, so a reported cost or credit survives a missing count. Only a turn whose provider reported none of these has no `usage` at all.
 
 | Field | Meaning | Present in `usage` |
 | --- | --- | --- |
-| `inputTokens` | Every prompt token, cache reads and writes included | Always |
-| `outputTokens` | Every generated token, reasoning included | Always; Gemini omits zero counters, so a blocked prompt's missing answer count is `0` |
-| `totalTokens` | The provider's total; on Anthropic, which reports none, `inputTokens + outputTokens` | Always |
+| `inputTokens` | Every prompt token: cache reads and writes included, and on Gemini the tool-use prompt tokens of grounding (`toolUsePromptTokenCount`) | When reported |
+| `outputTokens` | Every generated token, reasoning included | When reported (a Gemini blocked prompt has none) |
+| `totalTokens` | The provider's own total | When reported (never on Anthropic, which reports none) |
 | `cachedInputTokens` | Prompt tokens read from the prompt cache (part of `inputTokens`) | When reported |
 | `cacheWriteTokens` | Prompt tokens written to the prompt cache (part of `inputTokens`) | When reported (never on Gemini) |
 | `reasoningTokens` | Thinking tokens (part of `outputTokens`) | When reported |
 | `raw` | The provider's own record under its own field names: `{ usageMetadata }` on Gemini, otherwise `{ usage }`, plus any cost or credit field reported beside it | Always |
 
-OpenRouter's cost is `raw.usage.cost` and KIE's credits are `raw.credits_consumed`. The kit computes no cost yet: estimating one from model rates when the provider reports none ([ADR 0008](docs/adr/0008-chat-kit-package.md)) comes in a later version.
+OpenRouter's cost is `raw.usage.cost` and KIE's credits are `raw.credits_consumed`, kept even when a token count is missing. The kit computes no cost yet: estimating one from model rates when the provider reports none ([ADR 0008](docs/adr/0008-chat-kit-package.md)) comes in a later version.
 
 ## Google AI Studio (server) integration
 

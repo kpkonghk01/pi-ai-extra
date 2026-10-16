@@ -80,17 +80,20 @@ function completionsUsage(usage: Record<string, unknown>, raw: Record<string, un
   );
 }
 
-/** `finish_reason: "content_filter"` is the block; usage (with OpenRouter's `cost`) is on the last chunk. */
+/**
+ * `finish_reason: "content_filter"` is the block; usage (with OpenRouter's `cost`) is on the last
+ * chunk, and any cost or credit field beside it is kept, with or without a usage object.
+ */
 export function createOpenAICompletionsObserver(): StreamObserver {
   let usage: Record<string, unknown> | undefined;
-  let raw: Record<string, unknown> = {};
+  let billing: Record<string, unknown> = {};
   return {
     observe(chunk) {
-      if (!isRecord(chunk) || !isRecord(chunk.usage)) return;
-      usage = chunk.usage;
-      raw = { usage, ...billingFields(chunk) };
+      if (!isRecord(chunk)) return;
+      if (isRecord(chunk.usage)) usage = chunk.usage;
+      billing = { ...billing, ...billingFields(chunk) };
     },
-    usage: () => (usage === undefined ? undefined : completionsUsage(usage, raw)),
+    usage: () => completionsUsage(usage ?? {}, usage === undefined ? billing : { usage, ...billing }),
     blocked(message: AssistantMessage): BlockedTurn | undefined {
       return message.rawStopReason === "content_filter"
         ? { reason: "content_filter", message: "The provider's content filter stopped the answer (content_filter)." }

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { createFakeFetch, type FakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import { createChatKit } from "../src/index.ts";
-import { collect, jsonBody, lastEvent, sseResponse, testDocument, textOf, turn } from "./helpers.ts";
+import { brokenSseResponse, collect, jsonBody, lastEvent, sseResponse, testDocument, textOf, turn } from "./helpers.ts";
 
 const STREAM_URL = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-3\.5-flash:streamGenerateContent\b/;
 const SCHEMA = { type: "object", properties: { tags: { type: "array", items: { type: "string" }, maxItems: 3 } } };
@@ -107,12 +107,60 @@ describe("runTurn on Gemini", () => {
       message: "[gemini/gemini-3.5-flash] Gemini blocked the prompt (PROHIBITED_CONTENT).",
       reason: "PROHIBITED_CONTENT",
     });
-    // Gemini leaves zero-valued counters out, so the missing answer count is a reported 0.
+    // Gemini leaves zero-valued counters out, so a blocked prompt reports no answer count, and none is set.
     assert.deepEqual(last.usage, {
       inputTokens: 12,
-      outputTokens: 0,
       totalTokens: 12,
       raw: { usageMetadata: { promptTokenCount: 12, totalTokenCount: 12 } },
+    });
+  });
+
+  it("keeps the prompt count of a stream that breaks before any answer count, without an outputTokens", async () => {
+    const usageMetadata = { promptTokenCount: 5, totalTokenCount: 5 };
+    const { chat } = kit([
+      {
+        method: "POST",
+        url: STREAM_URL,
+        respond: () =>
+          brokenSseResponse([JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "Hal" }] } }], usageMetadata })]),
+      },
+    ]);
+    const events = await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash" })));
+    assert.equal(textOf(events), "Hal");
+    const last = lastEvent(events);
+    assert.equal(last.type, "failed");
+    if (last.type !== "failed") return;
+    assert.equal(last.error.code, "PROVIDER_ERROR");
+    assert.deepEqual(last.usage, { inputTokens: 5, totalTokens: 5, raw: { usageMetadata } });
+  });
+
+  it("counts a grounded turn's tool-use prompt tokens in inputTokens", async () => {
+    const usageMetadata = {
+      promptTokenCount: 40,
+      toolUsePromptTokenCount: 300,
+      candidatesTokenCount: 12,
+      thoughtsTokenCount: 8,
+      totalTokenCount: 360,
+    };
+    const { chat } = kit(
+      [
+        {
+          method: "POST",
+          url: STREAM_URL,
+          respond: () =>
+            sseResponse([
+              JSON.stringify({
+                candidates: [{ content: { role: "model", parts: [{ text: "Found it." }] }, finishReason: "STOP" }],
+                usageMetadata,
+              }),
+            ]),
+        },
+      ],
+      true,
+    );
+    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash" })))), {
+      type: "done",
+      usage: { inputTokens: 340, outputTokens: 20, reasoningTokens: 8, totalTokens: 360, raw: { usageMetadata } },
     });
   });
 

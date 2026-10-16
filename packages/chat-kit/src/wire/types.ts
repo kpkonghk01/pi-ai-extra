@@ -11,10 +11,10 @@ export interface PayloadPlan {
   /** Gemini only: add Google Search and URL context tools. */
   grounding: boolean;
   /**
-   * The request goes to OpenRouter (`targetsOpenRouter`), so Anthropic Messages pins its file
+   * The request goes to OpenRouter (`targetsOpenRouter()`), so Anthropic Messages pins its file
    * parser to `native` too. OpenAI Completions, which only OpenRouter speaks here, always does.
    */
-  openRouter: boolean;
+  targetsOpenRouter: boolean;
 }
 
 /** A safety block found in a finished or failed turn. */

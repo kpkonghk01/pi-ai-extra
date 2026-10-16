@@ -46,6 +46,7 @@ describe("runTurn on Anthropic Messages", () => {
       ),
     );
     assert.equal(textOf(events), "Sure.");
+    // No totalTokens: Anthropic reports no total, and the kit never computes one.
     assert.deepEqual(lastEvent(events), {
       type: "done",
       usage: {
@@ -53,7 +54,6 @@ describe("runTurn on Anthropic Messages", () => {
         outputTokens: 9,
         cachedInputTokens: 5,
         cacheWriteTokens: 7,
-        totalTokens: 41,
         raw: { usage: { input_tokens: 20, output_tokens: 9, cache_read_input_tokens: 5, cache_creation_input_tokens: 7 } },
       },
     });
@@ -165,10 +165,33 @@ describe("runTurn on Anthropic Messages", () => {
     const withoutCache = lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "claude-sonnet-4-6" }))));
     assert.deepEqual(withoutCache, {
       type: "done",
-      usage: { inputTokens: 20, outputTokens: 9, totalTokens: 29, raw: { usage: { input_tokens: 20, output_tokens: 9 } } },
+      usage: { inputTokens: 20, outputTokens: 9, raw: { usage: { input_tokens: 20, output_tokens: 9 } } },
     });
     const withoutUsage = lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "claude-sonnet-4-6" }))));
     assert.deepEqual(withoutUsage, { type: "done" });
+  });
+
+  it("keeps KIE's credits_consumed and the prompt count when no output_tokens is reported", async () => {
+    const { chat } = kit([
+      {
+        method: "POST",
+        url: KIE_MESSAGES_URL,
+        respond: () =>
+          sseResponse(
+            anthropicEvents({
+              blocks: [{ type: "text", text: "ok" }],
+              stopReason: "end_turn",
+              usage: { input_tokens: 20 },
+              deltaUsage: null,
+              deltaExtra: { credits_consumed: 0.15 },
+            }),
+          ),
+      },
+    ]);
+    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "claude-sonnet-4-6" })))), {
+      type: "done",
+      usage: { inputTokens: 20, raw: { usage: { input_tokens: 20 }, credits_consumed: 0.15 } },
+    });
   });
 
   it("fails a forced tool call cut off at max_tokens, with the raw stop reason", async () => {

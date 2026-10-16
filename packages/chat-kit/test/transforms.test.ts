@@ -47,7 +47,7 @@ function plan(overrides: Partial<PayloadPlan> = {}): PayloadPlan {
     documents: [TEXT_DOC, PDF_BY_URL, PNG_INLINE],
     responseSchema: undefined,
     grounding: false,
-    openRouter: false,
+    targetsOpenRouter: false,
     ...overrides,
   };
 }
@@ -303,11 +303,11 @@ describe("Anthropic Messages payload transform", () => {
 
   it("pins OpenRouter's native file parser on OpenRouter only, replacing a caller's file-parser setting", () => {
     const withPlugins = { ...payload(), plugins: [{ id: "web" }, { id: "file-parser", pdf: { engine: "mistral-ocr" } }] };
-    const openRouter = transformAnthropicPayload(withPlugins, plan({ openRouter: true })) as Record<string, unknown>;
-    assert.deepEqual(openRouter.plugins, [{ id: "web" }, { id: "file-parser", pdf: { engine: "native" } }]);
-    const bare = transformAnthropicPayload(payload(), plan({ openRouter: true })) as Record<string, unknown>;
+    const toOpenRouter = transformAnthropicPayload(withPlugins, plan({ targetsOpenRouter: true })) as Record<string, unknown>;
+    assert.deepEqual(toOpenRouter.plugins,[{ id: "web" }, { id: "file-parser", pdf: { engine: "native" } }]);
+    const bare = transformAnthropicPayload(payload(), plan({ targetsOpenRouter: true })) as Record<string, unknown>;
     assert.deepEqual(bare.plugins, [{ id: "file-parser", pdf: { engine: "native" } }]);
-    const kie = transformAnthropicPayload(payload(), plan({ openRouter: false })) as Record<string, unknown>;
+    const kie = transformAnthropicPayload(payload(), plan({ targetsOpenRouter: false })) as Record<string, unknown>;
     assert.ok(!("plugins" in kie), "KIE and ToAPIs never get OpenRouter's plugins");
   });
 
@@ -370,6 +370,9 @@ describe("always-thinking Claude families", () => {
     for (const id of [
       "claude-sonnet-5",
       "anthropic/claude-sonnet-5",
+      "claude-opus-4-5",
+      "claude-sonnet-4-5",
+      "claude-haiku-4-5",
       "claude-opus-4-8",
       "anthropic/claude-sonnet-4.6",
       "claude-opus-50",
