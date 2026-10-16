@@ -480,7 +480,7 @@ Only the initial request is retried, before the response stream starts: up to tw
 
 The cost comes from the first source that applies:
 
-1. **Provider-reported** (`costSource: "provider"`): OpenRouter's `usage.cost`, or KIE's `credits_consumed` × $0.005. KIE's cost always comes from its credits, because its token counts are unreliable (hidden prompt tokens, some zero input counts), so a KIE turn without credits has no cost.
+1. **Provider-reported** (`costSource: "provider"`): OpenRouter's `usage.cost`, or KIE's `credits_consumed` × $0.005. KIE's cost always comes from its credits, because its token counts are unreliable (hidden prompt tokens, some zero input counts), so a KIE turn without credits has no cost. On KIE Codex (OpenAI Responses) the credits are read wherever the stream carries them: next to `type` on the `response.completed` event (where KIE documents them), on the response object, or in a usage object; `raw` keeps them at its top level.
 2. **Estimated** (`costSource: "estimated"`): the model's [rate](#chat-rates) in force when the turn started, applied to the reported counts. The large-prompt tier is chosen by `inputTokens`. Cached and cache-write tokens are charged at their rates, an unpublished one derived (reads at the input rate, writes at 1.25 × input), and the rest of the prompt at the input rate. `outputTokens`, reasoning included, are charged at the output rate. A count the provider did not report adds nothing. Rates come from the KIE and ToAPIs definitions, the Gemini rate table (`googleChatRate`) and OpenRouter's live price (pi-ai's catalogue price until a live list is read).
 3. **None**: no rate, or no counts to price. `costUsd` and `costSource` are absent, never `0`.
 

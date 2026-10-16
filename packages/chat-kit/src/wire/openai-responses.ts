@@ -46,7 +46,13 @@ export function transformOpenAIResponsesPayload(payload: unknown, plan: PayloadP
 /**
  * A content filter shows as an `incomplete` response with reason `content_filter`; a refusal
  * streams as `response.refusal.delta` on a response that otherwise completes. Usage is on the
- * terminal response, where KIE also reports `credits_consumed`, kept even without a usage object.
+ * terminal response.
+ *
+ * KIE also reports `credits_consumed`, outside OpenAI's shape: its docs put it on the
+ * `response.completed` event next to `type` when streaming, and on the response object without
+ * streaming (https://docs.kie.ai/market/kimi/kimi-k3.md; the Codex pages show only the second).
+ * So every cost or credit field is read from the event, its `response`, and the `usage` object of
+ * either, and kept at the top of raw usage, even without a usage object.
  */
 export function createOpenAIResponsesObserver(): StreamObserver {
   const capture = createUsageCapture();
@@ -55,10 +61,11 @@ export function createOpenAIResponsesObserver(): StreamObserver {
     observe(event) {
       if (!isRecord(event)) return;
       if (event.type === "response.refusal.delta") refused = true;
-      const response = event.response;
-      if (!isRecord(response)) return;
-      if (isRecord(response.usage)) capture.replace(response.usage);
-      capture.addBilling(response);
+      const response = isRecord(event.response) ? event.response : undefined;
+      if (response !== undefined && isRecord(response.usage)) capture.replace(response.usage);
+      for (const container of [response?.usage, event.usage, response, event]) {
+        if (isRecord(container)) capture.addBilling(container);
+      }
     },
     usage: () => capture.read((usage, raw) => openAIUsage(usage, raw, RESPONSES_USAGE_FIELDS)),
     blocked(message: AssistantMessage): BlockedTurn | undefined {
