@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-25
-- Related: [DATA-4513](https://hk01-digital.atlassian.net/browse/DATA-4513)
+- Related: [DATA-4513](https://hk01-digital.atlassian.net/browse/DATA-4513), [DATA-4566](https://hk01-digital.atlassian.net/browse/DATA-4566)
 
 ## Context
 
@@ -15,11 +15,13 @@ Using only pi-ai would leave consumer applications to pass unvalidated provider-
 Each public adapter package exposes two complementary layers:
 
 1. A Zod-validated high-level image helper (`generateKieImage()`, `generateToapisImage()` or `generateGoogleImage()`) on the main entry, for model operation schemas, provider-native reference-image upload, task polling, normalized output and provider-reported usage.
-2. pi-ai adapters on the `/pi-ai` subpath. pi-ai 0.87.1 keeps chat providers (`Models`) and image providers (`ImagesModels`) in separate collections, so the subpath exports a chat `Provider` factory (`createKieProvider()`, `createToapisProvider()`, `createGoogleProvider()`) and an `ImagesProvider` factory (`createKieImagesProvider()`, `createToapisImagesProvider()`, `createGoogleImagesProvider()`). The image factories delegate to the helper and read model options from `ImagesOptions.metadata`, validated with the same strict schema.
+2. pi-ai adapters on the `/pi-ai` subpath: one `Provider` factory per package (`createKieProvider()`, `createToapisProvider()`, `createGoogleProvider()`) that serves the package's chat models and its image catalogue through `createProvider({ models, api, images })`. Image generation delegates to the helper and reads model options from `ImagesOptions.metadata`, validated with the same strict schema.
 
 When a capability cannot accurately fit the common image helper, the adapter exposes an additional explicit operation rather than adding untyped escape-hatch fields. Task lookups by id (`getKieTask()`, `getToapisTask()`) are such operations.
 
 Amended 2026-09-28: the original decision assumed `createProvider()` accepted an image map; the installed pi-ai 0.87.1 does not, hence the separate images factories. `createGoogleProvider()` was added so Gemini chat and images come from one package with the same explicit-key auth; it reuses pi-ai's Gemini adapter and catalogue unchanged, whereas pi-ai's own `googleProvider()` reads `GEMINI_API_KEY` from the environment.
+
+Amended 2026-10-16: pi-ai 1.2 (since 0.99.0) removed the separate `ImagesModels` collection and `createImagesProvider()`, and `createProvider()` accepts the `images` map, so the separate images factories (`createKieImagesProvider()`, `createToapisImagesProvider()`, `createGoogleImagesProvider()`) were folded into the provider factories, with their settings as `imageSettings`. Chat and image models now share one `Models` collection, where a second provider with the same id replaces the first. Keeping a separate images-only factory under the same id would make registering both silently drop one; giving it a different id (for example `kie-images`) would split one provider and key across two ids. One factory per package keeps the provider id, the key and the no-fallback boundary in one place.
 
 ## Consequences
 

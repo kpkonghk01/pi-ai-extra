@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createImagesModels } from "@earendil-works/pi-ai";
+import { createModels } from "@earendil-works/pi-ai";
 import { bytesResponse, createFakeFetch, jsonResponse, PNG_BYTES, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import { generateKieImage, getKieTask, isPiAiExtraError, type ImageProgressEvent } from "../src/index.ts";
-import { createKieImagesProvider } from "../src/pi-ai/index.ts";
+import { createKieProvider } from "../src/pi-ai/index.ts";
 
 const CREATE_URL = "https://api.kie.ai/api/v1/jobs/createTask";
 const RECORD_URL = /^https:\/\/api\.kie\.ai\/api\/v1\/jobs\/recordInfo\?taskId=task_1$/;
@@ -50,9 +50,9 @@ describe("KIE usage", () => {
 
   it("does not expose token usage to pi-ai (KIE reports credits only)", async () => {
     const fake = createFakeFetch(routes(success({ creditsConsumed: 1, costTime: 10 })));
-    const images = createImagesModels();
-    images.setProvider(createKieImagesProvider({ apiKey: "kie-key", settings: { poll: { initialDelayMs: 1, maxDelayMs: 1 } } }));
-    const model = images.getModel("kie", "nano-banana-2");
+    const images = createModels();
+    images.setProvider(createKieProvider({ apiKey: "kie-key", imageSettings: { poll: { initialDelayMs: 1, maxDelayMs: 1 } } }));
+    const model = images.getModelOfType("image", "kie", "nano-banana-2");
     assert.ok(model);
     const result = await images.generateImages(model, { input: [{ type: "text", text: "x" }] }, { fetch: fake.fetch });
     assert.equal(result.stopReason, "stop");

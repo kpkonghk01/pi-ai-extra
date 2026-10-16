@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createImagesModels } from "@earendil-works/pi-ai";
+import { createModels } from "@earendil-works/pi-ai";
 import {
   bytesResponse,
   createFakeFetch,
@@ -12,7 +12,7 @@ import {
   type RecordedRequest,
 } from "@hk01/pi-ai-extra-internal/testing";
 import { generateToapisImage, isPiAiExtraError, TOAPIS_IMAGE_MODELS, type ToapisImageRequest } from "../src/index.ts";
-import { createToapisImagesProvider, createToapisProvider } from "../src/pi-ai/index.ts";
+import { createToapisProvider } from "../src/pi-ai/index.ts";
 
 const HOST = "https://toapis.com";
 const UPLOAD_URL = `${HOST}/v1/uploads/images`;
@@ -193,11 +193,11 @@ describe("ToAPIs catalogue and pi-ai adapters", () => {
     }
   });
 
-  it("generates through pi-ai ImagesModels", async () => {
+  it("generates through pi-ai Models.generateImages", async () => {
     const fake = createFakeFetch(routes());
-    const images = createImagesModels();
-    images.setProvider(createToapisImagesProvider({ apiKey: "toapis-key", settings: { poll: FAST_POLL } }));
-    const model = images.getModel("toapis", "doubao-seedream-5-0-pro");
+    const images = createModels();
+    images.setProvider(createToapisProvider({ apiKey: "toapis-key", imageSettings: { poll: FAST_POLL } }));
+    const model = images.getModelOfType("image", "toapis", "doubao-seedream-5-0-pro");
     assert.ok(model);
     const result = await images.generateImages(model, { input: [{ type: "text", text: "panda" }] }, { fetch: fake.fetch, metadata: { resolution: "1K" } });
     assert.equal(result.stopReason, "stop");

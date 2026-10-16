@@ -4,6 +4,7 @@ import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.l
 import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
 import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
 import { explicitApiKeyAuth } from "./auth.ts";
+import type { HelperImages } from "./images-provider.ts";
 
 export type ChatProtocol = "openai-responses" | "anthropic-messages";
 
@@ -30,6 +31,8 @@ export interface ChatProviderInput {
   anthropicAuth: "x-api-key" | "bearer";
   /** Optional provider quirk adapter applied to both protocol stream implementations. */
   wrapStreams?: ((streams: ProviderStreams) => ProviderStreams) | undefined;
+  /** Image models served by the same provider (pi-ai 1.2 keeps chat and image models in one `Models`). */
+  images?: HelperImages | undefined;
 }
 
 const ZERO_COST: ModelCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
@@ -46,11 +49,15 @@ export function createChatProvider(input: ChatProviderInput): Provider<ChatProto
     id: input.id,
     name: input.name,
     auth: explicitApiKeyAuth(input.name, input.apiKey),
-    models: input.models.map((definition) => buildChatModel(input.id, input.baseUrls[definition.protocol], definition)),
+    models: [
+      ...input.models.map((definition) => buildChatModel(input.id, input.baseUrls[definition.protocol], definition)),
+      ...(input.images?.models ?? []),
+    ],
     api: {
       "openai-responses": wrap(openAIResponsesApi()),
       "anthropic-messages": input.anthropicAuth === "bearer" ? bearerAuthStreams(anthropic) : anthropic,
     },
+    ...(input.images ? { images: input.images.images } : {}),
   });
 }
 

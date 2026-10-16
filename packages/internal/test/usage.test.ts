@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createImagesModels } from "@earendil-works/pi-ai";
+import { createModels, createProvider } from "@earendil-works/pi-ai";
 import { z } from "zod";
 import { compactUsage, createOperationContext, option, parseUsageBlock, type ImageModelInfo, type ImageProgressEvent } from "../src/index.ts";
-import { createHelperImagesProvider, toPiAiUsage } from "../src/pi-ai/index.ts";
+import { explicitApiKeyAuth, helperImages, toPiAiUsage } from "../src/pi-ai/index.ts";
 import { dataUrl, PNG_BYTES } from "../src/testing/fake-fetch.ts";
 
 describe("compactUsage", () => {
@@ -28,6 +28,7 @@ describe("compactUsage", () => {
 
 describe("toPiAiUsage", () => {
   const model = {
+    type: "image" as const,
     id: "m",
     name: "m",
     api: "x",
@@ -57,7 +58,7 @@ describe("toPiAiUsage", () => {
   });
 });
 
-describe("ImagesProvider usage", () => {
+describe("pi-ai image usage", () => {
   const info: ImageModelInfo = {
     id: "img",
     name: "img",
@@ -78,21 +79,19 @@ describe("ImagesProvider usage", () => {
   const image = { dataUrl: dataUrl(PNG_BYTES, "image/png"), mimeType: "image/png" as const, byteLength: PNG_BYTES.byteLength, sourceUrl: undefined };
 
   async function run(usage: unknown) {
-    const images = createImagesModels();
-    images.setProvider(
-      createHelperImagesProvider({
-        id: "p",
-        name: "P",
-        api: "x",
-        baseUrl: "https://example.com",
-        apiKey: "k",
-        models: [info],
-        generate: async () => ({ provider: "p", model: "img", taskId: "t", elapsedMs: 1, images: [image], usage }) as never,
-      }),
-    );
-    const model = images.getModel("p", "img");
+    const { models, images } = helperImages({
+      provider: "p",
+      api: "x",
+      baseUrl: "https://example.com",
+      apiKey: "k",
+      models: [info],
+      generate: async () => ({ provider: "p", model: "img", taskId: "t", elapsedMs: 1, images: [image], usage }) as never,
+    });
+    const collection = createModels();
+    collection.setProvider(createProvider({ id: "p", name: "P", auth: explicitApiKeyAuth("P", "k"), models, images }));
+    const model = collection.getModelOfType("image", "p", "img");
     assert.ok(model);
-    return images.generateImages(model, { input: [{ type: "text", text: "x" }] });
+    return collection.generateImages(model, { input: [{ type: "text", text: "x" }] });
   }
 
   it("fills AssistantImages.usage only when tokens were reported", async () => {

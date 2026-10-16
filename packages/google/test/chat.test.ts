@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createModels } from "@earendil-works/pi-ai";
 import { GOOGLE_MODELS } from "@earendil-works/pi-ai/providers/google.models";
+import { GOOGLE_IMAGE_MODELS } from "../src/index.ts";
 import { createGoogleProvider, GOOGLE_CHAT_MODEL_IDS } from "../src/pi-ai/index.ts";
 
 describe("createGoogleProvider", () => {
@@ -36,9 +37,14 @@ describe("createGoogleProvider", () => {
     assert.ok(GOOGLE_CHAT_MODEL_IDS.includes("gemini-3.5-flash"));
   });
 
-  it("registers in pi-ai Models alongside the other providers", () => {
+  it("registers in pi-ai Models alongside the other providers, with chat and image models", () => {
     const models = createModels();
-    models.setProvider(createGoogleProvider({ apiKey: "k" }));
+    models.setProvider(createGoogleProvider({ apiKey: "k", modelIds: ["gemini-3.5-flash"] }));
     assert.equal(models.getModel("google", "gemini-3.5-flash")?.provider, "google");
+    assert.deepEqual(
+      models.getModelsOfType("image", "google").map((model) => model.id),
+      GOOGLE_IMAGE_MODELS.map((model) => model.id),
+    );
+    assert.equal(models.getModel("google", "gemini-3-pro-image"), undefined);
   });
 });

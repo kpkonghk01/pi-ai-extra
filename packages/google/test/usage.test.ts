@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createImagesModels } from "@earendil-works/pi-ai";
+import { createModels } from "@earendil-works/pi-ai";
 import { createFakeFetch, jsonResponse, PNG_BYTES } from "@hk01/pi-ai-extra-internal/testing";
 import { generateGoogleImage } from "../src/index.ts";
-import { createGoogleImagesProvider } from "../src/pi-ai/index.ts";
+import { createGoogleProvider } from "../src/pi-ai/index.ts";
 
 const URL_FLASH = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent";
 
@@ -56,9 +56,9 @@ describe("Gemini usage", () => {
 
   it("fills pi-ai usage with pi-ai's Gemini conventions", async () => {
     const fake = createFakeFetch([{ method: "POST", url: URL_FLASH, respond: withUsage(FULL) }]);
-    const images = createImagesModels();
-    images.setProvider(createGoogleImagesProvider({ apiKey: "k" }));
-    const model = images.getModel("google", "gemini-3.1-flash-image");
+    const images = createModels();
+    images.setProvider(createGoogleProvider({ apiKey: "k" }));
+    const model = images.getModelOfType("image", "google", "gemini-3.1-flash-image");
     assert.ok(model);
     const result = await images.generateImages(model, { input: [{ type: "text", text: "p" }] }, { fetch: fake.fetch });
     assert.deepEqual(

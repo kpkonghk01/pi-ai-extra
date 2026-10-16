@@ -1,10 +1,5 @@
-import type { ImagesProvider, Provider } from "@earendil-works/pi-ai";
-import {
-  createChatProvider,
-  createHelperImagesProvider,
-  type ChatModelDefinition,
-  type ChatProtocol,
-} from "@hk01/pi-ai-extra-internal/pi-ai";
+import type { Provider } from "@earendil-works/pi-ai";
+import { createChatProvider, helperImages, type ChatModelDefinition, type ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
 import {
   KIE_API_BASE_URL,
   KIE_CLAUDE_BASE_URL,
@@ -40,19 +35,26 @@ export const KIE_CHAT_MODELS: readonly ChatModelDefinition[] = [
 ];
 
 export interface KieProviderOptions {
-  /** KIE API key from server-side secret configuration. */
+  /** KIE API key from server-side secret configuration; used for chat and images. */
   apiKey: string;
-  /** Replaces the default model list. */
+  /** Replaces the default chat model list. The image models are always `KIE_IMAGE_MODELS`. */
   models?: readonly ChatModelDefinition[] | undefined;
   /** Default `https://api.kie.ai/api/v1`. */
   responsesBaseUrl?: string | undefined;
   /** Default `https://api.kie.ai/claude`. */
   claudeBaseUrl?: string | undefined;
+  /** Image helper settings (`apiBaseUrl`, `uploadBaseUrl`, `poll`) applied to every image request. */
+  imageSettings?: KieImageSettings | undefined;
 }
 
 /**
- * pi-ai chat provider for KIE. Codex models use pi-ai's OpenAI Responses adapter;
- * Claude models use its Anthropic Messages adapter with KIE's Bearer authentication.
+ * pi-ai provider for KIE. Codex models use pi-ai's OpenAI Responses adapter; Claude
+ * models use its Anthropic Messages adapter with KIE's Bearer authentication.
+ *
+ * It also serves `KIE_IMAGE_MODELS` (`models.getModelOfType("image", "kie", id)`),
+ * generated through `generateKieImage`. Image options go in `ImagesOptions.metadata`
+ * using the helper's option names (for example `{ aspectRatio: "16:9", resolution: "2K" }`)
+ * and are validated strictly.
  */
 export function createKieProvider(options: KieProviderOptions): Provider<ChatProtocol> {
   return createChatProvider({
@@ -66,28 +68,14 @@ export function createKieProvider(options: KieProviderOptions): Provider<ChatPro
     models: options.models ?? KIE_CHAT_MODELS,
     anthropicAuth: "bearer",
     wrapStreams: kieEnvelopeStreams,
-  });
-}
-
-export interface KieImagesProviderOptions {
-  apiKey: string;
-  settings?: KieImageSettings | undefined;
-}
-
-/**
- * pi-ai `ImagesProvider` backed by `generateKieImage`. Model options go in
- * `ImagesOptions.metadata` using the helper's option names (for example
- * `{ aspectRatio: "16:9", resolution: "2K" }`) and are validated strictly.
- */
-export function createKieImagesProvider(options: KieImagesProviderOptions): ImagesProvider {
-  return createHelperImagesProvider({
-    id: KIE_PROVIDER_ID,
-    name: KIE_PROVIDER_NAME,
-    api: KIE_IMAGES_API,
-    baseUrl: options.settings?.apiBaseUrl ?? KIE_API_BASE_URL,
-    apiKey: options.apiKey,
-    models: KIE_IMAGE_MODELS,
-    settings: options.settings,
-    generate: (request) => generateKieImage(request as unknown as KieImageRequest),
+    images: helperImages({
+      provider: KIE_PROVIDER_ID,
+      api: KIE_IMAGES_API,
+      baseUrl: options.imageSettings?.apiBaseUrl ?? KIE_API_BASE_URL,
+      apiKey: options.apiKey,
+      models: KIE_IMAGE_MODELS,
+      settings: options.imageSettings,
+      generate: (request) => generateKieImage(request as unknown as KieImageRequest),
+    }),
   });
 }

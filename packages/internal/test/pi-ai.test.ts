@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createImagesModels, type ProviderStreams } from "@earendil-works/pi-ai";
+import { createModels, createProvider, type ProviderStreams } from "@earendil-works/pi-ai";
 import { option, PiAiExtraError, type ImageModelInfo } from "../src/index.ts";
 import {
   bearerAuthStreams,
   buildChatModel,
-  createHelperImagesProvider,
+  createChatProvider,
   explicitApiKeyAuth,
+  helperImages,
 } from "../src/pi-ai/index.ts";
 import { dataUrl, PNG_BYTES } from "../src/testing/fake-fetch.ts";
 
@@ -29,25 +30,23 @@ const MODEL: ImageModelInfo = {
 };
 
 function provider(generate: (request: Record<string, unknown>) => Promise<unknown>) {
-  const images = createImagesModels();
-  images.setProvider(
-    createHelperImagesProvider({
-      id: "test",
-      name: "Test",
-      api: "test-images",
-      baseUrl: "https://api.example.com",
-      apiKey: "factory-key",
-      models: [MODEL],
-      settings: { poll: { initialDelayMs: 1 } },
-      generate: generate as never,
-    }),
-  );
-  const model = images.getModel("test", "img-1");
+  const { models, images } = helperImages({
+    provider: "test",
+    api: "test-images",
+    baseUrl: "https://api.example.com",
+    apiKey: "factory-key",
+    models: [MODEL],
+    settings: { poll: { initialDelayMs: 1 } },
+    generate: generate as never,
+  });
+  const collection = createModels();
+  collection.setProvider(createProvider({ id: "test", name: "Test", auth: explicitApiKeyAuth("Test", "factory-key"), models, images }));
+  const model = collection.getModelOfType("image", "test", "img-1");
   assert.ok(model);
-  return { images, model };
+  return { images: collection, model };
 }
 
-describe("createHelperImagesProvider", () => {
+describe("helperImages", () => {
   it("exposes catalogue limits and converts helper results to pi-ai image content", async () => {
     let seen: Record<string, unknown> | undefined;
     const { images, model } = provider(async (request) => {
@@ -94,6 +93,45 @@ describe("createHelperImagesProvider", () => {
     assert.match(result.errorMessage ?? "", /must not set apiKey/);
   });
 
+  it("serves image models next to chat models from one provider in one Models collection", async () => {
+    const { models, images } = helperImages({
+      provider: "test",
+      api: "test-images",
+      baseUrl: "https://api.example.com",
+      apiKey: "factory-key",
+      models: [MODEL],
+      generate: async (request) => ({
+        provider: "test",
+        model: String(request.model),
+        taskId: undefined,
+        elapsedMs: 1,
+        images: [{ dataUrl: dataUrl(PNG_BYTES, "image/png"), mimeType: "image/png", byteLength: PNG_BYTES.byteLength, sourceUrl: undefined }],
+        usage: undefined,
+      }),
+    });
+    const collection = createModels();
+    collection.setProvider(
+      createChatProvider({
+        id: "test",
+        name: "Test",
+        apiKey: "factory-key",
+        baseUrls: { "openai-responses": "https://api.example.com/v1", "anthropic-messages": "https://api.example.com" },
+        models: [{ id: "claude-haiku-4-5", protocol: "anthropic-messages" }],
+        anthropicAuth: "x-api-key",
+        images: { models, images },
+      }),
+    );
+    assert.deepEqual(collection.getModels("test").map((model) => model.id), ["claude-haiku-4-5"]);
+    const image = collection.getModelOfType("image", "test", "img-1");
+    assert.equal(image?.type, "image");
+    assert.equal(image?.api, "test-images");
+    assert.equal(collection.getModel("test", "img-1"), undefined);
+    assert.ok(image);
+    const result = await collection.generateImages(image, { input: [{ type: "text", text: "x" }] });
+    assert.equal(result.stopReason, "stop");
+    assert.equal(result.provider, "test");
+  });
+
   it("reports cancellation as stopReason aborted", async () => {
     const controller = new AbortController();
     const { images, model } = provider(async () => {
@@ -124,6 +162,7 @@ describe("chat provider helpers", () => {
     const unknown = buildChatModel("kie", "https://api.kie.ai/api/v1", { id: "gpt-5.4-codex", protocol: "openai-responses" });
     assert.equal(unknown.contextWindow, 400_000);
     assert.equal(unknown.api, "openai-responses");
+    assert.equal(unknown.thinkingLevelMap, undefined);
   });
 
   it("sends the key as a Bearer token for Bearer-authenticated Messages endpoints", () => {

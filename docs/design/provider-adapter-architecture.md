@@ -23,7 +23,7 @@ pi-ai-extra/
 Each public package has:
 
 - **Main entry** (CommonJS and ESM): the image helper, catalogue, task lookup and errors. It has no pi-ai import.
-- **`/pi-ai`** (ESM only): the chat `Provider` and `ImagesProvider` factories.
+- **`/pi-ai`** (ESM only): one pi-ai `Provider` factory serving the package's chat and image models.
 
 See [ADR 0004](../adr/0004-dual-format-helper-esm-pi-ai-subpath.md).
 
@@ -39,7 +39,7 @@ KIE / ToAPIs / Google adapter package
         │
         ├─ main entry: validated image operation → upload → task → final image + usage
         │              task lookup by id → status + usage (billing reconciliation)
-        └─ /pi-ai:     chat Provider (Responses / Messages) and ImagesProvider for pi-ai collections
+        └─ /pi-ai:     pi-ai Provider: chat (Responses / Messages / Gemini) and image models
         │
         ▼
 Selected provider and model

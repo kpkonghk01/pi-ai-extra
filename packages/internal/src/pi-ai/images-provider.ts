@@ -1,28 +1,28 @@
-import {
-  createImagesProvider,
-  type AssistantImages,
-  type ImageContent,
-  type ImagesContext,
-  type ImagesModel,
-  type ImagesOptions,
-  type ImagesProvider,
+import type {
+  AssistantImages,
+  ImageApi,
+  ImageContent,
+  ImageModel,
+  ImagesContext,
+  ImagesOptions,
+  ProviderImages,
 } from "@earendil-works/pi-ai";
 import type { ImageModelInfo } from "../catalog.ts";
 import { isPiAiExtraError, PiAiExtraError } from "../errors.ts";
 import { toDataUrl } from "../image-data.ts";
 import type { ImageGenerationResult } from "../result.ts";
-import { explicitApiKeyAuth } from "./auth.ts";
 import { toPiAiUsage } from "./usage.ts";
 
 /** Keys a pi-ai caller may not set through `options.metadata`; they come from the request itself. */
 const RESERVED_METADATA_KEYS = ["apiKey", "signal", "fetch", "onProgress", "model", "prompt", "referenceImages"] as const;
 
-export interface HelperImagesProviderInput {
-  id: string;
-  name: string;
-  /** pi-ai images API id carried on every model. */
+export interface HelperImagesInput {
+  /** Provider id carried on every image model (the id of the provider that registers them). */
+  provider: string;
+  /** pi-ai image API id carried on every model and used as the `createProvider({ images })` key. */
   api: string;
   baseUrl: string;
+  /** Used when a request carries no `options.apiKey` (pi-ai `Models` always passes the resolved key). */
   apiKey: string;
   models: readonly ImageModelInfo[];
   /** Provider settings applied to every request (for example a base URL or poll cadence). */
@@ -34,25 +34,29 @@ export interface HelperImagesProviderInput {
   generate: (request: Record<string, unknown>) => Promise<ImageGenerationResult>;
 }
 
+/** The image half of a pi-ai provider: catalogue models plus the `images` implementation map. */
+export interface HelperImages {
+  models: ImageModel<ImageApi>[];
+  images: Partial<Record<ImageApi, ProviderImages>>;
+}
+
 /**
- * Bridges a high-level image helper into pi-ai's `ImagesProvider` contract.
+ * Bridges a high-level image helper into pi-ai's image contract, for
+ * `createProvider({ models: [...chat, ...images.models], images: images.images })`.
  * Errors are returned as `stopReason: "error"` (or `"aborted"`), never thrown.
  */
-export function createHelperImagesProvider(input: HelperImagesProviderInput): ImagesProvider {
-  return createImagesProvider({
-    id: input.id,
-    name: input.name,
-    auth: explicitApiKeyAuth(input.name, input.apiKey),
-    models: input.models.map((info) => toImagesModel(info, input)),
-    api: {
-      generateImages: (model, context, options) => generateThroughHelper(input, model, context, options),
+export function helperImages(input: HelperImagesInput): HelperImages {
+  return {
+    models: input.models.map((info) => toImageModel(info, input)),
+    images: {
+      [input.api]: { generateImages: (model, context, options) => generateThroughHelper(input, model, context, options) },
     },
-  });
+  };
 }
 
 async function generateThroughHelper(
-  input: HelperImagesProviderInput,
-  model: ImagesModel<string>,
+  input: HelperImagesInput,
+  model: ImageModel<ImageApi>,
   context: ImagesContext,
   options: ImagesOptions | undefined,
 ): Promise<AssistantImages> {
@@ -88,8 +92,8 @@ async function generateThroughHelper(
 }
 
 function helperRequest(
-  input: HelperImagesProviderInput,
-  model: ImagesModel<string>,
+  input: HelperImagesInput,
+  model: ImageModel<ImageApi>,
   context: ImagesContext,
   options: ImagesOptions | undefined,
 ): Record<string, unknown> {
@@ -115,12 +119,13 @@ function helperRequest(
   };
 }
 
-function toImagesModel(info: ImageModelInfo, input: HelperImagesProviderInput): ImagesModel<string> {
+function toImageModel(info: ImageModelInfo, input: HelperImagesInput): ImageModel<ImageApi> {
   return {
+    type: "image",
     id: info.id,
     name: info.name,
     api: input.api,
-    provider: input.id,
+    provider: input.provider,
     baseUrl: input.baseUrl,
     input: info.referenceImages.max === 0 ? ["text"] : ["text", "image"],
     output: ["image"],

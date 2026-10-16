@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createImagesModels } from "@earendil-works/pi-ai";
+import { createModels } from "@earendil-works/pi-ai";
 import {
   bytesResponse,
   createFakeFetch,
@@ -11,7 +11,7 @@ import {
   type RecordedRequest,
 } from "@hk01/pi-ai-extra-internal/testing";
 import { generateKieImage, isPiAiExtraError, KIE_IMAGE_MODELS, type ImageProgressEvent, type KieImageRequest } from "../src/index.ts";
-import { createKieImagesProvider, createKieProvider } from "../src/pi-ai/index.ts";
+import { createKieProvider } from "../src/pi-ai/index.ts";
 
 const UPLOAD_URL = "https://kieai.redpandaai.co/api/file-base64-upload";
 const CREATE_URL = "https://api.kie.ai/api/v1/jobs/createTask";
@@ -253,12 +253,13 @@ describe("KIE catalogue and pi-ai adapters", () => {
     );
   });
 
-  it("generates through pi-ai ImagesModels with validated metadata", async () => {
+  it("generates through pi-ai Models.generateImages with validated metadata", async () => {
     const fake = createFakeFetch(kieRoutes());
-    const images = createImagesModels();
-    images.setProvider(createKieImagesProvider({ apiKey: "kie-key", settings: { poll: FAST_POLL } }));
-    const model = images.getModel("kie", "nano-banana-2");
+    const images = createModels();
+    images.setProvider(createKieProvider({ apiKey: "kie-key", imageSettings: { poll: FAST_POLL } }));
+    const model = images.getModelOfType("image", "kie", "nano-banana-2");
     assert.ok(model);
+    assert.equal(images.getModel("kie", "nano-banana-2"), undefined);
 
     const ok = await images.generateImages(model, { input: [{ type: "text", text: "a fox" }] }, { fetch: fake.fetch, metadata: { aspectRatio: "16:9" } });
     assert.equal(ok.stopReason, "stop");

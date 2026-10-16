@@ -9,7 +9,7 @@
     "check": "tsc --noEmit -p ."
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.87.1",
+    "@earendil-works/pi-ai": "1.2.0",
     "@hk01/pi-ai-extra-google": "workspace:*",
     "@hk01/pi-ai-extra-kie": "workspace:*",
     "@hk01/pi-ai-extra-toapis": "workspace:*",
