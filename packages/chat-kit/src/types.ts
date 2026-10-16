@@ -150,8 +150,8 @@ export interface ChatTurnError {
  * Usage as the provider reported it (the glossary's Usage record, ADR 0005). Every count is
  * optional: one the provider did not report is absent, never estimated or set to zero. A turn has
  * `usage` whenever the provider reported a token count or a cost or credit, which `raw` keeps even
- * when a count is missing; only a turn with neither has none. The kit computes no cost yet (ADR
- * 0008's model rates come later).
+ * when a count is missing; only a turn with neither has none. The cost fields are the one
+ * addition: the provider's own charge, or the kit's estimate from the model's rate (ADR 0008).
  */
 export interface ChatUsage {
   /**
@@ -172,6 +172,24 @@ export interface ChatUsage {
   reasoningTokens?: number;
   /** The provider's own total, when it reports one (Gemini, OpenAI APIs). Never computed, so never on Anthropic, which reports none. */
   totalTokens?: number;
+  /**
+   * The turn's cost in USD, from the first source that applies (see `costSource`): the provider's
+   * own charge, else an estimate from the model's rate in force when the turn started. Absent,
+   * with `costSource`, when neither applies (no rate, or no counts to price): never 0 for an
+   * unknown cost.
+   */
+  costUsd?: number;
+  /**
+   * - `provider`: the provider reported the charge: OpenRouter `usage.cost`, or KIE
+   *   `credits_consumed` × $0.005 (KIE's cost always comes from its credits, because its token
+   *   counts are unreliable).
+   * - `estimated`: the kit applied the model's rate in force at call time to the reported counts:
+   *   the large-prompt tier by `inputTokens`, cached and cache-write tokens at their rates (an
+   *   unpublished cache rate is derived: reads at the input rate, writes at 1.25 × input), the
+   *   rest of the prompt at the input rate, and `outputTokens`, reasoning included, at the output
+   *   rate. A count the provider did not report adds nothing.
+   */
+  costSource?: "provider" | "estimated";
   /**
    * The provider's own usage record, under its own field names: `{ usageMetadata }` on Gemini, otherwise
    * `{ usage }` when it sent a usage object, plus any cost or credit field reported in or next to it (for

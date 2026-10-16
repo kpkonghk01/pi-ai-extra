@@ -54,6 +54,10 @@ describe("runTurn on Anthropic Messages", () => {
         outputTokens: 9,
         cachedInputTokens: 5,
         cacheWriteTokens: 7,
+        // OpenRouter reported no cost: estimated from the catalogue rate (3 in, 15 out, 0.3 cache read,
+        // 3.75 cache write per 1M): 20 × 3 + 5 × 0.3 + 7 × 3.75 + 9 × 15 = 222.75 per 1M tokens.
+        costUsd: 0.00022275,
+        costSource: "estimated",
         raw: { usage: { input_tokens: 20, output_tokens: 9, cache_read_input_tokens: 5, cache_creation_input_tokens: 7 } },
       },
     });
@@ -190,7 +194,7 @@ describe("runTurn on Anthropic Messages", () => {
     ]);
     assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "claude-sonnet-4-6" })))), {
       type: "done",
-      usage: { inputTokens: 20, raw: { usage: { input_tokens: 20 }, credits_consumed: 0.15 } },
+      usage: { inputTokens: 20, costUsd: 0.00075, costSource: "provider", raw: { usage: { input_tokens: 20 }, credits_consumed: 0.15 } },
     });
   });
 

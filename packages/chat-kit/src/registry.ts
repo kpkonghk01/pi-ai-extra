@@ -10,9 +10,10 @@ import {
   type ProviderAuth,
 } from "@earendil-works/pi-ai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
-import { createGoogleProvider } from "@hk01/pi-ai-extra-google/pi-ai";
-import { createKieProvider } from "@hk01/pi-ai-extra-kie/pi-ai";
-import { createToapisProvider } from "@hk01/pi-ai-extra-toapis/pi-ai";
+import { createGoogleProvider, googleChatRate } from "@hk01/pi-ai-extra-google/pi-ai";
+import { catalogueRate, type ModelRate } from "@hk01/pi-ai-extra-internal/rates";
+import { createKieProvider, KIE_CHAT_MODELS } from "@hk01/pi-ai-extra-kie/pi-ai";
+import { createToapisProvider, TOAPIS_CHAT_MODELS } from "@hk01/pi-ai-extra-toapis/pi-ai";
 import type { ChatProviderConfig, ChatProviderKind } from "./types.ts";
 
 /** What differs between provider kinds. */
@@ -25,6 +26,19 @@ interface ProviderKindSpec {
   readonly fileDocuments: boolean;
   /** The pi-ai provider for an explicit key; `root` (no trailing slash) replaces its default API root. */
   create(apiKey: string, root: string | undefined): Provider;
+  /** The rate schedule of an installed model: the package definitions' rates, Gemini's rate table, or OpenRouter's catalogue price. */
+  rateOf(model: Model<Api>): ModelRate | undefined;
+}
+
+/** A chat model the provider offers, with its rate schedule (undefined when it has no rate). */
+export interface ListedModel {
+  readonly model: Model<Api>;
+  readonly rate: ModelRate | undefined;
+}
+
+/** The rate of a package definition, by id. */
+function definitionRate(definitions: readonly { id: string; rate?: ModelRate | undefined }[]): (model: Model<Api>) => ModelRate | undefined {
+  return (model) => definitions.find((definition) => definition.id === model.id)?.rate;
 }
 
 /** One entry per `ChatProviderKind`; the record type makes a missing kind a type error. */
@@ -32,16 +46,19 @@ const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> 
   google: {
     fileDocuments: true,
     create: (apiKey, root) => createGoogleProvider({ apiKey, ...(root ? { baseUrl: root } : {}) }),
+    rateOf: (model) => googleChatRate(model.id),
   },
-  openrouter: { fileDocuments: true, create: explicitOpenRouterProvider },
+  openrouter: { fileDocuments: true, create: explicitOpenRouterProvider, rateOf: (model) => catalogueRate(model.cost) },
   kie: {
     fileDocuments: false,
     create: (apiKey, root) =>
       createKieProvider({ apiKey, ...(root ? { responsesBaseUrl: `${root}/openai/v1`, claudeBaseUrl: `${root}/anthropic` } : {}) }),
+    rateOf: definitionRate(KIE_CHAT_MODELS),
   },
   toapis: {
     fileDocuments: false,
     create: (apiKey, root) => createToapisProvider({ apiKey, ...(root ? { baseUrl: root } : {}) }),
+    rateOf: definitionRate(TOAPIS_CHAT_MODELS),
   },
 };
 
@@ -59,12 +76,8 @@ export interface RegisteredProvider {
   readonly grounding: boolean;
   /** See `ProviderKindSpec.fileDocuments`. */
   readonly fileDocuments: boolean;
-  /**
-   * The chat model with this id, or undefined. Today this is the provider's pi-ai catalogue
-   * (static, frozen at release). DATA-4568 resolves it against the live model list here
-   * (`listModels()`), so `runTurn` keeps one lookup.
-   */
-  findModel(id: string): Model<Api> | undefined;
+  /** The chat model with this id and its rate, or undefined. */
+  findModel(id: string): ListedModel | undefined;
   streamSimple(model: Model<Api>, context: Context, options: ModelsSimpleStreamOptions): AssistantMessageEventStream;
 }
 
@@ -84,7 +97,10 @@ export function createProviderRegistry(configs: readonly ChatProviderConfig[]): 
       kind: config.provider,
       grounding: config.grounding === true,
       fileDocuments: spec.fileDocuments,
-      findModel: (id) => models.getModel(provider.id, id),
+      findModel: (id) => {
+        const model = models.getModel(provider.id, id);
+        return model === undefined ? undefined : { model, rate: spec.rateOf(model) };
+      },
       streamSimple: (model, context, options) => models.streamSimple(model, context, options),
     });
   }

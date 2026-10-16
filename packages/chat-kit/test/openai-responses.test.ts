@@ -75,6 +75,8 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
         cachedInputTokens: 10,
         reasoningTokens: 0,
         totalTokens: 34,
+        costUsd: 0.0024,
+        costSource: "provider",
         raw: { usage, credits_consumed: 0.48 },
       },
     });
@@ -124,7 +126,7 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
     ]);
     assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol" })))), {
       type: "done",
-      usage: { inputTokens: 30, raw: { usage: { input_tokens: 30 }, credits_consumed: 0.48 } },
+      usage: { inputTokens: 30, costUsd: 0.0024, costSource: "provider", raw: { usage: { input_tokens: 30 }, credits_consumed: 0.48 } },
     });
   });
 

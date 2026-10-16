@@ -7,6 +7,7 @@ import {
   type DocumentKind,
   type PreparedDocument,
 } from "./documents.ts";
+import type { TurnPricing } from "./cost.ts";
 import { errorText, TurnFailure } from "./errors.ts";
 import { parseTurnInput } from "./input.ts";
 import type { RegisteredProvider } from "./registry.ts";
@@ -31,6 +32,7 @@ export interface PreparedTurn {
   settings: ChatTurnSettings;
   /** The answer is the arguments of a forced tool call (a response schema on Anthropic Messages). */
   schemaAsToolCall: boolean;
+  pricing: TurnPricing;
 }
 
 /** pi-ai requires usage on every assistant message, including the history the kit replays. */
@@ -54,10 +56,12 @@ export async function prepareTurn(
   if (!validation.ok) throw new TurnFailure("INVALID_REQUEST", `Invalid turn input: ${validation.message}`);
   const provider = registry.get(input.provider);
   if (!provider) throw new TurnFailure("UNKNOWN_MODEL", `No provider named ${JSON.stringify(input.provider)} is configured.`);
-  const model = provider.findModel(input.model);
-  if (!model) {
+  const startedAt = Date.now();
+  const listed = provider.findModel(input.model);
+  if (!listed) {
     throw new TurnFailure("UNKNOWN_MODEL", `Model ${JSON.stringify(input.model)} is not in the ${provider.kind} chat catalogue.`);
   }
+  const { model } = listed;
   const wire = wireApiFor(model.api);
   if (!wire) throw new TurnFailure("UNSUPPORTED", `chat-kit does not support the ${JSON.stringify(model.api)} API of this model.`);
   const settings = input.settings ?? {};
@@ -85,6 +89,7 @@ export async function prepareTurn(
     },
     settings,
     schemaAsToolCall: wire.schemaAsToolCall && input.responseSchema !== undefined,
+    pricing: { kind: provider.kind, rate: listed.rate, startedAt },
   };
 }
 
