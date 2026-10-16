@@ -75,6 +75,8 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
         cachedInputTokens: 100,
         reasoningTokens: 3,
         totalTokens: 128,
+        costUsd: 0.00042,
+        costSource: "provider",
         raw: {
           usage: {
             prompt_tokens: 120,
@@ -116,6 +118,9 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
         inputTokens: 10,
         outputTokens: 2,
         totalTokens: 12,
+        // No reported cost: estimated from the catalogue rate (0.15 in, 0.6 out per 1M).
+        costUsd: 0.0000027,
+        costSource: "estimated",
         raw: { usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } },
       },
     });
@@ -131,7 +136,10 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
         respond: () => sseResponse([completionsChunk({ content: "Hi" }, "stop"), completionsUsageChunk(usage), "[DONE]"]),
       },
     ]);
-    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn()))), { type: "done", usage: { inputTokens: 10, raw: { usage } } });
+    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn()))), {
+      type: "done",
+      usage: { inputTokens: 10, costUsd: 0.0001, costSource: "provider", raw: { usage } },
+    });
   });
 
   it("puts system prompt, documents, history and message in that order, documents opening the first user turn", async () => {

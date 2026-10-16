@@ -277,7 +277,7 @@ describe("KIE catalogue and pi-ai adapters", () => {
     const byId = new Map(provider.getModels().map((model) => [model.id, model]));
     assert.deepEqual(
       provider.getModels().filter((model) => model.api === "openai-responses").map((model) => model.id),
-      ["gpt-6-astra", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-5-6-luna"],
+      ["gpt-6-1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-5-6-luna"],
     );
     assert.equal(byId.get("gpt-5-6-sol")?.baseUrl, "https://api.kie.ai/openai/v1");
     assert.equal(byId.get("claude-sonnet-5")?.api, "anthropic-messages");
@@ -287,7 +287,7 @@ describe("KIE catalogue and pi-ai adapters", () => {
 
   it("takes Codex capability metadata from pi-ai's dotted catalogue ids and KIE's 272K context window", () => {
     const byId = new Map(createKieProvider({ apiKey: "kie-key" }).getModels().map((model) => [model.id, model]));
-    for (const id of ["gpt-6-astra", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-5-6-luna"]) {
+    for (const id of ["gpt-6-1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-5-6-luna"]) {
       assert.equal(byId.get(id)?.contextWindow, 272_000, id);
       assert.equal(byId.get(id)?.thinkingLevelMap?.xhigh, "xhigh", id);
     }
@@ -298,10 +298,16 @@ describe("KIE catalogue and pi-ai adapters", () => {
     assertRateTable(createKieProvider({ apiKey: "kie-key" }).getModels(), {
       // id: [input, output, cacheRead, cacheWrite] in USD per 1M tokens. Codex cache rates are
       // published; Claude's are derived by the cache fill-in rule (see toModelCost).
+      "gpt-6-1-sol": [0.6, 3, 0.03, 0.75],
       "gpt-6-astra": [2.8, 14, 0.28, 3.5],
+      "gpt-6-sol": [0.6, 3, 0.06, 0.75],
+      "gpt-6-luna": [0.03, 0.15, 0.003, 0.0375],
       "gpt-5-6-sol": [1.4, 8.4, 0.14, 1.75],
       "gpt-5-6-terra": [0.56, 3.36, 0.056, 0.7],
       "gpt-5-6-luna": [0.056, 0.336, 0.0056, 0.07],
+      "claude-opus-5-5": [1.6, 8, 1.6, 2],
+      "claude-sonnet-5-5": [0.8, 4, 0.8, 1],
+      "claude-haiku-5-5": [0.06, 0.3, 0.06, 0.075],
       "claude-fable-5": [4, 20, 4, 5],
       "claude-opus-5": [2, 10, 2, 2.5],
       "claude-opus-4-8": [2, 10, 2, 2.5],

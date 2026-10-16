@@ -33,7 +33,12 @@ async function failure(
   assert.equal(events.length, 1, "a failure found before sending is the only event");
   const event = events[0];
   assert.equal(event?.type, "failed");
-  assert.equal(fake.calls.length, 0, "nothing was sent");
+  // A model list may have been read (GET); no turn request was sent.
+  assert.deepEqual(
+    fake.calls.filter((call) => call.method !== "GET").map((call) => call.url),
+    [],
+    "nothing was sent",
+  );
   if (event?.type !== "failed") throw new Error("unreachable");
   assert.equal(event.usage, undefined);
   return { code: event.error.code, message: event.error.message, error: event.error, events };
@@ -83,7 +88,7 @@ describe("createChatKit configuration", () => {
 });
 
 describe("runTurn failures before anything is sent", () => {
-  it("UNKNOWN_MODEL for an unconfigured provider name or a model outside the catalogue", async () => {
+  it("UNKNOWN_MODEL for an unconfigured provider name or a model outside the model list", async () => {
     const unknownProvider = await failure(turn({ provider: "nope" }));
     assert.equal(unknownProvider.code, "UNKNOWN_MODEL");
     assert.equal(unknownProvider.message, '[nope/openai/gpt-4o-mini] No provider named "nope" is configured.');
@@ -91,7 +96,7 @@ describe("runTurn failures before anything is sent", () => {
     assert.equal(unknownProvider.error.model, "openai/gpt-4o-mini");
     const unknownModel = await failure(turn({ provider: "gemini", model: "gemini-9-ultra" }));
     assert.equal(unknownModel.code, "UNKNOWN_MODEL");
-    assert.equal(unknownModel.message, '[gemini/gemini-9-ultra] Model "gemini-9-ultra" is not in the google chat catalogue.');
+    assert.match(unknownModel.message, /^\[gemini\/gemini-9-ultra\] Model "gemini-9-ultra" is not in the google model list \(its live model list could not be read: /);
     assert.equal((await failure(turn({ provider: "kie", model: "gpt-5.3-codex" }))).code, "UNKNOWN_MODEL");
   });
 

@@ -1,5 +1,5 @@
 import type { Provider } from "@earendil-works/pi-ai";
-import { createChatProvider, helperImages, toModelCost, type ChatModelDefinition, type ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
+import { createChatProvider, helperImages, singleRate, type ChatModelDefinition, type ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
 import {
   KIE_API_BASE_URL,
   KIE_CLAUDE_BASE_URL,
@@ -12,20 +12,21 @@ import { generateKieImage, type KieImageRequest, type KieImageSettings } from ".
 import { KIE_IMAGE_MODELS } from "../models.ts";
 import { kieEnvelopeStreams } from "./envelope-fetch.ts";
 
-export type { ChatModelDefinition, ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
+export type { ChatModelDefinition, ChatProtocol, LargePromptRates, ModelRate, RatePeriod, TokenRates } from "@hk01/pi-ai-extra-internal/pi-ai";
 
 /*
  * Rates as of 2026-10-16, source: https://kie.ai/pricing, read from
  * `POST https://api.kie.ai/client/v1/model-pricing/page` with
  * `{"pageNum":1,"pageSize":100,"interfaceType":"chat"}`. KIE prices chat in credits per
- * 1M tokens; 1 credit = $0.005 (the same listing's `usdPrice`). `toModelCost` derives the cache
- * rates KIE does not publish.
+ * 1M tokens; 1 credit = $0.005 (the same listing's `usdPrice`). KIE publishes no dates, so
+ * each schedule is one period. An unpublished cache rate is left out; pricing derives it
+ * (`toModelCost`).
  */
 const USD_PER_CREDIT = 0.005;
 
-/** KIE credits per 1M tokens to USD per 1M tokens (`toModelCost` rounds the result). */
+/** KIE credits per 1M tokens to USD per 1M tokens, rounded to 6 decimal places (`170 × 0.005` is `0.85`). */
 function usd(credits: number): number {
-  return credits * USD_PER_CREDIT;
+  return Math.round(credits * USD_PER_CREDIT * 1e6) / 1e6;
 }
 
 /**
@@ -42,7 +43,7 @@ function codex(
     id,
     ...(catalogueId === undefined ? {} : { catalogueId }),
     protocol: "openai-responses",
-    cost: toModelCost({
+    rate: singleRate({
       input: usd(credits.input),
       output: usd(credits.output),
       cacheRead: usd(credits.cacheRead),
@@ -53,7 +54,7 @@ function codex(
 
 /** A Claude model on Anthropic Messages, with input and output credits per 1M tokens; KIE publishes no cache rates for Claude. */
 function claude(id: string, inputCredits: number, outputCredits: number): ChatModelDefinition {
-  return { id, protocol: "anthropic-messages", cost: toModelCost({ input: usd(inputCredits), output: usd(outputCredits) }) };
+  return { id, protocol: "anthropic-messages", rate: singleRate({ input: usd(inputCredits), output: usd(outputCredits) }) };
 }
 
 /**
@@ -62,7 +63,10 @@ function claude(id: string, inputCredits: number, outputCredits: number): ChatMo
  * offered.
  */
 const CODEX_MODELS: readonly ChatModelDefinition[] = [
+  codex("gpt-6-1-sol", { input: 120, output: 600, cacheRead: 6, cacheWrite: 150 }, "gpt-6.1-sol"),
   codex("gpt-6-astra", { input: 560, output: 2800, cacheRead: 56, cacheWrite: 700 }),
+  codex("gpt-6-sol", { input: 120, output: 600, cacheRead: 12, cacheWrite: 150 }),
+  codex("gpt-6-luna", { input: 6, output: 30, cacheRead: 0.6, cacheWrite: 7.5 }),
   codex("gpt-5-6-sol", { input: 280, output: 1680, cacheRead: 28, cacheWrite: 350 }, "gpt-5.6-sol"),
   codex("gpt-5-6-terra", { input: 112, output: 672, cacheRead: 11.2, cacheWrite: 140 }, "gpt-5.6-terra"),
   codex("gpt-5-6-luna", { input: 11.2, output: 67.2, cacheRead: 1.12, cacheWrite: 14 }, "gpt-5.6-luna"),
@@ -70,6 +74,9 @@ const CODEX_MODELS: readonly ChatModelDefinition[] = [
 
 /** Claude models on Anthropic Messages. */
 const CLAUDE_MODELS: readonly ChatModelDefinition[] = [
+  claude("claude-opus-5-5", 320, 1600),
+  claude("claude-sonnet-5-5", 160, 800),
+  claude("claude-haiku-5-5", 12, 60),
   claude("claude-fable-5", 800, 4000),
   claude("claude-opus-5", 400, 2000),
   claude("claude-opus-4-8", 400, 2000),

@@ -1,0 +1,171 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import {
+  assertModelRate,
+  buildChatModel,
+  catalogueRate,
+  estimateCostUsd,
+  modelCostAt,
+  NO_RATE_PLACEHOLDER_COST,
+  ratePeriodAt,
+  ratesForPrompt,
+  singleRate,
+  toModelCost,
+  type ModelRate,
+} from "../src/pi-ai/index.ts";
+
+/** A schedule shaped like Gemini 3.8 Flash's: every rate doubles on 2027-01-01. */
+const DOUBLING: ModelRate = {
+  periods: [
+    { input: 0.75, output: 3.75, cacheRead: 0.075 },
+    { from: "2027-01-01", input: 1.5, output: 7.5, cacheRead: 0.15 },
+  ],
+};
+
+/** A schedule shaped like Gemini 3.1 Pro's: higher rates for the whole request over 200k prompt tokens. */
+const TIERED: ModelRate = singleRate({
+  input: 2,
+  output: 12,
+  cacheRead: 0.2,
+  largePrompt: { overPromptTokens: 200_000, input: 4, output: 18, cacheRead: 0.4 },
+});
+
+describe("toModelCost", () => {
+  it("keeps every published rate", () => {
+    assert.deepEqual(toModelCost({ input: 2.8, output: 14, cacheRead: 0.28, cacheWrite: 3.5 }), {
+      input: 2.8,
+      output: 14,
+      cacheRead: 0.28,
+      cacheWrite: 3.5,
+    });
+  });
+
+  it("prices unpublished cache reads at the input rate and cache writes at 1.25 × input", () => {
+    assert.deepEqual(toModelCost({ input: 1.5, output: 7.5 }), { input: 1.5, output: 7.5, cacheRead: 1.5, cacheWrite: 1.875 });
+  });
+
+  it("fills in only the cache rate that is missing", () => {
+    assert.deepEqual(toModelCost({ input: 1, output: 5, cacheRead: 0.1 }), { input: 1, output: 5, cacheRead: 0.1, cacheWrite: 1.25 });
+    assert.deepEqual(toModelCost({ input: 1, output: 5, cacheWrite: 2 }), { input: 1, output: 5, cacheRead: 1, cacheWrite: 2 });
+  });
+
+  it("rounds every rate, including a derived cache write, to drop floating-point noise", () => {
+    // In binary floating point, 11.2 × 0.005 is 0.055999999999999994 and 1.12 × 0.005 is 0.005600000000000001.
+    assert.notEqual(11.2 * 0.005, 0.056);
+    assert.deepEqual(toModelCost({ input: 11.2 * 0.005, output: 67.2 * 0.005, cacheRead: 1.12 * 0.005, cacheWrite: 14 * 0.005 }), {
+      input: 0.056,
+      output: 0.336,
+      cacheRead: 0.0056,
+      cacheWrite: 0.07,
+    });
+    assert.deepEqual(toModelCost({ input: 11.2 * 0.005, output: 67.2 * 0.005 }), {
+      input: 0.056,
+      output: 0.336,
+      cacheRead: 0.056,
+      cacheWrite: 0.07,
+    });
+    assert.deepEqual(toModelCost({ input: 170 * 0.005, output: 855 * 0.005 }), { input: 0.85, output: 4.275, cacheRead: 0.85, cacheWrite: 1.0625 });
+  });
+});
+
+describe("rate schedules", () => {
+  it("switches to the next period at 00:00 UTC on its from day", () => {
+    assert.equal(ratePeriodAt(DOUBLING, Date.parse("2026-12-31T23:59:59.999Z"))?.input, 0.75);
+    assert.equal(ratePeriodAt(DOUBLING, Date.parse("2027-01-01T00:00:00Z"))?.input, 1.5);
+    assert.equal(ratePeriodAt(DOUBLING, new Date("2030-06-01"))?.input, 1.5);
+  });
+
+  it("uses the earliest period before the first dated one, and has no period for an empty schedule", () => {
+    const dated: ModelRate = { periods: [{ from: "2027-01-01", input: 1, output: 2 }] };
+    assert.equal(ratePeriodAt(dated, Date.parse("2026-01-01T00:00:00Z"))?.input, 1);
+    assert.equal(ratePeriodAt({ periods: [] }, Date.now()), undefined);
+  });
+
+  it("charges the large-prompt tier only for a prompt over the threshold", () => {
+    const period = TIERED.periods[0]!;
+    assert.equal(ratesForPrompt(period, 200_000).input, 2);
+    assert.equal(ratesForPrompt(period, 200_001).input, 4);
+    assert.equal(ratesForPrompt(period, undefined).input, 2);
+  });
+
+  it("feeds pi-ai's Model.cost from the period in force, with the large-prompt tier as a pi-ai tier", () => {
+    assert.deepEqual(modelCostAt(DOUBLING, Date.parse("2026-10-16T00:00:00Z")), { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0.9375 });
+    assert.deepEqual(modelCostAt(DOUBLING, Date.parse("2027-01-01T00:00:00Z")), { input: 1.5, output: 7.5, cacheRead: 0.15, cacheWrite: 1.875 });
+    assert.deepEqual(modelCostAt(TIERED, Date.now()), {
+      input: 2,
+      output: 12,
+      cacheRead: 0.2,
+      cacheWrite: 2.5,
+      tiers: [{ inputTokensAbove: 200_000, input: 4, output: 18, cacheRead: 0.4, cacheWrite: 5 }],
+    });
+    assert.equal(modelCostAt(undefined, Date.now()), NO_RATE_PLACEHOLDER_COST);
+  });
+
+  it("rejects an invalid schedule", () => {
+    const invalid = (rate: unknown) => () => assertModelRate(rate as ModelRate, "test");
+    assert.throws(invalid({ periods: [] }), /at least one period/);
+    assert.throws(invalid({ periods: [{ input: 1, output: 1 }, { input: 2, output: 2 }] }), /periods\[1\] needs a from date/);
+    assert.throws(invalid({ periods: [{ input: 1, output: 1 }, { from: "1 Jan 2027", input: 2, output: 2 }] }), /is not a YYYY-MM-DD date/);
+    assert.throws(
+      invalid({ periods: [{ from: "2027-01-01", input: 1, output: 1 }, { from: "2026-01-01", input: 2, output: 2 }] }),
+      /must be later than the period before it/,
+    );
+    assert.throws(invalid({ periods: [{ input: -1, output: 1 }] }), /input must be a non-negative number/);
+    assert.throws(invalid({ periods: [{ input: 1, output: 1, largePrompt: { overPromptTokens: 0, input: 2, output: 2 } }] }), /overPromptTokens/);
+    assert.doesNotThrow(invalid(DOUBLING));
+    assert.doesNotThrow(invalid(TIERED));
+    assert.throws(
+      () => buildChatModel("kie", "https://api.kie.ai/anthropic", { id: "claude-x", protocol: "anthropic-messages", rate: { periods: [] } }),
+      /kie chat model claude-x: invalid rate/,
+    );
+  });
+});
+
+describe("estimateCostUsd", () => {
+  const BEFORE = Date.parse("2026-12-31T12:00:00Z");
+  const AFTER = Date.parse("2027-01-01T12:00:00Z");
+
+  it("prices uncached input, cache reads and output at the rate in force at call time", () => {
+    // 1M prompt tokens of which 400k cached, and 100k answer tokens.
+    const counts = { input: 1_000_000, cacheRead: 400_000, output: 100_000 };
+    assert.equal(estimateCostUsd(DOUBLING, counts, BEFORE), 0.855); // 0.6 × 0.75 + 0.4 × 0.075 + 0.1 × 3.75
+    assert.equal(estimateCostUsd(DOUBLING, counts, AFTER), 1.71); // 0.6 × 1.5 + 0.4 × 0.15 + 0.1 × 7.5
+  });
+
+  it("prices the whole request at the large-prompt tier when the prompt is over 200k", () => {
+    assert.equal(estimateCostUsd(TIERED, { input: 200_000, output: 1_000 }, BEFORE), 0.412); // 0.2 × 2 + 0.001 × 12
+    assert.equal(estimateCostUsd(TIERED, { input: 250_000, cacheRead: 50_000, output: 1_000 }, BEFORE), 0.838); // 0.2 × 4 + 0.05 × 0.4 + 0.001 × 18
+  });
+
+  it("fills in unpublished cache rates: cache reads at input, cache writes at 1.25 × input", () => {
+    const rate = singleRate({ input: 3, output: 15 });
+    // 500 uncached × 3 + 200 read × 3 + 300 written × 3.75 + 10 out × 15, per 1M tokens.
+    assert.equal(estimateCostUsd(rate, { input: 1_000, cacheRead: 200, cacheWrite: 300, output: 10 }, BEFORE), 0.003375);
+  });
+
+  it("prices only the counts that were reported, and needs a prompt or answer count", () => {
+    assert.equal(estimateCostUsd(DOUBLING, { input: 1_000 }, BEFORE), 0.00075);
+    assert.equal(estimateCostUsd(DOUBLING, { output: 1_000 }, BEFORE), 0.00375);
+    assert.equal(estimateCostUsd(DOUBLING, { cacheRead: 1_000 }, BEFORE), undefined);
+    assert.equal(estimateCostUsd(DOUBLING, {}, BEFORE), undefined);
+    assert.equal(estimateCostUsd({ periods: [] }, { input: 1 }, BEFORE), undefined);
+  });
+});
+
+describe("catalogueRate", () => {
+  it("reads a pi-ai catalogue price as one period, a zero cache rate as unpublished and an all-zero price as no rate", () => {
+    assert.deepEqual(catalogueRate({ input: 3, output: 15, cacheRead: 0.3, cacheWrite: 0 }), { periods: [{ input: 3, output: 15, cacheRead: 0.3 }] });
+    assert.deepEqual(
+      catalogueRate({
+        input: 1.25,
+        output: 10,
+        cacheRead: 0.125,
+        cacheWrite: 0,
+        tiers: [{ inputTokensAbove: 200_000, input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0 }],
+      }),
+      { periods: [{ input: 1.25, output: 10, cacheRead: 0.125, largePrompt: { overPromptTokens: 200_000, input: 2.5, output: 15, cacheRead: 0.25 } }] },
+    );
+    assert.equal(catalogueRate({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }), undefined);
+    assert.equal(catalogueRate(undefined), undefined);
+  });
+});

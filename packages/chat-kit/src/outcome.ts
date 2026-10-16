@@ -1,4 +1,5 @@
 import type { AssistantMessage, AssistantMessageEvent } from "@earendil-works/pi-ai";
+import { withCost } from "./cost.ts";
 import { errorText, statusFromMessage, TurnFailure } from "./errors.ts";
 import type { PreparedTurn, TurnTarget } from "./prepare.ts";
 import type { ChatTurnError, ChatTurnErrorCode, ChatTurnEvent, ChatUsage } from "./types.ts";
@@ -28,7 +29,7 @@ export function classifyOutcome(run: TurnRun, final: FinalStreamEvent): ChatTurn
   const { turn, observer, state } = run;
   // Read from the provider's raw usage, not pi-ai's `message.usage`, which reports an unreported
   // count (or no usage at all) as zero. Usage goes on any final event only when it was reported.
-  const usage = observer.usage();
+  const usage = withCost(observer.usage(), turn.pricing);
   if (state.transformFailure) return failed(turn.target, state.transformFailure.code, state.transformFailure.message);
   const message = final.type === "done" ? final.message : final.error;
   if (final.type === "error" && (message.stopReason === "aborted" || run.signal.aborted)) {

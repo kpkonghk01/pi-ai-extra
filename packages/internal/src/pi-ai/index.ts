@@ -7,6 +7,22 @@ export {
   type ChatProtocol,
   type ChatProviderInput,
 } from "./chat-provider.ts";
-export { toModelCost, type PublishedRates } from "./cost.ts";
+export {
+  assertModelRate,
+  catalogueRate,
+  estimateCostUsd,
+  modelCostAt,
+  NO_RATE_PLACEHOLDER_COST,
+  ratePeriodAt,
+  ratesForPrompt,
+  roundUsd,
+  singleRate,
+  toModelCost,
+  type LargePromptRates,
+  type ModelRate,
+  type PricedCounts,
+  type RatePeriod,
+  type TokenRates,
+} from "./rates.ts";
 export { helperImages, type HelperImages, type HelperImagesInput } from "./images-provider.ts";
 export { toPiAiUsage } from "./usage.ts";

@@ -1,10 +1,12 @@
 import type { ModelsSimpleStreamOptions } from "@earendil-works/pi-ai";
+import { untilAborted } from "./abort.ts";
 import { errorText, TurnFailure } from "./errors.ts";
 import { parseKitOptions } from "./input.ts";
+import { modelInfo } from "./models/info.ts";
 import { classifyOutcome, failed, failedFrom, type TurnRun, type TurnState } from "./outcome.ts";
 import { prepareTurn, type PreparedTurn, type TurnTarget } from "./prepare.ts";
 import { createProviderRegistry, type RegisteredProvider } from "./registry.ts";
-import type { ChatKit, ChatKitOptions, ChatTurnEvent, ChatTurnInput } from "./types.ts";
+import type { ChatKit, ChatKitOptions, ChatProviderModels, ChatTurnEvent, ChatTurnInput } from "./types.ts";
 
 /**
  * pi-ai retries only the initial request, before the response stream starts (408, 409, 429, 5xx
@@ -20,10 +22,34 @@ const MAX_REQUEST_RETRIES = 2;
  */
 export function createChatKit(options: ChatKitOptions): ChatKit {
   const { providers, fetch } = parseKitOptions(options);
-  const registry = createProviderRegistry(providers);
+  const registry = createProviderRegistry(providers, { fetch });
   return {
     runTurn: (input, turnOptions) => runTurn(registry, fetch, input, turnOptions?.signal),
+    listModels: (listOptions) => listModels(registry, listOptions?.signal),
   };
+}
+
+/** Every provider's list, each read on its own: one that fails becomes an `error` entry. */
+async function listModels(registry: ReadonlyMap<string, RegisteredProvider>, signal: AbortSignal | undefined): Promise<ChatProviderModels[]> {
+  const listed = Promise.all(
+    [...registry.values()].map(async (provider): Promise<ChatProviderModels> => {
+      try {
+        const snapshot = await provider.models.read();
+        const now = Date.now();
+        return {
+          provider: provider.name,
+          kind: provider.kind,
+          source: snapshot.source,
+          ...(snapshot.fetchedAt === undefined ? {} : { fetchedAt: new Date(snapshot.fetchedAt).toISOString() }),
+          ...(snapshot.refreshError === undefined ? {} : { refreshError: snapshot.refreshError }),
+          models: snapshot.models.map((model) => modelInfo(model, provider, now)),
+        };
+      } catch (error) {
+        return { provider: provider.name, kind: provider.kind, error: errorText(error) };
+      }
+    }),
+  );
+  return untilAborted(listed, signal, () => signal?.reason);
 }
 
 async function* runTurn(

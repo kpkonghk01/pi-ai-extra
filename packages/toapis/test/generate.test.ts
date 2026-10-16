@@ -232,7 +232,7 @@ describe("ToAPIs catalogue and pi-ai adapters", () => {
     for (const model of createToapisProvider({ apiKey: "toapis-key" }).getModels()) {
       assert.ok(model.cost.input > 0 && model.cost.output > 0, model.id);
     }
-    assert.equal(TOAPIS_CHAT_MODELS.every((model) => model.cost !== undefined), true);
+    assert.equal(TOAPIS_CHAT_MODELS.every((model) => model.rate !== undefined), true);
   });
 
   it("still serves an unpriced Codex id that the consumer passes in models", () => {

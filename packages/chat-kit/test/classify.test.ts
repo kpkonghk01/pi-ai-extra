@@ -238,6 +238,24 @@ describe("OpenAI Responses block classification", () => {
     assert.deepEqual(observer.usage(), { raw: { credits_consumed: 0.48 } });
   });
 
+  it("finds KIE's credits_consumed next to type, inside a usage object, or on the response, and keeps it at the top of raw usage", () => {
+    const usage = { input_tokens: 0, output_tokens: 5 };
+    const placements: [string, Record<string, unknown>, Record<string, unknown>][] = [
+      // KIE's documented streaming placement: on the response.completed event, next to type.
+      ["next to type", { response: { id: "r", usage }, credits_consumed: 0.01 }, { usage, credits_consumed: 0.01 }],
+      ["inside the response's usage", { response: { id: "r", usage: { ...usage, credits_consumed: 0.01 } } }, { usage: { ...usage, credits_consumed: 0.01 }, credits_consumed: 0.01 }],
+      ["inside a usage object next to type", { response: { id: "r", usage }, usage: { credits_consumed: 0.01 } }, { usage, credits_consumed: 0.01 }],
+      ["on the response", { response: { id: "r", usage, credits_consumed: 0.01 } }, { usage, credits_consumed: 0.01 }],
+    ];
+    for (const [where, terminal, raw] of placements) {
+      const observer = createOpenAIResponsesObserver();
+      observer.observe({ type: "response.created", response: { id: "r", usage: null } });
+      observer.observe({ type: "response.output_text.delta", delta: "OK" });
+      observer.observe({ type: "response.completed", ...terminal });
+      assert.deepEqual(observer.usage(), { inputTokens: 0, outputTokens: 5, raw }, where);
+    }
+  });
+
   it("reports no usage for a usage object with no count and no credits", () => {
     const observer = createOpenAIResponsesObserver();
     observer.observe({ type: "response.completed", response: { id: "r", usage: {} } });

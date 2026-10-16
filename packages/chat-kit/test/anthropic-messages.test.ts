@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { createFakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import { createChatKit } from "../src/index.ts";
+import { anthropicSchemaUnsupported } from "../src/wire/anthropic-messages.ts";
 import { anthropicEvents, collect, jsonBody, lastEvent, sseResponse, testDocument, textOf, turn } from "./helpers.ts";
 
 // The Anthropic SDK posts to the beta Messages endpoint (`/v1/messages?beta=true`).
@@ -15,6 +17,7 @@ function kit(routes: FakeRoute[]) {
     providers: [
       { name: "router", provider: "openrouter", apiKey: "or-key" },
       { name: "kie", provider: "kie", apiKey: "kie-key" },
+      { name: "toapis", provider: "toapis", apiKey: "toapis-key" },
     ],
     fetch: fake.fetch,
   });
@@ -54,6 +57,10 @@ describe("runTurn on Anthropic Messages", () => {
         outputTokens: 9,
         cachedInputTokens: 5,
         cacheWriteTokens: 7,
+        // OpenRouter reported no cost: estimated from the catalogue rate (3 in, 15 out, 0.3 cache read,
+        // 3.75 cache write per 1M): 20 × 3 + 5 × 0.3 + 7 × 3.75 + 9 × 15 = 222.75 per 1M tokens.
+        costUsd: 0.00022275,
+        costSource: "estimated",
         raw: { usage: { input_tokens: 20, output_tokens: 9, cache_read_input_tokens: 5, cache_creation_input_tokens: 7 } },
       },
     });
@@ -190,7 +197,7 @@ describe("runTurn on Anthropic Messages", () => {
     ]);
     assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "claude-sonnet-4-6" })))), {
       type: "done",
-      usage: { inputTokens: 20, raw: { usage: { input_tokens: 20 }, credits_consumed: 0.15 } },
+      usage: { inputTokens: 20, costUsd: 0.00075, costSource: "provider", raw: { usage: { input_tokens: 20 }, credits_consumed: 0.15 } },
     });
   });
 
@@ -269,13 +276,14 @@ describe("runTurn on Anthropic Messages", () => {
     assert.ok(!("plugins" in body), "OpenRouter's plugins never go to KIE");
   });
 
-  it("rejects a response schema with reasoning, or on a model that always thinks, before sending anything", async () => {
+  it("rejects a response schema with reasoning on ToAPIs, which has no native structured output, before sending anything", async () => {
     const { chat, fake } = kit([]);
     const withReasoning = lastEvent(
       await collect(
         chat.runTurn(
           turn({
-            model: "anthropic/claude-sonnet-4.6",
+            provider: "toapis",
+            model: "claude-sonnet-4-6",
             responseSchema: { name: "answer", schema: SCHEMA },
             settings: { reasoning: "high" },
           }),
@@ -284,25 +292,74 @@ describe("runTurn on Anthropic Messages", () => {
     );
     assert.equal(withReasoning.type === "failed" && withReasoning.error.code, "UNSUPPORTED");
     assert.match(withReasoning.type === "failed" ? withReasoning.error.message : "", /remove settings\.reasoning/);
-    const alwaysThinks = lastEvent(
-      await collect(chat.runTurn(turn({ provider: "kie", model: "claude-opus-5", responseSchema: { name: "answer", schema: SCHEMA } }))),
-    );
-    assert.equal(alwaysThinks.type === "failed" && alwaysThinks.error.code, "UNSUPPORTED");
-    assert.match(alwaysThinks.type === "failed" ? alwaysThinks.error.message : "", /always thinks/);
     assert.equal(fake.calls.length, 0);
+    // ToAPIs offers no always-thinking Claude by default; the rule is the wire's.
+    const alwaysThinking = { id: "claude-opus-5-5", api: "anthropic-messages" } as Model<Api>;
+    const request = { responseSchema: { name: "answer", schema: SCHEMA }, settings: {} };
+    assert.match(anthropicSchemaUnsupported(alwaysThinking, { ...request, nativeStructuredOutput: false }) ?? "", /always thinks/);
+    assert.equal(anthropicSchemaUnsupported(alwaysThinking, { ...request, nativeStructuredOutput: true }), undefined);
   });
 
-  it("rejects a response schema on OpenRouter's anthropic/claude-opus-5, whose catalogue entry lets thinking off", async () => {
-    const { chat, fake } = kit([]);
+  it("sends native structured output on KIE for the always-thinking claude-opus-5-5 and for a turn with reasoning", async () => {
+    // Verified live on 2026-10-16: KIE claude-opus-5-5 with thinking answered valid JSON under output_config.format.
+    const respond = () => sseResponse(anthropicEvents({ blocks: [{ type: "text", text: '{"title":"Hi"}' }], stopReason: "end_turn" }));
+    const { chat, fake } = kit([{ method: "POST", url: KIE_MESSAGES_URL, respond }]);
+    const events = await collect(chat.runTurn(turn({ provider: "kie", model: "claude-opus-5-5", responseSchema: { name: "answer", schema: SCHEMA } })));
+    assert.equal(textOf(events), '{"title":"Hi"}');
+    assert.equal(lastEvent(events).type, "done");
+    const alwaysThinks = jsonBody(fake.calls[0]?.body);
+    assert.deepEqual((alwaysThinks.output_config as Record<string, unknown>).format, {
+      type: "json_schema",
+      schema: { ...SCHEMA, additionalProperties: false },
+    });
+    assert.equal(alwaysThinks.tools, undefined);
+    assert.equal(alwaysThinks.tool_choice, undefined);
+    await collect(
+      chat.runTurn(
+        turn({ provider: "kie", model: "claude-sonnet-4-6", responseSchema: { name: "answer", schema: SCHEMA }, settings: { reasoning: "high" } }),
+      ),
+    );
+    const withReasoning = jsonBody(fake.calls[1]?.body);
+    assert.ok(isNativeFormat(withReasoning.output_config));
+    assert.equal(withReasoning.tool_choice, undefined);
+  });
+
+  it("sends native structured output for OpenRouter's always-thinking anthropic/claude-opus-5 and streams the JSON text", async () => {
+    const { chat, fake } = kit([
+      {
+        method: "POST",
+        url: OPENROUTER_MESSAGES_URL,
+        respond: () => sseResponse(anthropicEvents({ blocks: [{ type: "text", text: '{"title":"Hi"}' }], stopReason: "end_turn" })),
+      },
+    ]);
     const events = await collect(
       chat.runTurn(turn({ model: "anthropic/claude-opus-5", responseSchema: { name: "answer", schema: SCHEMA } })),
     );
-    assert.equal(events.length, 1);
-    const last = lastEvent(events);
-    assert.equal(last.type, "failed");
-    if (last.type !== "failed") return;
-    assert.equal(last.error.code, "UNSUPPORTED");
-    assert.match(last.error.message, /^\[router\/anthropic\/claude-opus-5\] .*always thinks/);
-    assert.equal(fake.calls.length, 0, "nothing is sent");
+    assert.equal(textOf(events), '{"title":"Hi"}');
+    assert.equal(lastEvent(events).type, "done");
+    const body = jsonBody(fake.calls[0]?.body);
+    assert.deepEqual((body.output_config as Record<string, unknown>).format, {
+      type: "json_schema",
+      schema: { ...SCHEMA, additionalProperties: false },
+    });
+    assert.equal(body.tools, undefined);
+    assert.equal(body.tool_choice, undefined);
+  });
+
+  it("sends native structured output on OpenRouter when reasoning is requested on a model that can stop thinking", async () => {
+    const respond = () => sseResponse(anthropicEvents({ blocks: [{ type: "text", text: "{}" }], stopReason: "end_turn" }));
+    const { chat, fake } = kit([{ method: "POST", url: OPENROUTER_MESSAGES_URL, respond }]);
+    await collect(
+      chat.runTurn(
+        turn({ model: "anthropic/claude-sonnet-4.6", responseSchema: { name: "answer", schema: SCHEMA }, settings: { reasoning: "high" } }),
+      ),
+    );
+    const thinking = jsonBody(fake.calls[0]?.body);
+    assert.ok(isNativeFormat(thinking.output_config));
+    assert.equal(thinking.tool_choice, undefined);
   });
 });
+
+function isNativeFormat(outputConfig: unknown): boolean {
+  return typeof outputConfig === "object" && outputConfig !== null && "format" in outputConfig;
+}

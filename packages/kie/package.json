@@ -1,6 +1,6 @@
 {
   "name": "@hk01/pi-ai-extra-kie",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "KIE image helper (Grok Imagine, GPT Image 2, Nano Banana 2) and pi-ai chat/image adapters",
   "license": "UNLICENSED",
   "type": "module",

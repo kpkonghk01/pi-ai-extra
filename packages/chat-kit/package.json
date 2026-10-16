@@ -1,6 +1,6 @@
 {
   "name": "@hk01/pi-ai-extra-chat-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Server-side chat kit on pi-ai: runs one chat turn the same way on Gemini, OpenRouter, KIE and ToAPIs (documents, response schema, safety blocks, usage)",
   "license": "UNLICENSED",
   "type": "module",
@@ -34,9 +34,9 @@
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "1.2.0",
-    "@hk01/pi-ai-extra-google": ">=0.4.0 <1.0.0",
-    "@hk01/pi-ai-extra-kie": ">=0.3.0 <1.0.0",
-    "@hk01/pi-ai-extra-toapis": ">=0.3.0 <1.0.0"
+    "@hk01/pi-ai-extra-google": ">=0.5.0 <1.0.0",
+    "@hk01/pi-ai-extra-kie": ">=0.4.0 <1.0.0",
+    "@hk01/pi-ai-extra-toapis": ">=0.4.0 <1.0.0"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "1.2.0",

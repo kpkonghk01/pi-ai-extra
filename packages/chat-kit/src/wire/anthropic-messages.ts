@@ -3,9 +3,10 @@ import { TurnFailure } from "../errors.ts";
 import { isRecord } from "../guards.ts";
 import type { ChatUsage } from "../types.ts";
 import { createUsageCapture, tokenCount, toChatUsage } from "../usage.ts";
+import { sanitizeSchemaForAnthropic } from "./anthropic-schema.ts";
 import { encodeDocument, placeByUrl, replaceDocumentMarker, textOfType, type DocumentEncoder } from "./document-parts.ts";
 import { withFileParser } from "./openrouter.ts";
-import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
+import type { BlockedTurn, PayloadPlan, SchemaRequest, StreamObserver, WireApi } from "./types.ts";
 
 type AnthropicBlock = Record<string, unknown>;
 
@@ -48,7 +49,9 @@ function thinkingEnabled(thinking: unknown): boolean {
  * marker block (`document` for PDFs, `image` for images), with one more cache breakpoint on the
  * last document block so the prefix up to the end of the documents is cached across turns. That
  * makes three breakpoints with pi-ai's two (system prompt, last user message), within Anthropic's
- * four. The response schema is a forced call of a single tool whose input schema is the schema.
+ * four. The response schema is a forced call of a single tool whose input schema is the schema;
+ * when the model thinks and the provider takes native structured output, it is
+ * `output_config.format` instead (beside pi-ai's own `output_config`, such as its effort).
  *
  * On OpenRouter the file-parser plugin is pinned to `native`, as on its Completions route: its
  * Anthropic-compatible `/v1/messages` takes the same `plugins` array
@@ -65,7 +68,14 @@ export function transformAnthropicPayload(payload: unknown, plan: PayloadPlan): 
     if (cacheControl !== undefined && last >= 0) replacement[last] = { ...replacement[last], cache_control: cacheControl };
     next.messages = replaceDocumentMarker(payload.messages, plan.marker, replacement, { partsKey: "content", textOf: textOfType("text") });
   }
-  if (plan.responseSchema) {
+  if (plan.responseSchema && plan.nativeStructuredOutput) {
+    // Native structured output constrains the answer text only; the model still thinks freely.
+    // https://platform.claude.com/docs/en/build-with-claude/structured-outputs
+    next.output_config = {
+      ...(isRecord(payload.output_config) ? payload.output_config : {}),
+      format: { type: "json_schema", schema: sanitizeSchemaForAnthropic(plan.responseSchema.schema) },
+    };
+  } else if (plan.responseSchema) {
     // Anthropic rejects a forced tool call while thinking is on; `unsupported()` catches the
     // known cases before any document is loaded, this guards the payload itself.
     if (thinkingEnabled(payload.thinking)) {
@@ -102,26 +112,36 @@ export function isAlwaysThinkingClaude(modelId: string): boolean {
 }
 
 /**
- * A forced tool call is incompatible with thinking. That rules out a requested reasoning level,
- * and models that always think: by catalogue metadata, pi-ai's managed-effort models
+ * Whether the model always thinks: by catalogue metadata, pi-ai's managed-effort models
  * (`supportsMidConvoEffort`) and models whose thinking cannot be turned off
  * (`thinkingLevelMap.off === null`); by model id, the always-thinking Claude families, which a
  * provider's catalogue may not mark.
  */
-export function anthropicSchemaUnsupported(
-  model: Model<Api>,
-  request: { responseSchema: unknown; settings: { reasoning?: unknown } },
-): string | undefined {
-  if (!request.responseSchema) return undefined;
-  if (request.settings.reasoning !== undefined) {
-    return "a response schema on Anthropic Messages is a forced tool call, which Anthropic does not allow with thinking; remove settings.reasoning.";
-  }
+function alwaysThinks(model: Model<Api>): boolean {
   const compat = (model as { compat?: { supportsMidConvoEffort?: boolean } }).compat;
-  const alwaysThinks = compat?.supportsMidConvoEffort === true || model.thinkingLevelMap?.off === null || isAlwaysThinkingClaude(model.id);
-  if (alwaysThinks) {
-    return "a response schema on Anthropic Messages is a forced tool call, which Anthropic does not allow with thinking, and this model always thinks.";
+  return compat?.supportsMidConvoEffort === true || model.thinkingLevelMap?.off === null || isAlwaysThinkingClaude(model.id);
+}
+
+/**
+ * A response schema is a forced tool call, which Anthropic does not allow while the model
+ * thinks: with a requested reasoning level, or on a model that always thinks. There it goes as
+ * native structured output instead, where the provider takes it (`nativeStructuredOutput`).
+ */
+export function anthropicSchemaUnsupported(model: Model<Api>, request: SchemaRequest): string | undefined {
+  if (!request.responseSchema || request.nativeStructuredOutput) return undefined;
+  if (request.settings.reasoning !== undefined) {
+    return "a response schema on Anthropic Messages is a forced tool call, which Anthropic does not allow with thinking, and this provider does not take native structured output yet; remove settings.reasoning.";
+  }
+  if (alwaysThinks(model)) {
+    return "a response schema on Anthropic Messages is a forced tool call, which Anthropic does not allow with thinking, and this model always thinks; this provider does not take native structured output yet.";
   }
   return undefined;
+}
+
+/** A forced tool call unless the model thinks during the turn and the provider takes native structured output. */
+function anthropicSchemaAsToolCall(model: Model<Api>, request: SchemaRequest): boolean {
+  const thinks = request.settings.reasoning !== undefined || alwaysThinks(model);
+  return !(thinks && request.nativeStructuredOutput);
 }
 
 /**
@@ -177,7 +197,7 @@ export function createAnthropicObserver(): StreamObserver {
 export const ANTHROPIC_MESSAGES_WIRE_API: WireApi = {
   api: "anthropic-messages",
   acceptsFetch: true,
-  schemaAsToolCall: true,
+  schemaAsToolCall: anthropicSchemaAsToolCall,
   placeDocument: placeByUrl,
   unsupported: anthropicSchemaUnsupported,
   transform: transformAnthropicPayload,
