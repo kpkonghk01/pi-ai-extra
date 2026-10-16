@@ -34,6 +34,14 @@ The consumer-side package that turns a consumer application's model options into
 
 _Avoid_: Multi-Provider Module, 統一 Provider Module (the earlier browser-module plan in Jira)
 
+## Chat kit
+
+The consumer-side server package that runs one chat turn on the provider and model the consumer application chose. It gives every provider the same turn features — reference documents, a required response shape, safety-block reporting and usage — so the consumer never writes per-provider code. Like the image kit, it never chooses a provider for the user and never falls back.
+
+## Model rate
+
+A provider's published per-token price for one chat model: input, output and cached-input tokens. Applied to a request's reported token counts, it gives an estimated cost when the provider reports no cost of its own. Unlike a cost estimate, it is published provider data, not an application's own price table. A rate may be scheduled to change on an announced date; a request is priced at the rate in force when it was made. A model whose rate is not published has no rate — never a zero rate.
+
 ## Model option
 
 One image model family that a consumer application offers to its users, under its canonical model key and an optional app label. It maps to exactly one provider and either one unified model operation or a pair of text-to-image and image-to-image operations of that family.
