@@ -1,8 +1,8 @@
+// pi-ai's own list of thinking levels, from which its `ThinkingLevel` type is derived. It is
+// exported only from this subpath, not from the package root.
+import { THINKING_LEVELS } from "@earendil-works/pi-ai/providers/model-schema";
 import { z } from "zod";
-import type { ChatKitOptions, ChatProviderConfig, ChatTurnInput } from "./types.ts";
-
-const PROVIDER_KINDS = ["google", "openrouter", "kie", "toapis"] as const;
-const THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+import { PROVIDER_KINDS, type ChatKitOptions, type ChatProviderConfig, type ChatTurnInput } from "./types.ts";
 
 const nonEmpty = z.string().refine((value) => value.trim().length > 0, "must not be empty");
 

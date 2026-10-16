@@ -15,16 +15,34 @@ import { createKieProvider } from "@hk01/pi-ai-extra-kie/pi-ai";
 import { createToapisProvider } from "@hk01/pi-ai-extra-toapis/pi-ai";
 import type { ChatProviderConfig, ChatProviderKind } from "./types.ts";
 
-/**
- * Which providers may take which documents. Plain-text documents are sent as text blocks, so
- * every provider takes them. PDFs and images use each API's native file input: KIE and ToAPIs
- * do not document theirs, so it stays off until a live smoke test enables it.
- */
-export const DOCUMENT_SUPPORT: Readonly<Record<ChatProviderKind, { text: boolean; files: boolean }>> = {
-  google: { text: true, files: true },
-  openrouter: { text: true, files: true },
-  kie: { text: true, files: false },
-  toapis: { text: true, files: false },
+/** What differs between provider kinds. */
+interface ProviderKindSpec {
+  /**
+   * Whether the provider takes PDF and image documents, through each API's native file input.
+   * Plain-text documents are sent as text blocks, so every provider takes those. KIE and ToAPIs
+   * do not document their file input, so it stays off until a live smoke test enables it.
+   */
+  readonly fileDocuments: boolean;
+  /** The pi-ai provider for an explicit key; `root` (no trailing slash) replaces its default API root. */
+  create(apiKey: string, root: string | undefined): Provider;
+}
+
+/** One entry per `ChatProviderKind`; the record type makes a missing kind a type error. */
+const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> = {
+  google: {
+    fileDocuments: true,
+    create: (apiKey, root) => createGoogleProvider({ apiKey, ...(root ? { baseUrl: root } : {}) }),
+  },
+  openrouter: { fileDocuments: true, create: explicitOpenRouterProvider },
+  kie: {
+    fileDocuments: false,
+    create: (apiKey, root) =>
+      createKieProvider({ apiKey, ...(root ? { responsesBaseUrl: `${root}/openai/v1`, claudeBaseUrl: `${root}/anthropic` } : {}) }),
+  },
+  toapis: {
+    fileDocuments: false,
+    create: (apiKey, root) => createToapisProvider({ apiKey, ...(root ? { baseUrl: root } : {}) }),
+  },
 };
 
 /** An auth context with no environment and no files, so pi-ai never finds an ambient key. */
@@ -37,10 +55,10 @@ const OPENROUTER_API_ROOT = "https://openrouter.ai/api";
 
 /** One configured provider, under the consumer's name, in its own pi-ai `Models` collection. */
 export interface RegisteredProvider {
-  readonly name: string;
   readonly kind: ChatProviderKind;
   readonly grounding: boolean;
-  readonly documents: { text: boolean; files: boolean };
+  /** See `ProviderKindSpec.fileDocuments`. */
+  readonly fileDocuments: boolean;
   /**
    * The chat model with this id, or undefined. Today this is the provider's pi-ai catalogue
    * (static, frozen at release). DATA-4568 resolves it against the live model list here
@@ -58,36 +76,19 @@ export interface RegisteredProvider {
 export function createProviderRegistry(configs: readonly ChatProviderConfig[]): ReadonlyMap<string, RegisteredProvider> {
   const registry = new Map<string, RegisteredProvider>();
   for (const config of configs) {
-    const provider = buildProvider(config);
+    const spec = PROVIDER_KIND_SPECS[config.provider];
+    const provider = spec.create(config.apiKey, config.baseUrl?.replace(/\/+$/, ""));
     const models = createModels({ authContext: NO_AMBIENT_AUTH });
     models.setProvider(provider);
     registry.set(config.name, {
-      name: config.name,
       kind: config.provider,
       grounding: config.grounding === true,
-      documents: DOCUMENT_SUPPORT[config.provider],
+      fileDocuments: spec.fileDocuments,
       findModel: (id) => models.getModel(provider.id, id),
       streamSimple: (model, context, options) => models.streamSimple(model, context, options),
     });
   }
   return registry;
-}
-
-function buildProvider(config: ChatProviderConfig): Provider {
-  const root = config.baseUrl?.replace(/\/+$/, "");
-  switch (config.provider) {
-    case "google":
-      return createGoogleProvider({ apiKey: config.apiKey, ...(root ? { baseUrl: root } : {}) });
-    case "openrouter":
-      return explicitOpenRouterProvider(config.apiKey, root);
-    case "kie":
-      return createKieProvider({
-        apiKey: config.apiKey,
-        ...(root ? { responsesBaseUrl: `${root}/openai/v1`, claudeBaseUrl: `${root}/anthropic` } : {}),
-      });
-    case "toapis":
-      return createToapisProvider({ apiKey: config.apiKey, ...(root ? { baseUrl: root } : {}) });
-  }
 }
 
 /**

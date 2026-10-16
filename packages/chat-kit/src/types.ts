@@ -1,7 +1,13 @@
 import type { ThinkingLevel } from "@earendil-works/pi-ai";
 
+/**
+ * The providers the kit can run a turn on. This is the only list of them: `ChatProviderKind`, the
+ * config validation and the registry's per-provider table all derive from it.
+ */
+export const PROVIDER_KINDS = ["google", "openrouter", "kie", "toapis"] as const;
+
 /** The providers the kit can run a turn on. */
-export type ChatProviderKind = "google" | "openrouter" | "kie" | "toapis";
+export type ChatProviderKind = (typeof PROVIDER_KINDS)[number];
 
 /** One provider the consumer application offers, registered with its own explicit key. */
 export interface ChatProviderConfig {

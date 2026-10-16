@@ -1,7 +1,8 @@
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { assertMarkerReplaced, assertNoMarker, renderTextDocument, spliceMarker, type PreparedDocument } from "../documents.ts";
 import { TurnFailure } from "../errors.ts";
-import { billingFields, isRecord } from "../usage.ts";
+import { isRecord } from "../guards.ts";
+import { billingFields } from "../usage.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
 type AnthropicBlock = Record<string, unknown>;

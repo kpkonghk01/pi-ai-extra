@@ -1,7 +1,7 @@
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { assertMarkerReplaced, renderTextDocument, spliceMarker, type PreparedDocument } from "../documents.ts";
+import { isRecord } from "../guards.ts";
 import type { ChatDocument } from "../types.ts";
-import { isRecord } from "../usage.ts";
 import { sanitizeSchemaForGemini } from "./gemini-schema.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 

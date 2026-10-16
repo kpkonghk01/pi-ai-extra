@@ -17,10 +17,6 @@ export function toChatUsage(usage: Usage, raw: unknown): ChatUsage {
   };
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 const BILLING_FIELD = /cost|credit/i;
 
 /**

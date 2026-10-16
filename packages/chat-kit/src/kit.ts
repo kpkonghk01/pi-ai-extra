@@ -147,7 +147,7 @@ function checkDocument(document: ChatDocument, provider: RegisteredProvider, mod
     );
   }
   if (kind === "text") return kind;
-  if (!provider.documents.files) {
+  if (!provider.fileDocuments) {
     throw new TurnFailure(
       "UNSUPPORTED",
       `Provider ${provider.kind} does not take PDF or image documents yet (its file input is undocumented), so ${JSON.stringify(document.name)} cannot be sent.`,
