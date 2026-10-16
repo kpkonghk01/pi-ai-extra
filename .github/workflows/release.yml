@@ -7,6 +7,7 @@ on:
       - "toapis-v*"
       - "google-v*"
       - "image-kit-v*"
+      - "chat-kit-v*"
 
 permissions:
   contents: write
@@ -57,6 +58,11 @@ jobs:
               echo "directory=packages/image-kit" >> "$GITHUB_OUTPUT"
               echo "version=${GITHUB_REF_NAME#image-kit-v}" >> "$GITHUB_OUTPUT"
               ;;
+            chat-kit-v*)
+              echo "name=@hk01/pi-ai-extra-chat-kit" >> "$GITHUB_OUTPUT"
+              echo "directory=packages/chat-kit" >> "$GITHUB_OUTPUT"
+              echo "version=${GITHUB_REF_NAME#chat-kit-v}" >> "$GITHUB_OUTPUT"
+              ;;
             *)
               echo "Unsupported release tag: ${GITHUB_REF_NAME}" >&2
               exit 1
@@ -70,7 +76,7 @@ jobs:
         run: |
           node --input-type=module -e 'import { readFile } from "node:fs/promises"; const manifest = JSON.parse(await readFile(`${process.env.PACKAGE_DIRECTORY}/package.json`, "utf8")); if (manifest.version !== process.env.RELEASE_VERSION) { throw new Error(`Tag version ${process.env.RELEASE_VERSION} does not match ${manifest.name}@${manifest.version}`); }'
 
-      # Build before test: the image kit's tests load the provider packages' built entries.
+      # Build before test: the image and chat kits' tests load the provider packages' built entries.
       - name: Check, build and test release package
         env:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
@@ -87,8 +93,8 @@ jobs:
           mkdir -p release-artifacts
           pnpm --filter "$PACKAGE_NAME" pack --pack-destination ./release-artifacts
           ls -l release-artifacts
-          # The image kit's peers are not on a registry: pack them for the smoke test only (not released).
-          if [ "$PACKAGE_NAME" = "@hk01/pi-ai-extra-image-kit" ]; then
+          # The kits' provider peers are not on a registry: pack them for the smoke test only (not released).
+          if [ "$PACKAGE_NAME" = "@hk01/pi-ai-extra-image-kit" ] || [ "$PACKAGE_NAME" = "@hk01/pi-ai-extra-chat-kit" ]; then
             mkdir -p smoke-peers
             for peer in google kie toapis; do
               pnpm --filter "@hk01/pi-ai-extra-$peer" pack --pack-destination ./smoke-peers
@@ -96,7 +102,8 @@ jobs:
             ls -l smoke-peers
           fi
 
-      # Installs the packed artifact exactly as a consumer would, then loads it from CommonJS and ESM.
+      # Installs the packed artifact exactly as a consumer would, then loads it from CommonJS and ESM
+      # (the chat kit, like pi-ai, is ESM-only).
       - name: Smoke-test packed artifact
         env:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
@@ -110,6 +117,11 @@ jobs:
             npm install --no-audit --no-fund "$tarball" "$GITHUB_WORKSPACE"/smoke-peers/*.tgz react@19
             node -e 'const kit = require(process.env.PACKAGE_NAME); const server = require(`${process.env.PACKAGE_NAME}/server`); const react = require(`${process.env.PACKAGE_NAME}/react`); if (typeof kit.modelIssue !== "function" || typeof server.createImageClient !== "function" || typeof react.ImageModelSelector !== "function") throw new Error("CommonJS entries are broken");'
             node --input-type=module -e 'const name = process.env.PACKAGE_NAME; const kit = await import(name); const server = await import(`${name}/server`); const browser = await import(`${name}/browser`); const react = await import(`${name}/react`); const models = server.createImageClient({ app: "smoke", policy: { scopes: { smoke: {} } }, env: {} }).forScope("smoke").listModels(); if (typeof kit.modelIssue !== "function" || typeof browser.postImageRequest !== "function" || typeof react.ErrorPanel !== "function" || models[0]?.id !== "google:gemini-nano-banana-2.1" || models[0]?.unavailableReason !== "伺服器未設定 GEMINI_API_KEY") throw new Error("ESM entries are broken");'
+          elif [ "$PACKAGE_NAME" = "@hk01/pi-ai-extra-chat-kit" ]; then
+            npm install --no-audit --no-fund "$tarball" "$GITHUB_WORKSPACE"/smoke-peers/*.tgz @earendil-works/pi-ai@1.2.0
+            node -e 'try { require(process.env.PACKAGE_NAME); } catch (error) { if (error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED") process.exit(0); throw error; } throw new Error("the chat kit must not load from CommonJS");'
+            # Registers every provider kind and runs one offline turn: an unknown model fails before any request.
+            node --input-type=module -e 'const { createChatKit } = await import(process.env.PACKAGE_NAME); const chat = createChatKit({ providers: ["google", "openrouter", "kie", "toapis"].map((provider) => ({ name: provider, provider, apiKey: "smoke" })) }); const events = []; for await (const event of chat.runTurn({ provider: "kie", model: "no-such-model", systemPrompt: "", documents: [], history: [], message: "hi" })) events.push(event); if (events.length !== 1 || events[0].type !== "failed" || events[0].error.code !== "UNKNOWN_MODEL") throw new Error(`ESM entry is broken: ${JSON.stringify(events)}`);'
           else
             npm install --no-audit --no-fund "$tarball" @earendil-works/pi-ai@1.2.0
             node -e 'const entry = require(process.env.PACKAGE_NAME); if (typeof entry.isPiAiExtraError !== "function") throw new Error("CommonJS entry is broken");'
