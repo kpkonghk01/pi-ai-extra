@@ -14,7 +14,7 @@ pi-ai-extra/
 │   ├── toapis/         @hk01/pi-ai-extra-toapis
 │   ├── google/         @hk01/pi-ai-extra-google (Gemini images; pi-ai has none)
 │   ├── image-kit/      @hk01/pi-ai-extra-image-kit (consumer image client over the three provider packages)
-│   └── chat-kit/       @hk01/pi-ai-extra-chat-kit (server-side chat turns on pi-ai over Gemini, OpenRouter, KIE, ToAPIs)
+│   └── chat-kit/       @hk01/pi-ai-extra-chat-kit (server-side chat turns and live model lists on pi-ai over Gemini, OpenRouter, KIE, ToAPIs)
 ├── examples/playground local-only live test page (not released)
 ├── referenc-docs/      provider source contracts
 └── .github/workflows/  tag-to-GitHub-Release automation
@@ -32,7 +32,7 @@ See [ADR 0004](../adr/0004-dual-format-helper-esm-pi-ai-subpath.md).
 The two kits sit on the consumer side of the provider boundary and take the provider packages as peer dependencies:
 
 - **image-kit** ([ADR 0006](../adr/0006-image-kit-package.md), [ADR 0007](../adr/0007-catalogue-policy-model-selection.md)), CommonJS and ESM: model families from the installed catalogues through an app-owned catalogue policy, request validation and NDJSON streaming (`/server`, the only entry that imports the provider packages), a browser reader (`/browser`) and React UI (`/react`). It does not import pi-ai.
-- **chat-kit** ([ADR 0008](../adr/0008-chat-kit-package.md)), ESM only: one server-only entry that runs a chat turn on pi-ai with the same documents, response schema, safety-block reporting and usage on every provider. It is the exception to ADR 0004's dual-format main entry, since it exists only to drive pi-ai (see that ADR's DATA-4567 amendment), and pi-ai is a required peer.
+- **chat-kit** ([ADR 0008](../adr/0008-chat-kit-package.md)), ESM only: one server-only entry that runs a chat turn on pi-ai with the same documents, response schema, safety-block reporting, usage and cost on every provider, and lists each provider's live models. It is the exception to ADR 0004's dual-format main entry, since it exists only to drive pi-ai (see that ADR's DATA-4567 amendment), and pi-ai is a required peer.
 
 ## Consumer boundary
 
@@ -80,7 +80,7 @@ Use the committed provider files in [`referenc-docs/`](../../referenc-docs/) bef
 
 ## Release path
 
-A `kie-vX.Y.Z`, `toapis-vX.Y.Z`, `google-vX.Y.Z`, `image-kit-vX.Y.Z` or `chat-kit-vX.Y.Z` tag triggers the GitHub Actions release workflow. The workflow validates the corresponding package version, checks, builds, tests and packs it, installs the packed `.tgz` into a fresh project as a consumer would, then attaches it to a GitHub Release. For the kits, the smoke test installs packed copies of the three provider packages as their peers (they are not on a registry): the image kit is loaded from `require()` and `import()` with React, and the chat kit, with pi-ai, from `import()` only (its `require()` must fail) and runs one offline turn.
+A `kie-vX.Y.Z`, `toapis-vX.Y.Z`, `google-vX.Y.Z`, `image-kit-vX.Y.Z` or `chat-kit-vX.Y.Z` tag triggers the GitHub Actions release workflow. The workflow validates the corresponding package version, checks, builds, tests and packs it, installs the packed `.tgz` into a fresh project as a consumer would, then attaches it to a GitHub Release. For the kits, the smoke test installs packed copies of the three provider packages as their peers (they are not on a registry): the image kit is loaded from `require()` and `import()` with React, and the chat kit, with pi-ai, from `import()` only (its `require()` must fail), lists every provider's models offline (each falls back to its installed catalogue or definitions) and runs one offline turn.
 
 Related ADRs:
 

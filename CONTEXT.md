@@ -40,7 +40,7 @@ The consumer-side server package that runs one chat turn on the provider and mod
 
 ## Model rate
 
-A provider's published per-token price for one chat model: input, output and cached-input tokens. Applied to a request's reported token counts, it gives an estimated cost when the provider reports no cost of its own. Unlike a cost estimate, it is published provider data, not an application's own price table. A rate may be scheduled to change on an announced date; a request is priced at the rate in force when it was made. A model whose rate is not published has no rate — never a zero rate.
+A provider's published per-token price for one chat model: input, output and cached-input tokens. Applied to a request's reported token counts, it gives an estimated cost when the provider reports no cost of its own. Unlike a cost estimate, it is published provider data, not an application's own price table. A rate may be scheduled to change on an announced date; a request is priced at the rate in force when it was made. A cache rate the provider does not publish is derived when a request is priced; it is not part of the published rate. A model whose rate is not published has no rate — never a zero rate.
 
 ## Model option
 
@@ -66,7 +66,7 @@ A versioned `.tgz` package attached to a GitHub Release. It is the consumer-inst
 
 ## Usage record
 
-The usage and billing a provider reported for one task or request: credits, USD cost, billing status, token counts and provider duration. It contains only provider-reported, validated values; absent values are omitted, never estimated or set to zero.
+The usage and billing a provider reported for one task or request: credits, USD cost, billing status, token counts and provider duration. It contains only provider-reported, validated values; absent values are omitted, never estimated or set to zero. The chat kit adds a turn's cost beside the record, marked as provider-reported or as estimated from the Model rate.
 
 ## Cost estimate
 

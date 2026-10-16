@@ -68,7 +68,12 @@ Add `@hk01/pi-ai-extra-chat-kit`. It is the chat counterpart of the image kit: s
 - Upgrade pi-ai from 0.87.1 to 1.2.x across the packages.
 - Correct the KIE and ToAPIs chat definitions to the providers' current endpoints and model ids.
 
-Amended 2026-10-16 ([DATA-4568](https://hk01-digital.atlassian.net/browse/DATA-4568)): until the dated model rates ship, the Model rates point "chat model cost no longer defaults to `0`" holds for the package default lists only. A consumer-supplied definition without `cost` still gets zero rates, an interim recorded in [ADR 0005](0005-provider-reported-usage.md)'s DATA-4566 and DATA-4568 amendments.
+Amended 2026-10-16 ([DATA-4568](https://hk01-digital.atlassian.net/browse/DATA-4568)), where building the lists, rates and cost changed the decision:
+
+- **Model rates.** Until the dated rates shipped, the point "chat model cost no longer defaults to `0`" held for the package default lists only: a consumer-supplied definition without `cost` still got zero rates, an interim recorded in [ADR 0005](0005-provider-reported-usage.md)'s DATA-4566 and DATA-4568 amendments. With `ChatModelDefinition.rate` it holds for every definition: one without a rate has no rate, and the kit reports no cost for it.
+- **Live model lists.** KIE lists in two places: Codex at `/openai/v1/models` and Claude at `/anthropic/v1/models`. ToAPIs lists text models at `/v1/models?type=text`. A list is kept for 30 minutes. A failed refresh keeps the last good list, or the installed catalogue or definitions when none has been read, and turns resolve against the same list. On OpenRouter, models without tool support are listed (the kit sends no tools), `:batch` models are not, and a new `anthropic/*` id runs on OpenAI Completions, so a new Claude family is never sent pi-ai's budget-thinking parameters.
+- **Response schema.** Anthropic Messages has native structured output too (`output_config.format`), which works while the model thinks. The kit uses it for a turn that thinks, where the provider documents it (OpenRouter). KIE and ToAPIs keep the forced tool call, and a thinking turn with a schema stays `UNSUPPORTED` there until a live smoke test verifies native structured output.
+- **Cost.** KIE's cost always comes from `credits_consumed`, never from an estimate, because its token counts are unreliable. OpenRouter's rates come from its live `/models` pricing, since no package holds them.
 
 ## Considered options
 
