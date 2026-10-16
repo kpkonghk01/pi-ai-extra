@@ -9,27 +9,43 @@ export const CONTENT_FILTER_BLOCK: BlockedTurn = {
   message: "The provider's content filter stopped the answer (content_filter).",
 };
 
-/** The prompt and answer count fields of an OpenAI usage object: Chat Completions or Responses. */
+/** Where an OpenAI usage object keeps the prompt and answer counts and their details. */
 export interface OpenAIUsageFields {
-  /** `prompt_tokens` (Completions) or `input_tokens` (Responses); its details are under `<field>_details`. */
-  input: "prompt_tokens" | "input_tokens";
-  /** `completion_tokens` (Completions) or `output_tokens` (Responses); its details are under `<field>_details`. */
-  output: "completion_tokens" | "output_tokens";
+  input: string;
+  inputDetails: string;
+  output: string;
+  outputDetails: string;
 }
 
+/** Chat Completions usage fields. */
+export const COMPLETIONS_USAGE_FIELDS: OpenAIUsageFields = {
+  input: "prompt_tokens",
+  inputDetails: "prompt_tokens_details",
+  output: "completion_tokens",
+  outputDetails: "completion_tokens_details",
+};
+
+/** Responses usage fields. */
+export const RESPONSES_USAGE_FIELDS: OpenAIUsageFields = {
+  input: "input_tokens",
+  inputDetails: "input_tokens_details",
+  output: "output_tokens",
+  outputDetails: "output_tokens_details",
+};
+
 /**
- * An OpenAI usage object, Chat Completions or Responses: the prompt count already includes cache
- * reads (`<input>_details.cached_tokens`) and, where a provider reports them, cache writes
- * (`<input>_details.cache_write_tokens`); the answer count includes
- * `<output>_details.reasoning_tokens`.
+ * An OpenAI usage object, Chat Completions or Responses (`fields` names which): the prompt count
+ * already includes cache reads (`cached_tokens` in the input details) and, where a provider
+ * reports them, cache writes (`cache_write_tokens` there); the answer count includes
+ * `reasoning_tokens` from the output details.
  */
 export function openAIUsage(
   usage: Record<string, unknown>,
   raw: Record<string, unknown>,
   fields: OpenAIUsageFields,
 ): ChatUsage | undefined {
-  const inputDetails = usage[`${fields.input}_details`];
-  const outputDetails = usage[`${fields.output}_details`];
+  const inputDetails = usage[fields.inputDetails];
+  const outputDetails = usage[fields.outputDetails];
   const input = isRecord(inputDetails) ? inputDetails : {};
   const output = isRecord(outputDetails) ? outputDetails : {};
   return toChatUsage(

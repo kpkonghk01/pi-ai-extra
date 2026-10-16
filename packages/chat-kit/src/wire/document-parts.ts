@@ -34,9 +34,14 @@ export function placeByUrl(document: ChatDocument): DocumentPlacement {
   return document.url === undefined ? "inline" : "url";
 }
 
-/** Reads a part's text when its `type` is `type`, or when it has a string `text` and no type is given. */
-export function textOfType(type?: string): (part: Record<string, unknown>) => string | undefined {
-  return (part) => ((type === undefined || part.type === type) && typeof part.text === "string" ? part.text : undefined);
+/** A text reader for parts that name their type (OpenAI, Anthropic): the text of a part whose `type` is `type`. */
+export function textOfType(type: string): (part: Record<string, unknown>) => string | undefined {
+  return (part) => (part.type === type && typeof part.text === "string" ? part.text : undefined);
+}
+
+/** A text reader for parts without a `type` (Gemini): the text of any part with a string `text`. */
+export function textOfUntypedPart(part: Record<string, unknown>): string | undefined {
+  return typeof part.text === "string" ? part.text : undefined;
 }
 
 /** Where one wire API's transcript keeps its text parts. */

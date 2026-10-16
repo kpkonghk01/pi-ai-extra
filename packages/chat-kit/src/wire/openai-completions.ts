@@ -3,7 +3,7 @@ import { dataUrl } from "../documents.ts";
 import { isRecord } from "../guards.ts";
 import { createUsageCapture } from "../usage.ts";
 import { encodeDocument, placeByUrl, replaceDocumentMarker, textOfType, type DocumentEncoder } from "./document-parts.ts";
-import { CONTENT_FILTER_BLOCK, openAIUsage } from "./openai.ts";
+import { COMPLETIONS_USAGE_FIELDS, CONTENT_FILTER_BLOCK, openAIUsage } from "./openai.ts";
 import { withFileParser } from "./openrouter.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
@@ -55,7 +55,7 @@ export function createOpenAICompletionsObserver(): StreamObserver {
       if (isRecord(chunk.usage)) capture.replace(chunk.usage);
       capture.addBilling(chunk);
     },
-    usage: () => capture.read((usage, raw) => openAIUsage(usage, raw, { input: "prompt_tokens", output: "completion_tokens" })),
+    usage: () => capture.read((usage, raw) => openAIUsage(usage, raw, COMPLETIONS_USAGE_FIELDS)),
     blocked(message: AssistantMessage): BlockedTurn | undefined {
       return message.rawStopReason === "content_filter" ? CONTENT_FILTER_BLOCK : undefined;
     },

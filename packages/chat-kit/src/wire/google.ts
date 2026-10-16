@@ -2,7 +2,7 @@ import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { isRecord } from "../guards.ts";
 import type { ChatDocument, ChatUsage } from "../types.ts";
 import { sumReported, tokenCount, toChatUsage } from "../usage.ts";
-import { encodeDocument, replaceDocumentMarker, textOfType, type DocumentEncoder } from "./document-parts.ts";
+import { encodeDocument, replaceDocumentMarker, textOfUntypedPart, type DocumentEncoder } from "./document-parts.ts";
 import { sanitizeSchemaForGemini } from "./gemini-schema.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
@@ -47,7 +47,7 @@ export function transformGooglePayload(payload: unknown, plan: PayloadPlan): unk
   const next: Record<string, unknown> = { ...payload };
   if (plan.marker !== undefined) {
     const replacement = plan.documents.map((document) => encodeDocument(document, GOOGLE_PARTS));
-    next.contents = replaceDocumentMarker(payload.contents, plan.marker, replacement, { partsKey: "parts", textOf: textOfType() });
+    next.contents = replaceDocumentMarker(payload.contents, plan.marker, replacement, { partsKey: "parts", textOf: textOfUntypedPart });
   }
   const config: Record<string, unknown> = isRecord(payload.config) ? { ...payload.config } : {};
   if (plan.responseSchema) {

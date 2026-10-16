@@ -3,7 +3,7 @@ import { dataUrl } from "../documents.ts";
 import { isRecord } from "../guards.ts";
 import { createUsageCapture } from "../usage.ts";
 import { encodeDocument, placeByUrl, replaceDocumentMarker, textOfType, type DocumentEncoder } from "./document-parts.ts";
-import { CONTENT_FILTER_BLOCK, openAIUsage } from "./openai.ts";
+import { CONTENT_FILTER_BLOCK, openAIUsage, RESPONSES_USAGE_FIELDS } from "./openai.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
 type ResponsesPart = Record<string, unknown>;
@@ -60,7 +60,7 @@ export function createOpenAIResponsesObserver(): StreamObserver {
       if (isRecord(response.usage)) capture.replace(response.usage);
       capture.addBilling(response);
     },
-    usage: () => capture.read((usage, raw) => openAIUsage(usage, raw, { input: "input_tokens", output: "output_tokens" })),
+    usage: () => capture.read((usage, raw) => openAIUsage(usage, raw, RESPONSES_USAGE_FIELDS)),
     blocked(message: AssistantMessage): BlockedTurn | undefined {
       if (message.rawStopReason === "incomplete.content_filter") return CONTENT_FILTER_BLOCK;
       if (refused) return { reason: "refusal", message: "The model refused to answer (refusal)." };
