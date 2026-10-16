@@ -1,19 +1,40 @@
-import type { Usage } from "@earendil-works/pi-ai";
 import type { ChatUsage } from "./types.ts";
 
+/** A token count as the provider reported it: a non-negative integer, otherwise not reported. */
+export function tokenCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+/** The counts one wire API read from its provider's raw usage record; undefined means not reported. */
+export interface ReportedCounts {
+  /** Every prompt token, cache reads and writes included. */
+  input: number | undefined;
+  /** Every generated token, reasoning included. */
+  output: number | undefined;
+  /** The provider's own total, when it reports one. */
+  total?: number | undefined;
+  cacheRead?: number | undefined;
+  cacheWrite?: number | undefined;
+  reasoning?: number | undefined;
+}
+
 /**
- * pi-ai's `Usage` as reported token counts. pi-ai's `input` excludes cache reads and writes, so
- * they are added back: `inputTokens` is every prompt token. pi-ai's `cost` is not carried over.
+ * The turn's `ChatUsage`, from what the provider reported and nothing else: a count it did not
+ * report is omitted, never set to zero (ADR 0005). Without both a prompt and an answer count
+ * there is no usage record, so the turn carries none, just as a usage block with an unexpected
+ * shape is dropped rather than failing a finished turn.
  */
-export function toChatUsage(usage: Usage, raw: unknown): ChatUsage {
+export function toChatUsage(counts: ReportedCounts, raw: Record<string, unknown>): ChatUsage | undefined {
+  const { input, output } = counts;
+  if (input === undefined || output === undefined) return undefined;
   return {
-    inputTokens: usage.input + usage.cacheRead + usage.cacheWrite,
-    outputTokens: usage.output,
-    cachedInputTokens: usage.cacheRead,
-    cacheWriteTokens: usage.cacheWrite,
-    ...(usage.reasoning === undefined ? {} : { reasoningTokens: usage.reasoning }),
-    totalTokens: usage.totalTokens,
-    ...(raw === undefined ? {} : { raw }),
+    inputTokens: input,
+    outputTokens: output,
+    ...(counts.cacheRead === undefined ? {} : { cachedInputTokens: counts.cacheRead }),
+    ...(counts.cacheWrite === undefined ? {} : { cacheWriteTokens: counts.cacheWrite }),
+    ...(counts.reasoning === undefined ? {} : { reasoningTokens: counts.reasoning }),
+    totalTokens: counts.total ?? input + output,
+    raw,
   };
 }
 

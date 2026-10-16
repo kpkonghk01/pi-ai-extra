@@ -98,14 +98,26 @@ export type ChatTurnEvent =
   | { type: "text"; delta: string }
   | {
       type: "done";
-      usage: ChatUsage;
+      /**
+       * The usage the provider reported for the turn. Absent when it reported none: the kit never
+       * fills in zero counts (ADR 0005).
+       */
+      usage?: ChatUsage;
       /**
        * Present only when a free-form answer stopped at the output-token limit: the text already
        * streamed is the whole answer, cut off. A response-schema turn fails there instead.
        */
       truncated?: true;
     }
-  | { type: "failed"; error: ChatTurnError; usage?: ChatUsage };
+  | {
+      type: "failed";
+      error: ChatTurnError;
+      /**
+       * The usage the provider reported before the turn failed (Gemini bills blocked prompts).
+       * Absent when it reported none, including every failure found before anything was sent.
+       */
+      usage?: ChatUsage;
+    };
 
 /**
  * - `CONTENT_BLOCKED`: a provider safety system blocked the prompt or the answer (`reason` is the provider's own value).
@@ -127,23 +139,31 @@ export interface ChatTurnError {
   status?: number;
 }
 
-/** Token counts as the provider reported them. The kit computes no cost yet (ADR 0008's model rates come later). */
+/**
+ * Token counts as the provider reported them (the glossary's Usage record, ADR 0005). A count the
+ * provider did not report is absent, never zero. When it reported no usage, or no prompt and answer
+ * counts, the event has no `usage`. The kit computes no cost yet (ADR 0008's model rates come later).
+ */
 export interface ChatUsage {
   /** Every prompt token, including cached and cache-write tokens. */
   inputTokens: number;
-  /** Every generated token, including reasoning tokens. */
+  /**
+   * Every generated token, including reasoning tokens. Gemini leaves zero-valued counters out of
+   * its JSON, so an answer count it leaves out (for example on a blocked prompt) is 0.
+   */
   outputTokens: number;
-  /** Prompt tokens read from the provider's prompt cache (part of `inputTokens`). */
-  cachedInputTokens: number;
-  /** Prompt tokens written to the provider's prompt cache (part of `inputTokens`). */
-  cacheWriteTokens: number;
+  /** Prompt tokens read from the provider's prompt cache (part of `inputTokens`), when the provider reports them. */
+  cachedInputTokens?: number;
+  /** Prompt tokens written to the provider's prompt cache (part of `inputTokens`), when the provider reports them. Gemini never does. */
+  cacheWriteTokens?: number;
   /** Reasoning tokens (part of `outputTokens`), when the provider reports them. */
   reasoningTokens?: number;
+  /** The provider's own total where it reports one (Gemini, OpenAI APIs), otherwise `inputTokens + outputTokens` (Anthropic). */
   totalTokens: number;
   /**
    * The provider's own usage record, under its own field names: `{ usageMetadata }` on Gemini, otherwise
    * `{ usage }`, plus any cost or credit field reported next to it (for example OpenRouter `usage.cost`,
-   * KIE `credits_consumed`). Absent when the provider reported no usage.
+   * KIE `credits_consumed`).
    */
-  raw?: unknown;
+  raw: Record<string, unknown>;
 }

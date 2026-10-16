@@ -21,7 +21,6 @@ import type {
   ChatTurnSettings,
   ChatUsage,
 } from "./types.ts";
-import { toChatUsage } from "./usage.ts";
 import { wireApiFor, type PayloadPlan, type StreamObserver, type WireApi } from "./wire/index.ts";
 
 /**
@@ -31,6 +30,7 @@ import { wireApiFor, type PayloadPlan, type StreamObserver, type WireApi } from 
  */
 const MAX_REQUEST_RETRIES = 2;
 
+/** pi-ai requires usage on every assistant message, including the history the kit replays. */
 const ZERO_USAGE: Usage = {
   input: 0,
   output: 0,
@@ -276,44 +276,51 @@ function finish(
   state: TurnState,
   signal: AbortSignal,
 ): ChatTurnEvent {
-  const raw = observer.rawUsage();
-  const usage = toChatUsage(message.usage, raw);
-  // Usage goes on a failure only when the provider reported it (Gemini bills blocked prompts).
-  const reported = raw === undefined ? undefined : usage;
+  // Read from the provider's raw usage, not pi-ai's `message.usage`, which reports an unreported
+  // count (or no usage at all) as zero. Usage goes on any final event only when it was reported.
+  const usage = observer.usage();
   if (state.transformFailure) return failed(turn.label, state.transformFailure.code, state.transformFailure.message);
   if (errored && (message.stopReason === "aborted" || signal.aborted)) {
-    return failed(turn.label, "ABORTED", "The turn was aborted.", { usage: reported });
+    return failed(turn.label, "ABORTED", "The turn was aborted.", { usage });
   }
   const blocked = observer.blocked(message);
-  if (blocked) return failed(turn.label, "CONTENT_BLOCKED", blocked.message, { reason: blocked.reason, usage: reported });
+  if (blocked) return failed(turn.label, "CONTENT_BLOCKED", blocked.message, { reason: blocked.reason, usage });
   const rawReason = message.rawStopReason;
   if (!errored) {
     const answered = turn.schemaAsToolCall
       ? message.stopReason === "toolUse" && message.content.some((block) => block.type === "toolCall")
       : message.stopReason === "stop";
-    if (answered) return { type: "done", usage };
+    if (answered) return done(usage);
     const reason = rawReason ?? message.stopReason;
     if (message.stopReason === "length") {
       // A free-form answer cut off at the output-token limit is still an answer: the text already
       // streamed stands, marked `truncated`. A cut-off response-schema answer (JSON text, or a forced
       // tool call's arguments on Anthropic Messages) cannot be parsed, so that turn fails.
-      if (turn.plan.responseSchema === undefined) return { type: "done", usage, truncated: true };
+      if (turn.plan.responseSchema === undefined) return done(usage, true);
       return failed(turn.label, "PROVIDER_ERROR", "The answer hit the output-token limit, so its response-schema JSON is incomplete.", {
         reason,
-        usage: reported,
+        usage,
       });
     }
     const text = turn.schemaAsToolCall
       ? "The model answered without the response-schema tool call."
       : `The provider stopped with ${message.stopReason}.`;
-    return failed(turn.label, "PROVIDER_ERROR", text, { reason, usage: reported });
+    return failed(turn.label, "PROVIDER_ERROR", text, { reason, usage });
   }
   const errorMessage = message.errorMessage ?? "The provider request failed.";
   return failed(turn.label, "PROVIDER_ERROR", errorMessage, {
     reason: rawReason,
     status: state.httpStatus ?? statusFromMessage(errorMessage),
-    usage: reported,
+    usage,
   });
+}
+
+function done(usage: ChatUsage | undefined, truncated?: true): ChatTurnEvent {
+  return {
+    type: "done",
+    ...(usage === undefined ? {} : { usage }),
+    ...(truncated === undefined ? {} : { truncated }),
+  };
 }
 
 function failed(

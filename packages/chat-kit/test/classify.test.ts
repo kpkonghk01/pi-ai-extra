@@ -48,13 +48,38 @@ describe("Gemini block classification", () => {
     observer.observe({ promptFeedback: { blockReason: "BLOCKLIST" }, usageMetadata: { promptTokenCount: 7, totalTokenCount: 7 } });
     const blocked = observer.blocked(message("error", undefined, "Google stream ended without a finish reason"));
     assert.deepEqual(blocked, { reason: "BLOCKLIST", message: "Gemini blocked the prompt (BLOCKLIST)." });
-    assert.deepEqual(observer.rawUsage(), { usageMetadata: { promptTokenCount: 7, totalTokenCount: 7 } });
+    assert.deepEqual(observer.usage(), {
+      inputTokens: 7,
+      outputTokens: 0,
+      totalTokens: 7,
+      raw: { usageMetadata: { promptTokenCount: 7, totalTokenCount: 7 } },
+    });
   });
 
-  it("reports no raw usage when no chunk carried usageMetadata", () => {
+  it("reports no usage when no chunk carried usageMetadata", () => {
     const observer = createGoogleObserver();
     observer.observe({ candidates: [] });
-    assert.equal(observer.rawUsage(), undefined);
+    assert.equal(observer.usage(), undefined);
+  });
+
+  it("takes thinking tokens as part of the answer and reports them, and the cached prompt tokens", () => {
+    const observer = createGoogleObserver();
+    const usageMetadata = {
+      promptTokenCount: 50,
+      cachedContentTokenCount: 40,
+      candidatesTokenCount: 6,
+      thoughtsTokenCount: 4,
+      totalTokenCount: 60,
+    };
+    observer.observe({ usageMetadata });
+    assert.deepEqual(observer.usage(), {
+      inputTokens: 50,
+      outputTokens: 10,
+      cachedInputTokens: 40,
+      reasoningTokens: 4,
+      totalTokens: 60,
+      raw: { usageMetadata },
+    });
   });
 });
 
@@ -70,7 +95,31 @@ describe("OpenAI Completions block classification", () => {
     const observer = createOpenAICompletionsObserver();
     observer.observe({ choices: [{ delta: { content: "x" } }] });
     observer.observe({ choices: [], usage: { prompt_tokens: 1, completion_tokens: 2, cost: 0.01 } });
-    assert.deepEqual(observer.rawUsage(), { usage: { prompt_tokens: 1, completion_tokens: 2, cost: 0.01 } });
+    assert.deepEqual(observer.usage(), {
+      inputTokens: 1,
+      outputTokens: 2,
+      totalTokens: 3,
+      raw: { usage: { prompt_tokens: 1, completion_tokens: 2, cost: 0.01 } },
+    });
+  });
+
+  it("reads OpenRouter's cache reads and writes, both part of prompt_tokens", () => {
+    const observer = createOpenAICompletionsObserver();
+    const usage = {
+      prompt_tokens: 100,
+      completion_tokens: 5,
+      total_tokens: 105,
+      prompt_tokens_details: { cached_tokens: 60, cache_write_tokens: 30 },
+    };
+    observer.observe({ choices: [], usage });
+    assert.deepEqual(observer.usage(), {
+      inputTokens: 100,
+      outputTokens: 5,
+      cachedInputTokens: 60,
+      cacheWriteTokens: 30,
+      totalTokens: 105,
+      raw: { usage },
+    });
   });
 });
 
@@ -95,7 +144,19 @@ describe("Anthropic Messages block classification", () => {
       usage: { output_tokens: 5, input_tokens: null },
       credits_consumed: 0.2,
     });
-    assert.deepEqual(observer.rawUsage(), { usage: { input_tokens: 9, output_tokens: 5 }, credits_consumed: 0.2 });
+    assert.deepEqual(observer.usage(), {
+      inputTokens: 9,
+      outputTokens: 5,
+      totalTokens: 14,
+      raw: { usage: { input_tokens: 9, output_tokens: 5 }, credits_consumed: 0.2 },
+    });
+  });
+
+  it("adds the reported cache reads and writes to input_tokens, and ignores counts that are not token counts", () => {
+    const observer = createAnthropicObserver();
+    const usage = { input_tokens: 10, output_tokens: 2, cache_read_input_tokens: 30, cache_creation_input_tokens: "7" };
+    observer.observe({ type: "message_start", message: { id: "m", usage } });
+    assert.deepEqual(observer.usage(), { inputTokens: 40, outputTokens: 2, cachedInputTokens: 30, totalTokens: 42, raw: { usage } });
   });
 });
 
@@ -113,8 +174,19 @@ describe("OpenAI Responses block classification", () => {
     observer.observe({ type: "response.created", response: { id: "r", usage: null } });
     observer.observe({
       type: "response.completed",
-      response: { id: "r", output: [{ type: "message" }], usage: { input_tokens: 3 }, credits_consumed: 0.48 },
+      response: { id: "r", output: [{ type: "message" }], usage: { input_tokens: 3, output_tokens: 1 }, credits_consumed: 0.48 },
     });
-    assert.deepEqual(observer.rawUsage(), { usage: { input_tokens: 3 }, credits_consumed: 0.48 });
+    assert.deepEqual(observer.usage(), {
+      inputTokens: 3,
+      outputTokens: 1,
+      totalTokens: 4,
+      raw: { usage: { input_tokens: 3, output_tokens: 1 }, credits_consumed: 0.48 },
+    });
+  });
+
+  it("reports no usage for a usage object without both a prompt and an answer count", () => {
+    const observer = createOpenAIResponsesObserver();
+    observer.observe({ type: "response.completed", response: { id: "r", usage: { input_tokens: 3 } } });
+    assert.equal(observer.usage(), undefined);
   });
 });

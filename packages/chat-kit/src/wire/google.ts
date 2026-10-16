@@ -1,7 +1,8 @@
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { assertMarkerReplaced, renderTextDocument, spliceMarker, type PreparedDocument } from "../documents.ts";
 import { isRecord } from "../guards.ts";
-import type { ChatDocument } from "../types.ts";
+import type { ChatDocument, ChatUsage } from "../types.ts";
+import { tokenCount, toChatUsage } from "../usage.ts";
 import { sanitizeSchemaForGemini } from "./gemini-schema.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
@@ -80,12 +81,34 @@ export function transformGooglePayload(payload: unknown, plan: PayloadPlan): unk
 }
 
 /**
+ * Usage from the last chunk's `usageMetadata`. `promptTokenCount` already includes
+ * `cachedContentTokenCount`, and the answer is `candidatesTokenCount` plus `thoughtsTokenCount`.
+ * Gemini has no cache-write count. Its JSON leaves zero-valued counters out, so a missing answer
+ * count (a blocked prompt) is a reported zero; a missing cache or thinking count is simply not
+ * reported, and is omitted.
+ */
+function googleUsage(usageMetadata: Record<string, unknown>): ChatUsage | undefined {
+  const candidates = tokenCount(usageMetadata.candidatesTokenCount);
+  const thoughts = tokenCount(usageMetadata.thoughtsTokenCount);
+  return toChatUsage(
+    {
+      input: tokenCount(usageMetadata.promptTokenCount),
+      output: (candidates ?? 0) + (thoughts ?? 0),
+      total: tokenCount(usageMetadata.totalTokenCount),
+      cacheRead: tokenCount(usageMetadata.cachedContentTokenCount),
+      reasoning: thoughts,
+    },
+    { usageMetadata },
+  );
+}
+
+/**
  * Gemini reports a blocked prompt only as `promptFeedback.blockReason` on a chunk without
  * candidates, which pi-ai surfaces as "Google stream ended without a finish reason"; the raw
  * chunk is the only place it shows. Usage comes from `usageMetadata` (Gemini bills blocked prompts).
  */
 export function createGoogleObserver(): StreamObserver {
-  let usageMetadata: unknown;
+  let usageMetadata: Record<string, unknown> | undefined;
   let promptBlockReason: string | undefined;
   return {
     observe(chunk) {
@@ -96,7 +119,7 @@ export function createGoogleObserver(): StreamObserver {
         promptBlockReason = feedback.blockReason;
       }
     },
-    rawUsage: () => (usageMetadata === undefined ? undefined : { usageMetadata }),
+    usage: () => (usageMetadata === undefined ? undefined : googleUsage(usageMetadata)),
     blocked(message: AssistantMessage): BlockedTurn | undefined {
       if (promptBlockReason !== undefined) {
         return { reason: promptBlockReason, message: `Gemini blocked the prompt (${promptBlockReason}).` };

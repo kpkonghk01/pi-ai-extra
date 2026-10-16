@@ -1,6 +1,6 @@
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { DocumentPlacement, PreparedDocument } from "../documents.ts";
-import type { ChatDocument, ChatResponseSchema, ChatTurnSettings } from "../types.ts";
+import type { ChatDocument, ChatResponseSchema, ChatTurnSettings, ChatUsage } from "../types.ts";
 
 /** Everything a payload transform adds to the request pi-ai built. */
 export interface PayloadPlan {
@@ -23,8 +23,11 @@ export interface BlockedTurn {
 /** Per-turn state built from the provider's raw stream events (pi-ai `onProviderStreamEvent`). */
 export interface StreamObserver {
   observe(event: unknown): void;
-  /** The provider's usage record (see `ChatUsage.raw`); undefined when it reported none. */
-  rawUsage(): unknown;
+  /**
+   * The usage the provider reported, read from its raw usage record (`ChatUsage.raw`) rather than
+   * from pi-ai's `Usage`, which fills unreported counts with zero. Undefined when it reported none.
+   */
+  usage(): ChatUsage | undefined;
   blocked(message: AssistantMessage): BlockedTurn | undefined;
 }
 

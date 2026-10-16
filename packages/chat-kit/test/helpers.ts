@@ -45,7 +45,10 @@ export function completionsUsageChunk(usage: Record<string, unknown>): string {
 export function anthropicEvents(input: {
   blocks: ({ type: "text"; text: string } | { type: "tool_use"; name: string; json: string[] })[];
   stopReason: string;
+  /** Replaces `message_start`'s usage (default: input, output, cache read and cache write counts). */
   usage?: Record<string, unknown>;
+  /** Replaces `message_delta`'s usage (default `{ output_tokens: 9 }`); `null` leaves it out. */
+  deltaUsage?: Record<string, unknown> | null;
   messageExtra?: Record<string, unknown>;
   deltaExtra?: Record<string, unknown>;
 }): { event: string; data: unknown }[] {
@@ -61,7 +64,7 @@ export function anthropicEvents(input: {
           model: "claude",
           content: [],
           stop_reason: null,
-          usage: { input_tokens: 20, output_tokens: 1, cache_read_input_tokens: 5, cache_creation_input_tokens: 7, ...input.usage },
+          usage: input.usage ?? { input_tokens: 20, output_tokens: 1, cache_read_input_tokens: 5, cache_creation_input_tokens: 7 },
           ...input.messageExtra,
         },
       },
@@ -96,7 +99,7 @@ export function anthropicEvents(input: {
     data: {
       type: "message_delta",
       delta: { stop_reason: input.stopReason, stop_sequence: null },
-      usage: { output_tokens: 9 },
+      ...(input.deltaUsage === null ? {} : { usage: input.deltaUsage ?? { output_tokens: 9 } }),
       ...input.deltaExtra,
     },
   });

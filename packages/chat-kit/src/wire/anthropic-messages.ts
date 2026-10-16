@@ -2,7 +2,8 @@ import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { assertMarkerReplaced, assertNoMarker, renderTextDocument, spliceMarker, type PreparedDocument } from "../documents.ts";
 import { TurnFailure } from "../errors.ts";
 import { isRecord } from "../guards.ts";
-import { billingFields } from "../usage.ts";
+import type { ChatUsage } from "../types.ts";
+import { billingFields, tokenCount, toChatUsage } from "../usage.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
 type AnthropicBlock = Record<string, unknown>;
@@ -113,6 +114,29 @@ export function anthropicSchemaUnsupported(
 }
 
 /**
+ * The Messages usage object: `input_tokens` excludes cache reads (`cache_read_input_tokens`) and
+ * writes (`cache_creation_input_tokens`), so `inputTokens` adds the ones reported. Anthropic
+ * reports no total, and reasoning only as `output_tokens_details.thinking_tokens` where a proxy
+ * passes it on.
+ */
+function anthropicUsage(usage: Record<string, unknown>, raw: Record<string, unknown>): ChatUsage | undefined {
+  const input = tokenCount(usage.input_tokens);
+  const cacheRead = tokenCount(usage.cache_read_input_tokens);
+  const cacheWrite = tokenCount(usage.cache_creation_input_tokens);
+  const output = isRecord(usage.output_tokens_details) ? usage.output_tokens_details : {};
+  return toChatUsage(
+    {
+      input: input === undefined ? undefined : input + (cacheRead ?? 0) + (cacheWrite ?? 0),
+      output: tokenCount(usage.output_tokens),
+      cacheRead,
+      cacheWrite,
+      reasoning: tokenCount(output.thinking_tokens),
+    },
+    raw,
+  );
+}
+
+/**
  * Usage is `message_start.message.usage` overlaid with `message_delta.usage` (pi-ai's own rule);
  * cost or credit fields next to either are kept (KIE reports `credits_consumed`).
  */
@@ -133,7 +157,7 @@ export function createAnthropicObserver(): StreamObserver {
         merge(event.usage, event);
       }
     },
-    rawUsage: () => (usage === undefined ? undefined : { usage, ...billing }),
+    usage: () => (usage === undefined ? undefined : anthropicUsage(usage, { usage, ...billing })),
     blocked(message: AssistantMessage): BlockedTurn | undefined {
       const reason = message.rawStopReason;
       if (reason === undefined || !BLOCKED_STOP_REASONS.has(reason)) return undefined;

@@ -319,12 +319,12 @@ for await (const event of chat.runTurn(
   { signal: abortController.signal },
 )) {
   if (event.type === "text") res.write(event.delta);
-  else if (event.type === "done") await usageLog.record(event.usage); // event.truncated: cut off at the output-token limit
+  else if (event.type === "done") await usageLog.record(event.usage); // usage: undefined if none was reported; truncated: cut off at the output-token limit
   else await session.saveFailedTurn(event.error, event.usage); // "failed" is always the last event
 }
 ```
 
-A turn emits `text` deltas (thinking is never streamed), then exactly one `done` (with `usage`) or `failed` (with `error`, and `usage` when the provider reported it). It never throws. A free-form answer that stops at the output-token limit (`settings.maxOutputTokens` or the model's maximum) still ends `done`, with `truncated: true`; the text already streamed is the whole, cut-off answer. `truncated` is absent on a normal stop. A turn with a `responseSchema` fails there instead, with `PROVIDER_ERROR`, because a cut-off JSON answer cannot be parsed. Aborting the signal, or stopping the iteration, cancels the request. `settings.reasoning` is pi-ai's `ThinkingLevel` (`minimal` to `max`), clamped to what the model supports; without it, thinking is off where the model allows. Unknown keys in the input, `responseSchema` and `settings` are rejected.
+A turn emits `text` deltas (thinking is never streamed), then exactly one `done` or `failed` (with `error`). Either carries `usage` only when the provider reported it. It never throws. A free-form answer that stops at the output-token limit (`settings.maxOutputTokens` or the model's maximum) still ends `done`, with `truncated: true`; the text already streamed is the whole, cut-off answer. `truncated` is absent on a normal stop. A turn with a `responseSchema` fails there instead, with `PROVIDER_ERROR`, because a cut-off JSON answer cannot be parsed. Aborting the signal, or stopping the iteration, cancels the request. `settings.reasoning` is pi-ai's `ThinkingLevel` (`minimal` to `max`), clamped to what the model supports; without it, thinking is off where the model allows. Unknown keys in the input, `responseSchema` and `settings` are rejected.
 
 ### Documents
 
@@ -373,7 +373,19 @@ Only the initial request is retried, before the response stream starts: up to tw
 
 ### Usage
 
-`usage` holds the provider's token counts: `inputTokens` (every prompt token, cached ones included), `outputTokens` (reasoning included), `cachedInputTokens`, `cacheWriteTokens`, `reasoningTokens` (when reported) and `totalTokens`. `raw` is the provider's own record under its own field names: `{ usageMetadata }` on Gemini, otherwise `{ usage }`, plus any cost or credit field reported beside it. OpenRouter's cost is `raw.usage.cost` and KIE's credits are `raw.credits_consumed`. The kit computes no cost yet: estimating one from model rates when the provider reports none ([ADR 0008](docs/adr/0008-chat-kit-package.md)) comes in a later version.
+`usage` holds only what the provider reported, read from its own usage record, never pi-ai's zero-filled counts ([ADR 0005](docs/adr/0005-provider-reported-usage.md)). A count the provider did not report is absent, not `0`; a turn whose provider reported no usage (or no prompt and answer counts) has no `usage` at all.
+
+| Field | Meaning | Present in `usage` |
+| --- | --- | --- |
+| `inputTokens` | Every prompt token, cache reads and writes included | Always |
+| `outputTokens` | Every generated token, reasoning included | Always; Gemini omits zero counters, so a blocked prompt's missing answer count is `0` |
+| `totalTokens` | The provider's total; on Anthropic, which reports none, `inputTokens + outputTokens` | Always |
+| `cachedInputTokens` | Prompt tokens read from the prompt cache (part of `inputTokens`) | When reported |
+| `cacheWriteTokens` | Prompt tokens written to the prompt cache (part of `inputTokens`) | When reported (never on Gemini) |
+| `reasoningTokens` | Thinking tokens (part of `outputTokens`) | When reported |
+| `raw` | The provider's own record under its own field names: `{ usageMetadata }` on Gemini, otherwise `{ usage }`, plus any cost or credit field reported beside it | Always |
+
+OpenRouter's cost is `raw.usage.cost` and KIE's credits are `raw.credits_consumed`. The kit computes no cost yet: estimating one from model rates when the provider reports none ([ADR 0008](docs/adr/0008-chat-kit-package.md)) comes in a later version.
 
 ## Google AI Studio (server) integration
 

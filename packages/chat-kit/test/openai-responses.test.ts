@@ -73,7 +73,6 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
         inputTokens: 30,
         outputTokens: 4,
         cachedInputTokens: 10,
-        cacheWriteTokens: 0,
         reasoningTokens: 0,
         totalTokens: 34,
         raw: { usage, credits_consumed: 0.48 },
@@ -82,6 +81,33 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
     const body = jsonBody(fake.calls[0]?.body);
     assert.deepEqual((body.text as Record<string, unknown>).format, { type: "json_schema", name: "verdict", schema: SCHEMA, strict: true });
     assert.equal(fake.calls[0]?.headers.authorization, "Bearer kie-key");
+  });
+
+  it("omits usage the provider did not report: no cache or reasoning counts without details, no usage without a usage object", async () => {
+    const { chat } = kit([
+      {
+        method: "POST",
+        url: KIE_RESPONSES_URL,
+        respond: [
+          () =>
+            responsesStream(["ok"], {
+              type: "response.completed",
+              response: { id: "resp_1", status: "completed", output: [], usage: { input_tokens: 30, output_tokens: 4, total_tokens: 34 } },
+            }),
+          () => responsesStream(["ok"], { type: "response.completed", response: { id: "resp_1", status: "completed", output: [] } }),
+        ],
+      },
+    ]);
+    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol" })))), {
+      type: "done",
+      usage: {
+        inputTokens: 30,
+        outputTokens: 4,
+        totalTokens: 34,
+        raw: { usage: { input_tokens: 30, output_tokens: 4, total_tokens: 34 } },
+      },
+    });
+    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol" })))), { type: "done" });
   });
 
   it("reports an incomplete content_filter response as CONTENT_BLOCKED", async () => {
@@ -127,7 +153,7 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
     assert.equal(textOf(events), "Once upon a ti");
     const last = lastEvent(events);
     assert.equal(last.type === "done" && last.truncated, true);
-    assert.equal(last.type === "done" && last.usage.outputTokens, 16);
+    assert.equal(last.type === "done" && last.usage?.outputTokens, 16);
   });
 
   it("fails a response-schema answer cut off at max_output_tokens, with the raw stop reason", async () => {

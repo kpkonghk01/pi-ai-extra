@@ -1,7 +1,8 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { assertMarkerReplaced, dataUrl, renderTextDocument, spliceMarker, type PreparedDocument } from "../documents.ts";
 import { isRecord } from "../guards.ts";
-import { billingFields } from "../usage.ts";
+import type { ChatUsage } from "../types.ts";
+import { billingFields, tokenCount, toChatUsage } from "../usage.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
 type ResponsesPart = Record<string, unknown>;
@@ -56,21 +57,47 @@ export function transformOpenAIResponsesPayload(payload: unknown, plan: PayloadP
 }
 
 /**
+ * The Responses usage object: `input_tokens` already includes cache reads
+ * (`input_tokens_details.cached_tokens`) and, where a provider reports them, cache writes
+ * (`input_tokens_details.cache_write_tokens`); `output_tokens` includes
+ * `output_tokens_details.reasoning_tokens`.
+ */
+function responsesUsage(usage: Record<string, unknown>, raw: Record<string, unknown>): ChatUsage | undefined {
+  const input = isRecord(usage.input_tokens_details) ? usage.input_tokens_details : {};
+  const output = isRecord(usage.output_tokens_details) ? usage.output_tokens_details : {};
+  return toChatUsage(
+    {
+      input: tokenCount(usage.input_tokens),
+      output: tokenCount(usage.output_tokens),
+      total: tokenCount(usage.total_tokens),
+      cacheRead: tokenCount(input.cached_tokens),
+      cacheWrite: tokenCount(input.cache_write_tokens),
+      reasoning: tokenCount(output.reasoning_tokens),
+    },
+    raw,
+  );
+}
+
+/**
  * A content filter shows as an `incomplete` response with reason `content_filter`; a refusal
  * streams as `response.refusal.delta` on a response that otherwise completes. Usage is on the
  * terminal response, where KIE also reports `credits_consumed`.
  */
 export function createOpenAIResponsesObserver(): StreamObserver {
-  let raw: Record<string, unknown> | undefined;
+  let usage: Record<string, unknown> | undefined;
+  let raw: Record<string, unknown> = {};
   let refused = false;
   return {
     observe(event) {
       if (!isRecord(event)) return;
       if (event.type === "response.refusal.delta") refused = true;
       const response = event.response;
-      if (isRecord(response) && isRecord(response.usage)) raw = { usage: response.usage, ...billingFields(response) };
+      if (isRecord(response) && isRecord(response.usage)) {
+        usage = response.usage;
+        raw = { usage, ...billingFields(response) };
+      }
     },
-    rawUsage: () => raw,
+    usage: () => (usage === undefined ? undefined : responsesUsage(usage, raw)),
     blocked(message: AssistantMessage): BlockedTurn | undefined {
       if (message.rawStopReason === "incomplete.content_filter") {
         return { reason: "content_filter", message: "The provider's content filter stopped the answer (content_filter)." };

@@ -73,7 +73,6 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
         inputTokens: 120,
         outputTokens: 8,
         cachedInputTokens: 100,
-        cacheWriteTokens: 0,
         reasoningTokens: 3,
         totalTokens: 128,
         raw: {
@@ -93,6 +92,34 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
     const body = jsonBody(fake.calls[0]?.body);
     assert.deepEqual(body.plugins, [{ id: "file-parser", pdf: { engine: "native" } }]);
     assert.equal(body.response_format, undefined);
+  });
+
+  it("omits usage the provider did not report: no cache counts without cache fields, no usage without a usage chunk", async () => {
+    const { chat } = kit([
+      {
+        method: "POST",
+        url: COMPLETIONS_URL,
+        respond: [
+          () =>
+            sseResponse([
+              completionsChunk({ content: "Hi" }, "stop"),
+              completionsUsageChunk({ prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 }),
+              "[DONE]",
+            ]),
+          () => sseResponse([completionsChunk({ content: "Hi" }, "stop"), "[DONE]"]),
+        ],
+      },
+    ]);
+    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn()))), {
+      type: "done",
+      usage: {
+        inputTokens: 10,
+        outputTokens: 2,
+        totalTokens: 12,
+        raw: { usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } },
+      },
+    });
+    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn()))), { type: "done" });
   });
 
   it("puts system prompt, documents, history and message in that order, documents opening the first user turn", async () => {
@@ -296,7 +323,7 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
     assert.equal(last.type, "done");
     if (last.type !== "done") return;
     assert.equal(last.truncated, true);
-    assert.equal(last.usage.outputTokens, 5);
+    assert.equal(last.usage?.outputTokens, 5);
   });
 
   it("fails a response-schema answer cut off at the output-token limit, with the raw stop reason", async () => {

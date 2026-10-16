@@ -137,7 +137,37 @@ describe("runTurn on Anthropic Messages", () => {
     assert.equal(textOf(events), "A long ans");
     const last = lastEvent(events);
     assert.equal(last.type === "done" && last.truncated, true);
-    assert.equal(last.type === "done" && last.usage.outputTokens, 9);
+    assert.equal(last.type === "done" && last.usage?.outputTokens, 9);
+  });
+
+  it("omits usage the provider did not report: no cache counts without cache fields, no usage without counts", async () => {
+    const { chat } = kit([
+      {
+        method: "POST",
+        url: KIE_MESSAGES_URL,
+        respond: [
+          () =>
+            sseResponse(
+              anthropicEvents({
+                blocks: [{ type: "text", text: "ok" }],
+                stopReason: "end_turn",
+                usage: { input_tokens: 20, output_tokens: 1 },
+              }),
+            ),
+          // pi-ai fails a stream whose message_start has no usage object at all, so the closest
+          // response without usage is an empty one, with none on message_delta.
+          () =>
+            sseResponse(anthropicEvents({ blocks: [{ type: "text", text: "ok" }], stopReason: "end_turn", usage: {}, deltaUsage: null })),
+        ],
+      },
+    ]);
+    const withoutCache = lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "claude-sonnet-4-6" }))));
+    assert.deepEqual(withoutCache, {
+      type: "done",
+      usage: { inputTokens: 20, outputTokens: 9, totalTokens: 29, raw: { usage: { input_tokens: 20, output_tokens: 9 } } },
+    });
+    const withoutUsage = lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "claude-sonnet-4-6" }))));
+    assert.deepEqual(withoutUsage, { type: "done" });
   });
 
   it("fails a forced tool call cut off at max_tokens, with the raw stop reason", async () => {
@@ -146,7 +176,9 @@ describe("runTurn on Anthropic Messages", () => {
         method: "POST",
         url: OPENROUTER_MESSAGES_URL,
         respond: () =>
-          sseResponse(anthropicEvents({ blocks: [{ type: "tool_use", name: "answer", json: ['{"ti', 'tle":"H'] }], stopReason: "max_tokens" })),
+          sseResponse(
+            anthropicEvents({ blocks: [{ type: "tool_use", name: "answer", json: ['{"ti', 'tle":"H'] }], stopReason: "max_tokens" }),
+          ),
       },
     ]);
     const events = await collect(

@@ -63,8 +63,6 @@ describe("runTurn on Gemini", () => {
         inputTokens: 50,
         outputTokens: 6,
         cachedInputTokens: 40,
-        cacheWriteTokens: 0,
-        reasoningTokens: 0,
         totalTokens: 56,
         raw: { usageMetadata: { promptTokenCount: 50, candidatesTokenCount: 6, cachedContentTokenCount: 40, totalTokenCount: 56 } },
       },
@@ -107,7 +105,27 @@ describe("runTurn on Gemini", () => {
       message: "[gemini/gemini-3.5-flash] Gemini blocked the prompt (PROHIBITED_CONTENT).",
       reason: "PROHIBITED_CONTENT",
     });
-    assert.equal(last.usage?.inputTokens, 12);
+    // Gemini leaves zero-valued counters out, so the missing answer count is a reported 0.
+    assert.deepEqual(last.usage, {
+      inputTokens: 12,
+      outputTokens: 0,
+      totalTokens: 12,
+      raw: { usageMetadata: { promptTokenCount: 12, totalTokenCount: 12 } },
+    });
+  });
+
+  it("omits usage Gemini did not report: no cache or thinking counts without them, no usage without usageMetadata", async () => {
+    const answer = (extra: Record<string, unknown>) => () =>
+      sseResponse([
+        JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "Hi" }] }, finishReason: "STOP" }], ...extra }),
+      ]);
+    const usageMetadata = { promptTokenCount: 8, candidatesTokenCount: 2, totalTokenCount: 10 };
+    const { chat } = kit([{ method: "POST", url: STREAM_URL, respond: [answer({ usageMetadata }), answer({})] }]);
+    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash" })))), {
+      type: "done",
+      usage: { inputTokens: 8, outputTokens: 2, totalTokens: 10, raw: { usageMetadata } },
+    });
+    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash" })))), { type: "done" });
   });
 
   it("reports RECITATION as PROVIDER_ERROR, not as a content block", async () => {
@@ -145,13 +163,15 @@ describe("runTurn on Gemini", () => {
     assert.equal(textOf(events), "The first half");
     const last = lastEvent(events);
     assert.equal(last.type === "done" && last.truncated, true);
-    assert.equal(last.type === "done" && last.usage.outputTokens, 32);
+    assert.equal(last.type === "done" && last.usage?.outputTokens, 32);
   });
 
   it("fails a response-schema answer cut off at MAX_TOKENS, with the raw stop reason", async () => {
     const { chat } = kit([{ method: "POST", url: STREAM_URL, respond: maxTokensStop(['{"tags":', '["a",']) }]);
     const last = lastEvent(
-      await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash", responseSchema: { name: "tags", schema: SCHEMA } }))),
+      await collect(
+        chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash", responseSchema: { name: "tags", schema: SCHEMA } })),
+      ),
     );
     assert.equal(last.type, "failed");
     if (last.type !== "failed") return;

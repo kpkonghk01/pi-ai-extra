@@ -1,7 +1,8 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { assertMarkerReplaced, assertNoMarker, dataUrl, renderTextDocument, spliceMarker, type PreparedDocument } from "../documents.ts";
 import { isRecord } from "../guards.ts";
-import { billingFields } from "../usage.ts";
+import type { ChatUsage } from "../types.ts";
+import { billingFields, tokenCount, toChatUsage } from "../usage.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
 type CompletionsPart = Record<string, unknown>;
@@ -67,15 +68,38 @@ export function transformOpenAICompletionsPayload(payload: unknown, plan: Payloa
   return next;
 }
 
+/**
+ * OpenRouter's usage object: `prompt_tokens` already includes cache reads
+ * (`prompt_tokens_details.cached_tokens`) and writes (`prompt_tokens_details.cache_write_tokens`),
+ * and `completion_tokens` includes `completion_tokens_details.reasoning_tokens`.
+ */
+function completionsUsage(usage: Record<string, unknown>, raw: Record<string, unknown>): ChatUsage | undefined {
+  const prompt = isRecord(usage.prompt_tokens_details) ? usage.prompt_tokens_details : {};
+  const completion = isRecord(usage.completion_tokens_details) ? usage.completion_tokens_details : {};
+  return toChatUsage(
+    {
+      input: tokenCount(usage.prompt_tokens),
+      output: tokenCount(usage.completion_tokens),
+      total: tokenCount(usage.total_tokens),
+      cacheRead: tokenCount(prompt.cached_tokens),
+      cacheWrite: tokenCount(prompt.cache_write_tokens),
+      reasoning: tokenCount(completion.reasoning_tokens),
+    },
+    raw,
+  );
+}
+
 /** `finish_reason: "content_filter"` is the block; usage (with OpenRouter's `cost`) is on the last chunk. */
 export function createOpenAICompletionsObserver(): StreamObserver {
-  let raw: Record<string, unknown> | undefined;
+  let usage: Record<string, unknown> | undefined;
+  let raw: Record<string, unknown> = {};
   return {
     observe(chunk) {
       if (!isRecord(chunk) || !isRecord(chunk.usage)) return;
-      raw = { usage: chunk.usage, ...billingFields(chunk) };
+      usage = chunk.usage;
+      raw = { usage, ...billingFields(chunk) };
     },
-    rawUsage: () => raw,
+    usage: () => (usage === undefined ? undefined : completionsUsage(usage, raw)),
     blocked(message: AssistantMessage): BlockedTurn | undefined {
       return message.rawStopReason === "content_filter"
         ? { reason: "content_filter", message: "The provider's content filter stopped the answer (content_filter)." }
