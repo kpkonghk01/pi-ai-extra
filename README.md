@@ -367,7 +367,7 @@ The request is ordered: system prompt, documents, history, new message. The docu
 | `INVALID_REQUEST` | The input is malformed, or a document's `load()` failed. Nothing was sent. |
 | `ABORTED` | The signal aborted the turn. |
 
-`error.message` starts with `[provider/model]`, the configured name and the model id. A turn that fails after partial text still ends `failed`; the text already streamed is the consumer's to keep or drop. Gemini bills blocked prompts, so `failed` carries `usage` whenever the provider reported it.
+Every error names where the turn ran: `error.provider` is the configured provider name (for example `gemini`, not the provider kind) and `error.model` the model id, as the turn gave them (`?` only when malformed input named none). `error.message` starts with `[provider/model]`, built from the two. A turn that fails after partial text still ends `failed`; the text already streamed is the consumer's to keep or drop. Gemini bills blocked prompts, so `failed` carries `usage` whenever the provider reported it.
 
 Only the initial request is retried, before the response stream starts: up to twice, by pi-ai, for 408, 409, 429, 5xx and connection errors, honouring `Retry-After`. A turn is never re-sent after its first token, and never to another provider or model.
 

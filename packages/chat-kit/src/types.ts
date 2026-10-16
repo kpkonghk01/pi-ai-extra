@@ -131,7 +131,14 @@ export type ChatTurnErrorCode = "CONTENT_BLOCKED" | "PROVIDER_ERROR" | "UNSUPPOR
 
 export interface ChatTurnError {
   code: ChatTurnErrorCode;
-  /** Starts with `[provider/model]`, the consumer's provider name and the model id. */
+  /**
+   * The turn's `provider`: the consumer's provider name (for example `gemini`), not the provider
+   * kind. `?` only when the input named none.
+   */
+  provider: string;
+  /** The turn's `model`, the provider's own model id. `?` only when the input named none. */
+  model: string;
+  /** Starts with `[provider/model]`, from the two fields above. */
   message: string;
   /** The provider's raw stop or block reason, for example `SAFETY`, `content_filter`, `refusal` or `MAX_TOKENS`. */
   reason?: string;

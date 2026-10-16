@@ -53,8 +53,14 @@ export function createChatKit(options: ChatKitOptions): ChatKit {
   };
 }
 
+/** Where a turn runs, as its input names it: the consumer's provider name and the model id. */
+interface TurnTarget {
+  provider: string;
+  model: string;
+}
+
 interface PreparedTurn {
-  label: string;
+  target: TurnTarget;
   provider: RegisteredProvider;
   model: Model<Api>;
   wire: WireApi;
@@ -76,23 +82,23 @@ async function* runTurn(
   const abort = () => controller.abort(callerSignal?.reason);
   if (callerSignal?.aborted) abort();
   else callerSignal?.addEventListener("abort", abort, { once: true });
-  const label = labelOf(input);
+  const target = targetOf(input);
   try {
     if (controller.signal.aborted) {
-      yield failed(label, "ABORTED", "The turn was aborted.");
+      yield failed(target, "ABORTED", "The turn was aborted.");
       return;
     }
     let turn: PreparedTurn;
     try {
-      turn = await prepareTurn(registry, input, label, controller.signal);
+      turn = await prepareTurn(registry, input, target, controller.signal);
     } catch (error) {
-      yield failedFrom(label, error, controller.signal);
+      yield failedFrom(target, error, controller.signal);
       return;
     }
     yield* streamTurn(turn, kitFetch, controller.signal);
   } catch (error) {
     // Last resort: a turn never throws.
-    yield failedFrom(label, error, controller.signal);
+    yield failedFrom(target, error, controller.signal);
   } finally {
     callerSignal?.removeEventListener("abort", abort);
     controller.abort();
@@ -103,7 +109,7 @@ async function* runTurn(
 async function prepareTurn(
   registry: ReadonlyMap<string, RegisteredProvider>,
   input: ChatTurnInput,
-  label: string,
+  target: TurnTarget,
   signal: AbortSignal,
 ): Promise<PreparedTurn> {
   const validation = parseTurnInput(input);
@@ -127,7 +133,7 @@ async function prepareTurn(
   );
   const marker = documents.length > 0 ? createDocumentMarker() : undefined;
   return {
-    label,
+    target,
     provider,
     model,
     wire,
@@ -259,7 +265,7 @@ async function* streamTurn(
         break;
     }
   }
-  yield failed(turn.label, "PROVIDER_ERROR", "The provider stream ended without a result.");
+  yield failed(turn.target, "PROVIDER_ERROR", "The provider stream ended without a result.");
 }
 
 interface TurnState {
@@ -279,12 +285,12 @@ function finish(
   // Read from the provider's raw usage, not pi-ai's `message.usage`, which reports an unreported
   // count (or no usage at all) as zero. Usage goes on any final event only when it was reported.
   const usage = observer.usage();
-  if (state.transformFailure) return failed(turn.label, state.transformFailure.code, state.transformFailure.message);
+  if (state.transformFailure) return failed(turn.target, state.transformFailure.code, state.transformFailure.message);
   if (errored && (message.stopReason === "aborted" || signal.aborted)) {
-    return failed(turn.label, "ABORTED", "The turn was aborted.", { usage });
+    return failed(turn.target, "ABORTED", "The turn was aborted.", { usage });
   }
   const blocked = observer.blocked(message);
-  if (blocked) return failed(turn.label, "CONTENT_BLOCKED", blocked.message, { reason: blocked.reason, usage });
+  if (blocked) return failed(turn.target, "CONTENT_BLOCKED", blocked.message, { reason: blocked.reason, usage });
   const rawReason = message.rawStopReason;
   if (!errored) {
     const answered = turn.schemaAsToolCall
@@ -297,7 +303,7 @@ function finish(
       // streamed stands, marked `truncated`. A cut-off response-schema answer (JSON text, or a forced
       // tool call's arguments on Anthropic Messages) cannot be parsed, so that turn fails.
       if (turn.plan.responseSchema === undefined) return done(usage, true);
-      return failed(turn.label, "PROVIDER_ERROR", "The answer hit the output-token limit, so its response-schema JSON is incomplete.", {
+      return failed(turn.target, "PROVIDER_ERROR", "The answer hit the output-token limit, so its response-schema JSON is incomplete.", {
         reason,
         usage,
       });
@@ -305,10 +311,10 @@ function finish(
     const text = turn.schemaAsToolCall
       ? "The model answered without the response-schema tool call."
       : `The provider stopped with ${message.stopReason}.`;
-    return failed(turn.label, "PROVIDER_ERROR", text, { reason, usage });
+    return failed(turn.target, "PROVIDER_ERROR", text, { reason, usage });
   }
   const errorMessage = message.errorMessage ?? "The provider request failed.";
-  return failed(turn.label, "PROVIDER_ERROR", errorMessage, {
+  return failed(turn.target, "PROVIDER_ERROR", errorMessage, {
     reason: rawReason,
     status: state.httpStatus ?? statusFromMessage(errorMessage),
     usage,
@@ -324,24 +330,26 @@ function done(usage: ChatUsage | undefined, truncated?: true): ChatTurnEvent {
 }
 
 function failed(
-  label: string,
+  target: TurnTarget,
   code: ChatTurnErrorCode,
   message: string,
   extra: { reason?: string | undefined; status?: number | undefined; usage?: ChatUsage | undefined } = {},
 ): ChatTurnEvent {
   const error: ChatTurnError = {
     code,
-    message: `${label} ${message}`,
+    provider: target.provider,
+    model: target.model,
+    message: `[${target.provider}/${target.model}] ${message}`,
     ...(extra.reason === undefined ? {} : { reason: extra.reason }),
     ...(extra.status === undefined ? {} : { status: extra.status }),
   };
   return extra.usage === undefined ? { type: "failed", error } : { type: "failed", error, usage: extra.usage };
 }
 
-function failedFrom(label: string, error: unknown, signal: AbortSignal): ChatTurnEvent {
-  if (error instanceof TurnFailure) return failed(label, error.code, error.message);
-  if (signal.aborted) return failed(label, "ABORTED", "The turn was aborted.");
-  return failed(label, "PROVIDER_ERROR", errorText(error));
+function failedFrom(target: TurnTarget, error: unknown, signal: AbortSignal): ChatTurnEvent {
+  if (error instanceof TurnFailure) return failed(target, error.code, error.message);
+  if (signal.aborted) return failed(target, "ABORTED", "The turn was aborted.");
+  return failed(target, "PROVIDER_ERROR", errorText(error));
 }
 
 /** Records the status of the latest provider response, when it was an error (for `ChatTurnError.status`). */
@@ -373,10 +381,11 @@ function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
-function labelOf(input: ChatTurnInput): string {
+/** `?` stands in for a provider or model the input does not name (malformed input only). */
+function targetOf(input: ChatTurnInput): TurnTarget {
   const record = (typeof input === "object" && input !== null ? input : {}) as Partial<Record<"provider" | "model", unknown>>;
   const part = (value: unknown) => (typeof value === "string" && value ? value : "?");
-  return `[${part(record.provider)}/${part(record.model)}]`;
+  return { provider: part(record.provider), model: part(record.model) };
 }
 
 function errorText(error: unknown): string {

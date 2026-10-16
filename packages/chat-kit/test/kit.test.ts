@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createFakeFetch } from "@hk01/pi-ai-extra-internal/testing";
-import { createChatKit, type ChatKitOptions, type ChatTurnErrorCode, type ChatTurnEvent, type ChatTurnInput } from "../src/index.ts";
+import {
+  createChatKit,
+  type ChatKitOptions,
+  type ChatTurnError,
+  type ChatTurnErrorCode,
+  type ChatTurnEvent,
+  type ChatTurnInput,
+} from "../src/index.ts";
 import { collect, testDocument, turn } from "./helpers.ts";
 
 const PROVIDERS: ChatKitOptions["providers"] = [
@@ -20,7 +27,7 @@ function offlineKit() {
 async function failure(
   input: ChatTurnInput,
   signal?: AbortSignal,
-): Promise<{ code: ChatTurnErrorCode; message: string; events: ChatTurnEvent[] }> {
+): Promise<{ code: ChatTurnErrorCode; message: string; error: ChatTurnError; events: ChatTurnEvent[] }> {
   const { chat, fake } = offlineKit();
   const events = await collect(chat.runTurn(input, { signal }));
   assert.equal(events.length, 1, "a failure found before sending is the only event");
@@ -29,7 +36,7 @@ async function failure(
   assert.equal(fake.calls.length, 0, "nothing was sent");
   if (event?.type !== "failed") throw new Error("unreachable");
   assert.equal(event.usage, undefined);
-  return { code: event.error.code, message: event.error.message, events };
+  return { code: event.error.code, message: event.error.message, error: event.error, events };
 }
 
 describe("createChatKit configuration", () => {
@@ -80,6 +87,8 @@ describe("runTurn failures before anything is sent", () => {
     const unknownProvider = await failure(turn({ provider: "nope" }));
     assert.equal(unknownProvider.code, "UNKNOWN_MODEL");
     assert.equal(unknownProvider.message, '[nope/openai/gpt-4o-mini] No provider named "nope" is configured.');
+    assert.equal(unknownProvider.error.provider, "nope", "the consumer's provider name, as the turn gave it");
+    assert.equal(unknownProvider.error.model, "openai/gpt-4o-mini");
     const unknownModel = await failure(turn({ provider: "gemini", model: "gemini-9-ultra" }));
     assert.equal(unknownModel.code, "UNKNOWN_MODEL");
     assert.equal(unknownModel.message, '[gemini/gemini-9-ultra] Model "gemini-9-ultra" is not in the google chat catalogue.');
@@ -133,7 +142,12 @@ describe("runTurn failures before anything is sent", () => {
   it("never throws, even for input that is not an object", async () => {
     const { chat } = offlineKit();
     const events = await collect(chat.runTurn(null as never));
-    assert.equal(events[0]?.type === "failed" && events[0].error.code, "INVALID_REQUEST");
-    assert.match(events[0]?.type === "failed" ? events[0].error.message : "", /^\[\?\/\?\] /);
+    const event = events[0];
+    assert.equal(event?.type, "failed");
+    if (event?.type !== "failed") return;
+    assert.equal(event.error.code, "INVALID_REQUEST");
+    assert.equal(event.error.provider, "?");
+    assert.equal(event.error.model, "?");
+    assert.match(event.error.message, /^\[\?\/\?\] /);
   });
 });

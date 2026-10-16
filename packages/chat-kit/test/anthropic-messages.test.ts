@@ -216,6 +216,8 @@ describe("runTurn on Anthropic Messages", () => {
     if (last.type !== "failed") return;
     assert.equal(last.error.code, "CONTENT_BLOCKED");
     assert.equal(last.error.reason, "refusal");
+    assert.equal(last.error.provider, "kie");
+    assert.equal(last.error.model, "claude-sonnet-4-6");
     assert.match(last.error.message, /^\[kie\/claude-sonnet-4-6\] Claude stopped with refusal/);
     assert.deepEqual(last.usage?.raw, {
       usage: { input_tokens: 20, output_tokens: 9, cache_read_input_tokens: 5, cache_creation_input_tokens: 7 },

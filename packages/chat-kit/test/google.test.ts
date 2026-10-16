@@ -102,6 +102,8 @@ describe("runTurn on Gemini", () => {
     if (last.type !== "failed") return;
     assert.deepEqual(last.error, {
       code: "CONTENT_BLOCKED",
+      provider: "gemini",
+      model: "gemini-3.5-flash",
       message: "[gemini/gemini-3.5-flash] Gemini blocked the prompt (PROHIBITED_CONTENT).",
       reason: "PROHIBITED_CONTENT",
     });
