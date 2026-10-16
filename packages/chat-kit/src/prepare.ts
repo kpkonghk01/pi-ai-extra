@@ -68,7 +68,8 @@ export async function prepareTurn(
   if (!wire) throw new TurnFailure("UNSUPPORTED", `chat-kit does not support the ${JSON.stringify(model.api)} API of this model.`);
   const settings = input.settings ?? {};
   const kinds = input.documents.map((document) => checkDocument(document, provider, listed));
-  const unsupported = wire.unsupported(model, { responseSchema: input.responseSchema, settings });
+  const schemaRequest = { responseSchema: input.responseSchema, settings, nativeStructuredOutput: provider.nativeStructuredOutput };
+  const unsupported = wire.unsupported(model, schemaRequest);
   if (unsupported) throw new TurnFailure("UNSUPPORTED", `This model cannot take this request: ${unsupported}`);
 
   const documents = await untilAborted(
@@ -77,6 +78,7 @@ export async function prepareTurn(
     turnAborted,
   );
   const marker = documents.length > 0 ? createDocumentMarker() : undefined;
+  const schemaAsToolCall = input.responseSchema !== undefined && wire.schemaAsToolCall(model, schemaRequest);
   return {
     target,
     provider,
@@ -89,9 +91,10 @@ export async function prepareTurn(
       responseSchema: input.responseSchema,
       grounding: provider.grounding,
       targetsOpenRouter: targetsOpenRouter(model),
+      nativeStructuredOutput: input.responseSchema !== undefined && !schemaAsToolCall && provider.nativeStructuredOutput,
     },
     settings,
-    schemaAsToolCall: wire.schemaAsToolCall && input.responseSchema !== undefined,
+    schemaAsToolCall,
     pricing: { kind: provider.kind, rate: listed.rate, startedAt },
   };
 }

@@ -42,6 +42,14 @@ interface ProviderKindSpec {
    * do not document their file input, so it stays off until a live smoke test enables it.
    */
   readonly fileDocuments: boolean;
+  /**
+   * Whether the provider takes Anthropic's native structured output (`output_config.format`) on
+   * its Anthropic Messages route, so a response schema works on a model that thinks. On for
+   * OpenRouter, whose Messages reference documents `output_config.format`
+   * (https://openrouter.ai/docs/api/api-reference/anthropic-messages/create-a-message). Off for
+   * KIE and ToAPIs until a live smoke test verifies it: neither documents it.
+   */
+  readonly nativeStructuredOutput: boolean;
   /** The pi-ai provider for an explicit key; `root` (no trailing slash) replaces its default API root. */
   create(apiKey: string, root: string | undefined): Provider;
   /** The rate schedule of an installed model: the package definitions' rates, Gemini's rate table, or OpenRouter's catalogue price. */
@@ -63,18 +71,21 @@ function definitionRate(definitions: readonly { id: string; rate?: ModelRate | u
 const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> = {
   google: {
     fileDocuments: true,
+    nativeStructuredOutput: false,
     create: (apiKey, root) => createGoogleProvider({ apiKey, ...(root ? { baseUrl: root } : {}) }),
     rateOf: (model) => googleChatRate(model.id),
     fetchLive: (context) => fetchGeminiModels({ ...context, baseUrl: context.provider.baseUrl ?? context.root ?? "" }),
   },
   openrouter: {
     fileDocuments: true,
+    nativeStructuredOutput: true,
     create: explicitOpenRouterProvider,
     rateOf: (model) => catalogueRate(model.cost),
     fetchLive: (context) => fetchOpenRouterModels({ ...context, root: context.root ?? OPENROUTER_API_ROOT }),
   },
   kie: {
     fileDocuments: false,
+    nativeStructuredOutput: false,
     create: (apiKey, root) =>
       createKieProvider({ apiKey, ...(root ? { responsesBaseUrl: `${root}/openai/v1`, claudeBaseUrl: `${root}/anthropic` } : {}) }),
     rateOf: definitionRate(KIE_CHAT_MODELS),
@@ -82,6 +93,7 @@ const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> 
   },
   toapis: {
     fileDocuments: false,
+    nativeStructuredOutput: false,
     create: (apiKey, root) => createToapisProvider({ apiKey, ...(root ? { baseUrl: root } : {}) }),
     rateOf: definitionRate(TOAPIS_CHAT_MODELS),
     fetchLive: (context) => fetchToapisModels({ ...context, host: context.root ?? TOAPIS_HOST }),
@@ -102,6 +114,8 @@ export interface RegisteredProvider {
   readonly grounding: boolean;
   /** See `ProviderKindSpec.fileDocuments`. */
   readonly fileDocuments: boolean;
+  /** See `ProviderKindSpec.nativeStructuredOutput`. */
+  readonly nativeStructuredOutput: boolean;
   /** The provider's model list: live, with the installed catalogue or definitions until one is read. */
   readonly models: ModelList;
   streamSimple(model: Model<Api>, context: Context, options: ModelsSimpleStreamOptions): AssistantMessageEventStream;
@@ -134,6 +148,7 @@ export function createProviderRegistry(configs: readonly ChatProviderConfig[], o
       kind: config.provider,
       grounding: config.grounding === true,
       fileDocuments: spec.fileDocuments,
+      nativeStructuredOutput: spec.nativeStructuredOutput,
       models: createModelList({
         installed,
         now,

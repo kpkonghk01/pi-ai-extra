@@ -17,7 +17,10 @@ export function modelInfo(listed: ListedModel, provider: RegisteredProvider, now
     name: model.name,
     input: [...listed.input],
     fileDocuments: wire !== undefined && provider.fileDocuments && (listed.input.includes("file") || listed.input.includes("image")),
-    responseSchema: wire !== undefined && wire.unsupported(model, { responseSchema: PROBE_SCHEMA, settings: {} }) === undefined,
+    responseSchema:
+      wire !== undefined &&
+      wire.unsupported(model, { responseSchema: PROBE_SCHEMA, settings: {}, nativeStructuredOutput: provider.nativeStructuredOutput }) ===
+        undefined,
     contextWindow: model.contextWindow,
     maxOutputTokens: model.maxTokens,
     reasoning: model.reasoning,

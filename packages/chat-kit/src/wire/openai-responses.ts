@@ -72,7 +72,7 @@ export function createOpenAIResponsesObserver(): StreamObserver {
 export const OPENAI_RESPONSES_WIRE_API: WireApi = {
   api: "openai-responses",
   acceptsFetch: true,
-  schemaAsToolCall: false,
+  schemaAsToolCall: () => false,
   placeDocument: placeByUrl,
   unsupported: () => undefined,
   transform: transformOpenAIResponsesPayload,
