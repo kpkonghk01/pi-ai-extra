@@ -83,7 +83,7 @@ function buildProvider(config: ChatProviderConfig): Provider {
     case "kie":
       return createKieProvider({
         apiKey: config.apiKey,
-        ...(root ? { responsesBaseUrl: `${root}/codex/v1`, claudeBaseUrl: `${root}/anthropic` } : {}),
+        ...(root ? { responsesBaseUrl: `${root}/openai/v1`, claudeBaseUrl: `${root}/anthropic` } : {}),
       });
     case "toapis":
       return createToapisProvider({ apiKey: config.apiKey, ...(root ? { baseUrl: root } : {}) });

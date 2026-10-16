@@ -4,7 +4,7 @@ import { createFakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/test
 import { createChatKit } from "../src/index.ts";
 import { collect, jsonBody, lastEvent, sseResponse, textOf, turn } from "./helpers.ts";
 
-const KIE_RESPONSES_URL = "https://api.kie.ai/codex/v1/responses";
+const KIE_RESPONSES_URL = "https://api.kie.ai/openai/v1/responses";
 const SCHEMA = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false };
 
 function responsesStream(text: string[], terminal: Record<string, unknown>): Response {
@@ -64,7 +64,7 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
       },
     ]);
     const events = await collect(
-      chat.runTurn(turn({ provider: "kie", model: "gpt-5-5", responseSchema: { name: "verdict", schema: SCHEMA } })),
+      chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol", responseSchema: { name: "verdict", schema: SCHEMA } })),
     );
     assert.equal(textOf(events), '{"ok":true}');
     assert.deepEqual(lastEvent(events), {
@@ -102,7 +102,7 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
           }),
       },
     ]);
-    const last = lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-5-5" }))));
+    const last = lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol" }))));
     assert.equal(last.type === "failed" && last.error.code, "CONTENT_BLOCKED");
     assert.equal(last.type === "failed" && last.error.reason, "content_filter");
     assert.equal(last.type === "failed" && last.usage?.inputTokens, 5);

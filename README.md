@@ -286,7 +286,7 @@ const chat = createChatKit({
 | --- | --- | --- | --- |
 | `google` | Gemini | Chat base URL, default `https://generativelanguage.googleapis.com/v1beta` | Yes |
 | `openrouter` | OpenAI Completions; Anthropic Messages for `anthropic/*` | API root, default `https://openrouter.ai/api` (Completions at `<root>/v1`) | Yes |
-| `kie` | OpenAI Responses (Codex), Anthropic Messages (Claude) | Host, default `https://api.kie.ai` (`/codex/v1`, `/anthropic`) | Not yet |
+| `kie` | OpenAI Responses (Codex), Anthropic Messages (Claude) | Host, default `https://api.kie.ai` (`/openai/v1`, `/anthropic`) | Not yet |
 | `toapis` | OpenAI Responses (Codex), Anthropic Messages (Claude) | Host, default `https://toapis.com` | Not yet |
 
 - `name` is the consumer's own (for example `gemini` for `google`) and is what a turn's `provider` names. Names are unique; two names may share a provider kind, each with its own key.

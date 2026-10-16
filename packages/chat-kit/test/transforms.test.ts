@@ -323,7 +323,7 @@ describe("Anthropic Messages payload transform", () => {
 
 describe("OpenAI Responses payload transform", () => {
   const payload = () => ({
-    model: "gpt-5-5",
+    model: "gpt-5-6-sol",
     input: [
       { role: "developer", content: "Be brief." },
       {
