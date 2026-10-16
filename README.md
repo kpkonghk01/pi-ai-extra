@@ -291,7 +291,7 @@ const chat = createChatKit({
 
 - `name` is the consumer's own (for example `gemini` for `google`) and is what a turn's `provider` names. Names are unique; two names may share a provider kind, each with its own key.
 - Each provider is registered with its explicit key, in its own pi-ai `Models` collection with an empty auth context: the kit never reads `GEMINI_API_KEY`, `OPENROUTER_API_KEY` or any other environment variable. Google comes from `@hk01/pi-ai-extra-google/pi-ai`, OpenRouter is pi-ai's built-in provider with its environment and OAuth auth replaced by the key, and KIE and ToAPIs come from their `/pi-ai` factories.
-- A turn's `model` must be in that provider's pi-ai catalogue (`GOOGLE_CHAT_MODEL_IDS`, pi-ai's OpenRouter catalogue, `KIE_CHAT_MODELS`, `TOAPIS_CHAT_MODELS`); otherwise it fails with `UNKNOWN_MODEL`.
+- A turn's `model` must be in that provider's pi-ai catalogue (`GOOGLE_CHAT_MODEL_IDS`, pi-ai's OpenRouter catalogue, `KIE_CHAT_MODELS`, `TOAPIS_CHAT_MODELS`); otherwise it fails with `UNKNOWN_MODEL`. The live model lists of [ADR 0008](docs/adr/0008-chat-kit-package.md) come in a later version.
 - `grounding: true` (Google only) adds the Google Search and URL context tools to every turn.
 - `fetch` (optional) is for tests or instrumentation. It is not applied to Gemini, whose pi-ai adapter rejects a custom fetch.
 - An unknown provider, a duplicate name, an empty key, an unknown option or `grounding` on another provider throws a `TypeError`.
@@ -373,7 +373,7 @@ Only the initial request is retried, before the response stream starts: up to tw
 
 ### Usage
 
-`usage` holds the provider's token counts: `inputTokens` (every prompt token, cached ones included), `outputTokens` (reasoning included), `cachedInputTokens`, `cacheWriteTokens`, `reasoningTokens` (when reported) and `totalTokens`. `raw` is the provider's own record under its own field names: `{ usageMetadata }` on Gemini, otherwise `{ usage }`, plus any cost or credit field reported beside it. OpenRouter's cost is `raw.usage.cost` and KIE's credits are `raw.credits_consumed`. The kit computes no cost.
+`usage` holds the provider's token counts: `inputTokens` (every prompt token, cached ones included), `outputTokens` (reasoning included), `cachedInputTokens`, `cacheWriteTokens`, `reasoningTokens` (when reported) and `totalTokens`. `raw` is the provider's own record under its own field names: `{ usageMetadata }` on Gemini, otherwise `{ usage }`, plus any cost or credit field reported beside it. OpenRouter's cost is `raw.usage.cost` and KIE's credits are `raw.credits_consumed`. The kit computes no cost yet: estimating one from model rates when the provider reports none ([ADR 0008](docs/adr/0008-chat-kit-package.md)) comes in a later version.
 
 ## Google AI Studio (server) integration
 

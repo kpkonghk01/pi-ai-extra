@@ -113,7 +113,7 @@ export interface ChatTurnError {
   status?: number;
 }
 
-/** Token counts as the provider reported them. The kit computes no cost. */
+/** Token counts as the provider reported them. The kit computes no cost yet (ADR 0008's model rates come later). */
 export interface ChatUsage {
   /** Every prompt token, including cached and cache-write tokens. */
   inputTokens: number;
