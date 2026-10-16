@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createImagesModels } from "@earendil-works/pi-ai";
+import { createModels } from "@earendil-works/pi-ai";
 import {
   bytesResponse,
   createFakeFetch,
@@ -12,7 +12,7 @@ import {
   type RecordedRequest,
 } from "@hk01/pi-ai-extra-internal/testing";
 import { generateToapisImage, isPiAiExtraError, TOAPIS_IMAGE_MODELS, type ToapisImageRequest } from "../src/index.ts";
-import { createToapisImagesProvider, createToapisProvider } from "../src/pi-ai/index.ts";
+import { createToapisProvider, TOAPIS_CHAT_MODELS } from "../src/pi-ai/index.ts";
 
 const HOST = "https://toapis.com";
 const UPLOAD_URL = `${HOST}/v1/uploads/images`;
@@ -193,11 +193,11 @@ describe("ToAPIs catalogue and pi-ai adapters", () => {
     }
   });
 
-  it("generates through pi-ai ImagesModels", async () => {
+  it("generates through pi-ai Models.generateImages", async () => {
     const fake = createFakeFetch(routes());
-    const images = createImagesModels();
-    images.setProvider(createToapisImagesProvider({ apiKey: "toapis-key", settings: { poll: FAST_POLL } }));
-    const model = images.getModel("toapis", "doubao-seedream-5-0-pro");
+    const images = createModels();
+    images.setProvider(createToapisProvider({ apiKey: "toapis-key", imageSettings: { poll: FAST_POLL } }));
+    const model = images.getModelOfType("image", "toapis", "doubao-seedream-5-0-pro");
     assert.ok(model);
     const result = await images.generateImages(model, { input: [{ type: "text", text: "panda" }] }, { fetch: fake.fetch, metadata: { resolution: "1K" } });
     assert.equal(result.stopReason, "stop");
@@ -207,8 +207,45 @@ describe("ToAPIs catalogue and pi-ai adapters", () => {
   it("registers Codex on Responses (host/v1) and Claude on Messages (host)", () => {
     const provider = createToapisProvider({ apiKey: "toapis-key" });
     const byId = new Map(provider.getModels().map((model) => [model.id, model]));
-    assert.equal(byId.get("gpt-5.3-codex")?.baseUrl, "https://toapis.com/v1");
+    assert.equal(byId.get("gpt-5.3-codex-official")?.baseUrl, "https://toapis.com/v1");
     assert.equal(byId.get("claude-sonnet-4-6")?.baseUrl, "https://toapis.com");
     assert.equal(byId.get("claude-sonnet-4-6")?.api, "anthropic-messages");
+    assert.deepEqual(
+      provider.getModels().map((model) => model.id),
+      ["gpt-5.3-codex-official", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
+    );
+  });
+
+  it("prices chat models from the pricing API ratios", () => {
+    const cost = new Map(createToapisProvider({ apiKey: "toapis-key" }).getModels().map((model) => [model.id, model.cost]));
+    const expected: Record<string, [number, number, number, number]> = {
+      // id: [input, output, cacheRead, cacheWrite] in USD per 1M tokens. Cache rates are not
+      // published: cache reads at the input rate, cache writes at 1.25 × input.
+      "gpt-5.3-codex-official": [1.4, 11.2, 1.4, 1.75],
+      "claude-opus-4-6": [1.5, 7.5, 1.5, 1.875],
+      "claude-sonnet-4-6": [0.9, 4.5, 0.9, 1.125],
+      "claude-haiku-4-5": [0.3, 1.5, 0.3, 0.375],
+    };
+    assert.deepEqual([...cost.keys()].sort(), Object.keys(expected).sort());
+    for (const [id, [input, output, cacheRead, cacheWrite]] of Object.entries(expected)) {
+      assert.deepEqual(cost.get(id), { input, output, cacheRead, cacheWrite }, id);
+    }
+  });
+
+  it("offers only priced chat models by default (an unpublished rate is no rate, never a zero rate)", () => {
+    for (const model of createToapisProvider({ apiKey: "toapis-key" }).getModels()) {
+      assert.ok(model.cost.input > 0 && model.cost.output > 0, model.id);
+    }
+    assert.equal(TOAPIS_CHAT_MODELS.every((model) => model.cost !== undefined), true);
+  });
+
+  it("still serves an unpriced Codex id that the consumer passes in models", () => {
+    const provider = createToapisProvider({
+      apiKey: "toapis-key",
+      models: [...TOAPIS_CHAT_MODELS, { id: "gpt-5.3-codex", protocol: "openai-responses" }],
+    });
+    const codex = provider.getModels().find((model) => model.id === "gpt-5.3-codex");
+    assert.equal(codex?.api, "openai-responses");
+    assert.equal(codex?.baseUrl, "https://toapis.com/v1");
   });
 });

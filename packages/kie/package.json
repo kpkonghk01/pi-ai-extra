@@ -1,6 +1,6 @@
 {
   "name": "@hk01/pi-ai-extra-kie",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "KIE image helper (Grok Imagine, GPT Image 2, Nano Banana 2) and pi-ai chat/image adapters",
   "license": "UNLICENSED",
   "type": "module",
@@ -47,7 +47,7 @@
     "zod": "4.6.5"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "0.87.1"
+    "@earendil-works/pi-ai": "1.2.0"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-ai": {
@@ -55,7 +55,7 @@
     }
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.87.1",
+    "@earendil-works/pi-ai": "1.2.0",
     "@hk01/pi-ai-extra-internal": "workspace:*"
   }
 }

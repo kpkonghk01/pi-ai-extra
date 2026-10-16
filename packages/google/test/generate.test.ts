@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createImagesModels } from "@earendil-works/pi-ai";
+import { createModels } from "@earendil-works/pi-ai";
 import {
   bytesResponse,
   createFakeFetch,
@@ -12,7 +12,7 @@ import {
   type RecordedRequest,
 } from "@hk01/pi-ai-extra-internal/testing";
 import { generateGoogleImage, GOOGLE_IMAGE_MODELS, isPiAiExtraError, type GoogleImageRequest } from "../src/index.ts";
-import { createGoogleImagesProvider } from "../src/pi-ai/index.ts";
+import { createGoogleProvider } from "../src/pi-ai/index.ts";
 
 const NANO_BANANA_21_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-nano-banana-2.1:generateContent";
 const FLASH_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent";
@@ -230,11 +230,11 @@ describe("Google catalogue and pi-ai adapter", () => {
     }
   });
 
-  it("generates through pi-ai ImagesModels", async () => {
+  it("generates through pi-ai Models.generateImages", async () => {
     const fake = createFakeFetch([{ method: "POST", url: FLASH_URL, respond: imageResponse }]);
-    const images = createImagesModels();
-    images.setProvider(createGoogleImagesProvider({ apiKey: "gemini-key" }));
-    const model = images.getModel("google", "gemini-3.1-flash-image");
+    const images = createModels();
+    images.setProvider(createGoogleProvider({ apiKey: "gemini-key" }));
+    const model = images.getModelOfType("image", "google", "gemini-3.1-flash-image");
     assert.ok(model);
     const result = await images.generateImages(model, { input: [{ type: "text", text: "p" }] }, { fetch: fake.fetch, metadata: { aspectRatio: "16:9" } });
     assert.equal(result.stopReason, "stop");
@@ -243,9 +243,9 @@ describe("Google catalogue and pi-ai adapter", () => {
 
   it("passes temperature and the system instruction from pi-ai metadata to Gemini", async () => {
     const fake = createFakeFetch([{ method: "POST", url: PRO_URL, respond: imageResponse }]);
-    const images = createImagesModels();
-    images.setProvider(createGoogleImagesProvider({ apiKey: "gemini-key" }));
-    const model = images.getModel("google", "gemini-3-pro-image");
+    const images = createModels();
+    images.setProvider(createGoogleProvider({ apiKey: "gemini-key" }));
+    const model = images.getModelOfType("image", "google", "gemini-3-pro-image");
     assert.ok(model);
     const metadata = { temperature: 0.4, systemInstruction: "Keep the layout." };
     const result = await images.generateImages(model, { input: [{ type: "text", text: "p" }] }, { fetch: fake.fetch, metadata });

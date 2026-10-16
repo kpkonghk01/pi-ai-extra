@@ -43,7 +43,8 @@ paths:
 
         - Optional stream response with Claude events.
 
-        - Optional project-specific thinking flag.
+        - Optional thinking flag (`thinkingFlag`).
+
 
 
         ## Request Notes
@@ -61,8 +62,9 @@ paths:
         ## Authentication
 
 
-        Use the auth configuration for `X-Api-Key` and `anthropic-version`. Do
-        not add them as regular request parameters.
+        Authentication: send `Authorization: Bearer YOUR_API_KEY`. Clients that
+        send `x-api-key` (such as the Anthropic SDK) must set it to `Bearer
+        YOUR_API_KEY`. `anthropic-version` is optional.
       operationId: claude_sonnet_4_8
       tags:
         - docs/en/Market/Chat  Models/Claude
@@ -75,7 +77,10 @@ paths:
               properties:
                 model:
                   type: string
-                  description: Model name. It must match the current document.
+                  description: >-
+                    Model id for this page, e.g. `claude-sonnet-5`. Available
+                    ids are listed by `GET
+                    https://api.kie.ai/anthropic/v1/models`.
                   enum:
                     - claude-sonnet-5
                   x-apidog-enum:
@@ -178,9 +183,7 @@ paths:
                       - input_schema
                 thinkingFlag:
                   type: boolean
-                  description: >-
-                    Project-specific thinking flag used by the current Claude
-                    adapter.
+                  description: Whether to enable thinking.
                   examples:
                     - true
                 stream:
@@ -208,7 +211,7 @@ paths:
                 - stream
                 - max_tokens
               examples:
-                - model: claude-opus-4-6-v1messages
+                - model: claude-sonnet-5
                   messages:
                     - role: user
                       content: What is the weather like in Boston today?
@@ -259,7 +262,7 @@ paths:
                       - assistant
                   usage:
                     type: object
-                    description: Usage information returned by the provider
+                    description: Usage information returned in the response
                     properties:
                       input_tokens:
                         type: integer
@@ -299,7 +302,7 @@ paths:
                       - tool_use
                   model:
                     type: string
-                    description: Actual model version returned by the provider
+                    description: Actual model version returned in the response
                     examples:
                       - claude-opus-4-5-20251101
                   id:
@@ -382,9 +385,9 @@ paths:
                   cache_read_input_tokens: 0
                   inference_geo: not_available
                 stop_reason: tool_use
-                model: claude-opus-4-5-20251101
+                model: claude-sonnet-5
                 id: msg_01VSoxV4a8YWB3DBh9TdM63W
-                credits_consumed: 0.25
+                credits_consumed: 0.15
                 type: message
                 content:
                   - input:

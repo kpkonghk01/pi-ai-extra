@@ -4,7 +4,7 @@ Server-only extensions to [`@earendil-works/pi-ai`](https://www.npmjs.com/packag
 
 | Package | Image models | Chat (pi-ai `Models`) |
 | --- | --- | --- |
-| `@hk01/pi-ai-extra-kie` | Grok Imagine Image 2.0 (text-to-image, image edit), GPT Image 2 (text-to-image, image-to-image), Nano Banana 2 | GPT Codex (OpenAI Responses), Claude (Anthropic Messages) |
+| `@hk01/pi-ai-extra-kie` | Grok Imagine Image 2.0 (text-to-image, image edit), GPT Image 2 (text-to-image, image-to-image), Nano Banana 2 | Codex (OpenAI Responses), Claude (Anthropic Messages) |
 | `@hk01/pi-ai-extra-toapis` | Gemini 3.1 Flash Image (preview), GPT Image 2, GPT Image 2.5 Flare / Sunburst, Seedream 5.0 Pro | Codex (OpenAI Responses), Claude (Anthropic Messages) |
 | `@hk01/pi-ai-extra-google` | Gemini 3.1 Flash Image, Gemini 3 Pro Image | Gemini (pi-ai's Gemini adapter and catalogue, explicit key) |
 
@@ -13,7 +13,7 @@ Each package has two entry points:
 | Import | Format | Contents | Needs pi-ai |
 | --- | --- | --- | --- |
 | `@hk01/pi-ai-extra-<provider>` | CommonJS **and** ESM | `generate<Provider>Image()`, model catalogue, task lookup, errors | No |
-| `@hk01/pi-ai-extra-<provider>/pi-ai` | ESM only | pi-ai chat `Provider` and `ImagesProvider` factories | Yes (`@earendil-works/pi-ai@0.87.1`, optional peer) |
+| `@hk01/pi-ai-extra-<provider>/pi-ai` | ESM only | pi-ai `Provider` factory serving the chat and image models | Yes (`@earendil-works/pi-ai@1.2.0`, optional peer) |
 
 The `/pi-ai` subpath is ESM-only because pi-ai itself is ESM-only; a CommonJS server that does not use pi-ai can `require()` the main entry.
 
@@ -30,13 +30,13 @@ Non-negotiable behaviour (see [ADR 0003](docs/adr/0003-explicit-provider-executi
 Install the exact release asset on the server (build) side and pin the full URL:
 
 ```sh
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.2.0/hk01-pi-ai-extra-kie-0.2.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.2.0/hk01-pi-ai-extra-toapis-0.2.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.3.2/hk01-pi-ai-extra-google-0.3.2.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.3.0/hk01-pi-ai-extra-kie-0.3.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.3.0/hk01-pi-ai-extra-toapis-0.3.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.4.0/hk01-pi-ai-extra-google-0.4.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/image-kit-v0.2.0/hk01-pi-ai-extra-image-kit-0.2.0.tgz   # optional, needs all three
 ```
 
-npm works the same way (`npm install <url>`). Upgrade or roll back by changing the URL. `zod@4.6.5` is installed automatically; install `@earendil-works/pi-ai@0.87.1` only if you use the `/pi-ai` subpath.
+npm works the same way (`npm install <url>`). Upgrade or roll back by changing the URL. `zod@4.6.5` is installed automatically; install `@earendil-works/pi-ai@1.2.0` only if you use the `/pi-ai` subpath.
 
 ## Generate or edit an image
 
@@ -146,42 +146,94 @@ Through pi-ai, `AssistantImages.usage` is filled only when the provider reported
 ## pi-ai integration (`/pi-ai`, ESM only)
 
 ```ts
-import { createModels, createImagesModels } from "@earendil-works/pi-ai";
-import { createKieProvider, createKieImagesProvider } from "@hk01/pi-ai-extra-kie/pi-ai";
-import { createToapisProvider, createToapisImagesProvider } from "@hk01/pi-ai-extra-toapis/pi-ai";
-import { createGoogleProvider, createGoogleImagesProvider } from "@hk01/pi-ai-extra-google/pi-ai";
+import { createModels } from "@earendil-works/pi-ai";
+import { createKieProvider } from "@hk01/pi-ai-extra-kie/pi-ai";
+import { createToapisProvider } from "@hk01/pi-ai-extra-toapis/pi-ai";
+import { createGoogleProvider } from "@hk01/pi-ai-extra-google/pi-ai";
 
 const models = createModels();
-models.setProvider(createKieProvider({ apiKey: kieKey }));       // Codex on https://api.kie.ai/api/v1, Claude on https://api.kie.ai/claude (Bearer)
+models.setProvider(createKieProvider({ apiKey: kieKey }));       // Codex on https://api.kie.ai/openai/v1, Claude on https://api.kie.ai/anthropic (Bearer)
 models.setProvider(createToapisProvider({ apiKey: toapisKey })); // Codex on https://toapis.com/v1, Claude on https://toapis.com
 models.setProvider(createGoogleProvider({ apiKey: geminiKey }));  // Gemini chat; never reads GEMINI_API_KEY
 
-const images = createImagesModels();
-images.setProvider(createToapisImagesProvider({ apiKey: toapisKey }));
-images.setProvider(createGoogleImagesProvider({ apiKey: geminiKey }));
-
-const model = images.getModel("toapis", "gpt-image-2.5-flare")!;
-const output = await images.generateImages(
-  model,
+const chat = models.getModel("toapis", "claude-sonnet-4-6")!;        // chat models only
+const image = models.getModelOfType("image", "toapis", "gpt-image-2.5-flare")!;
+const output = await models.generateImages(
+  image,
   { input: [{ type: "text", text: "A lighthouse at dawn" }] },
   { metadata: { aspectRatio: "16:9", resolution: "2K", clientBusinessId: `proxy:app-7:${crypto.randomUUID()}` } },
 );
 // output.stopReason: "stop" | "error" | "aborted"; errors never throw at this layer.
 ```
 
-pi-ai keeps chat providers (`Models`) and image providers (`ImagesModels`) in separate collections, so each package exports one factory for each, taking the same explicit key. Image options go in `ImagesOptions.metadata` using the helper option names and are validated strictly; unknown keys fail the request rather than being ignored. pi-ai's `ImagesContext` has no system prompt and `ImagesOptions` no temperature, so Google's `temperature` and `systemInstruction` also go in `metadata`.
+pi-ai 1.2 keeps chat and image models in one `Models` collection, so each package exports one factory, `create<Provider>Provider()`, which registers its chat models and its image catalogue (`KIE_IMAGE_MODELS`, `TOAPIS_IMAGE_MODELS`, `GOOGLE_IMAGE_MODELS`) under one provider id (`kie`, `toapis`, `google`) with one explicit key. `getModels()` and `getModel()` return chat models only; look image models up with `getModelOfType("image", provider, id)` or `getModelsOfType("image", provider)`, and run them with `models.generateImages()`. Image helper settings (for example a poll cadence, KIE `uploadBaseUrl` or ToAPIs `clientBusinessId`) go in the factory's `imageSettings`; the image host is set there, independently of the chat base URL. Image options go in `ImagesOptions.metadata` using the helper option names and are validated strictly; unknown keys fail the request rather than being ignored. pi-ai's `ImagesContext` has no system prompt and `ImagesOptions` no temperature, so Google's `temperature` and `systemInstruction` also go in `metadata`.
 
-`createGoogleProvider({ apiKey, modelIds?, baseUrl? })` serves pi-ai's own Gemini adapter and model catalogue (`GOOGLE_CHAT_MODEL_IDS`) unchanged, including Google's list prices, but authenticates only with the explicit key: unlike pi-ai's `googleProvider()`, it never reads `GEMINI_API_KEY`. `modelIds` restricts the list; unknown ids throw.
+`createGoogleProvider({ apiKey, modelIds?, baseUrl?, imageSettings? })` serves pi-ai's own Gemini adapter and model catalogue (`GOOGLE_CHAT_MODEL_IDS`) unchanged, including Google's list prices, but authenticates only with the explicit key: unlike pi-ai's `googleProvider()`, it never reads `GEMINI_API_KEY`. `modelIds` restricts the chat list; unknown ids throw.
 
-KIE and ToAPIs chat models use pi-ai's own OpenAI Responses and Anthropic Messages adapters. Capability metadata (context window, thinking levels) is copied from pi-ai's catalogue when the id matches. `ChatModelDefinition.cost` defaults to `0`, because KIE and ToAPIs prices differ from list prices; set it from your provider's current price sheet if you want pi-ai to compute cost:
+KIE and ToAPIs chat models use pi-ai's own OpenAI Responses and Anthropic Messages adapters. Capability metadata (context window, thinking levels) is copied from pi-ai's catalogue when the id, or `ChatModelDefinition.catalogueId`, matches; KIE's dashed Codex ids (`gpt-5-6-sol`) point at pi-ai's dotted ones (`gpt-5.6-sol`). Prices are never copied from pi-ai's catalogue, because KIE and ToAPIs prices differ from list prices.
+
+### Chat rates
+
+`KIE_CHAT_MODELS` and `TOAPIS_CHAT_MODELS` carry each model's `cost` in USD per 1M tokens, so pi-ai fills `message.usage.cost`. This is pi-ai's calculation from token counts and the rates below, not a provider-reported charge. Rates as of 2026-10-16:
+
+| Provider | Model | Input | Output | Cache read | Cache write |
+| --- | --- | ---: | ---: | ---: | ---: |
+| KIE | `gpt-6-astra` | 2.80 | 14.00 | 0.28 | 3.50 |
+| KIE | `gpt-5-6-sol` | 1.40 | 8.40 | 0.14 | 1.75 |
+| KIE | `gpt-5-6-terra` | 0.56 | 3.36 | 0.056 | 0.70 |
+| KIE | `gpt-5-6-luna` | 0.056 | 0.336 | 0.0056 | 0.07 |
+| KIE | `claude-fable-5` | 4.00 | 20.00 | 4.00* | 5.00† |
+| KIE | `claude-opus-5`, `claude-opus-4-8` | 2.00 | 10.00 | 2.00* | 2.50† |
+| KIE | `claude-opus-4-7`, `claude-opus-4-6`, `claude-opus-4-5` | 1.425 | 7.15 | 1.425* | 1.78125† |
+| KIE | `claude-sonnet-5`, `claude-sonnet-4-6`, `claude-sonnet-4-5` | 0.85 | 4.275 | 0.85* | 1.0625† |
+| KIE | `claude-haiku-4-5` | 0.275 | 1.425 | 0.275* | 0.34375† |
+| ToAPIs | `gpt-5.3-codex-official` | 1.40 | 11.20 | 1.40* | 1.75† |
+| ToAPIs | `claude-opus-4-6` | 1.50 | 7.50 | 1.50* | 1.875† |
+| ToAPIs | `claude-sonnet-4-6` | 0.90 | 4.50 | 0.90* | 1.125† |
+| ToAPIs | `claude-haiku-4-5` | 0.30 | 1.50 | 0.30* | 0.375† |
+
+- **KIE**: [kie.ai/pricing](https://kie.ai/pricing), read from `POST https://api.kie.ai/client/v1/model-pricing/page` with `{"pageNum":1,"pageSize":100,"interfaceType":"chat"}`. KIE prices chat in credits per 1M tokens, and 1 credit is $0.005 (for example `claude-sonnet-4-6`: 170 credits in, 855 out).
+- **ToAPIs**: `GET https://toapis.com/api/pricing`. Input is 2 × `model_ratio` and output is 2 × `model_ratio` × `completion_ratio` (every group ratio is 1).
+- \* Not published. Cache reads are charged at the input rate, an upper bound.
+- † Not published. Cache writes are charged at 1.25 × the input rate, the price of a 5-minute cache write on Anthropic and in KIE's own Codex rows. A 1-hour write (`cacheRetention: "long"`) costs 2 × input on Anthropic, so pi-ai under-counts it.
+
+Only models with a published rate are in the default lists. ToAPIs also documents `gpt-5.3-codex` and `gpt-5.3-codex-spark` as chat models, but they have no published price and are not in its public model catalogue, so `TOAPIS_CHAT_MODELS` leaves them out. To use one anyway, pass it in the factory's `models` option. Without a `cost`, pi-ai prices it at 0, so treat its `usage.cost` as unknown, not free:
 
 ```ts
+createToapisProvider({ apiKey: toapisKey, models: [...TOAPIS_CHAT_MODELS, { id: "gpt-5.3-codex", protocol: "openai-responses" }] });
+```
+
+Prices change. To use your own rate, replace the model's `cost` and keep the rest of the list:
+
+```ts
+import { createToapisProvider, TOAPIS_CHAT_MODELS } from "@hk01/pi-ai-extra-toapis/pi-ai";
+
 createToapisProvider({
   apiKey: toapisKey,
-  // Example numbers only — use USD per million tokens from your current ToAPIs/KIE price sheet.
-  models: [{ id: "claude-sonnet-4-6", protocol: "anthropic-messages", cost: { input: 1.5, output: 7.5, cacheRead: 0.15, cacheWrite: 1.9 } }],
+  // Your own rates in USD per 1M tokens, for example a negotiated price.
+  models: TOAPIS_CHAT_MODELS.map((model) =>
+    model.id === "claude-sonnet-4-6" ? { ...model, cost: { input: 0.9, output: 4.5, cacheRead: 0.09, cacheWrite: 1.125 } } : model,
+  ),
 });
 ```
+
+### Upgrading from KIE/ToAPIs 0.2 and Google 0.3
+
+pi-ai 1.2 removed `createImagesModels()`, `createImagesProvider()`, `ImagesProvider` and `ImagesModel`, so the separate image factories are gone:
+
+| Before (pi-ai 0.87.1) | Now (pi-ai 1.2.0) |
+| --- | --- |
+| `@earendil-works/pi-ai@0.87.1` | `@earendil-works/pi-ai@1.2.0` |
+| `createKieImagesProvider({ apiKey, settings })` (likewise ToAPIs, Google) | `createKieProvider({ apiKey, imageSettings: settings })`, the same provider as chat |
+| `createImagesModels()` | `createModels()`, the same collection as chat |
+| `images.getModel("kie", id)` | `models.getModelOfType("image", "kie", id)` |
+| `images.generateImages(model, context, options)` | `models.generateImages(model, context, options)` (same context, options and result) |
+
+Register each package's provider once: a second provider with the same id replaces the first in a `Models` collection.
+
+`KIE_CHAT_MODELS` and `TOAPIS_CHAT_MODELS` now carry published rates instead of zero cost (see [Chat rates](#chat-rates)). ToAPIs Claude Haiku is `claude-haiku-4-5`, the public catalogue id, instead of `claude-haiku-4-5-20251001`. ToAPIs `gpt-5.3-codex` and `gpt-5.3-codex-spark` are no longer in the default list, because they have no published rate; pass them in `models` to keep using them.
+
+KIE chat defaults changed as well. Codex moved to `https://api.kie.ai/openai/v1` (`POST /openai/v1/responses`, the route in KIE's Codex CLI guide, which returns real HTTP statuses) and now offers `gpt-6-astra`, `gpt-5-6-sol`, `gpt-5-6-terra` and `gpt-5-6-luna`; the `gpt-5.x-codex` ids are delisted, and `gpt-5-5` is left out because KIE rejects it for Codex. `responsesBaseUrl: "https://api.kie.ai/codex/v1"` selects the API reference's route instead. Claude uses `https://api.kie.ai/anthropic`, the base URL in KIE's Claude Code guides; the model pages still show `/claude/v1/messages`, which `claudeBaseUrl: "https://api.kie.ai/claude"` keeps.
 
 ### Prompt caching
 
@@ -195,7 +247,7 @@ await models.complete(model, context, { cacheRetention: "short", sessionId: `og-
 | Route | What pi-ai sends | Provider documentation |
 | --- | --- | --- |
 | KIE / ToAPIs Claude (Messages) | `cache_control: {type: "ephemeral"}` by default; `"long"` adds `ttl: "1h"` | KIE reports cache tokens in responses but documents no `cache_control`; ToAPIs does not mention caching |
-| KIE / ToAPIs Codex (Responses) | `prompt_cache_key` when `sessionId` is set; `"long"` adds `prompt_cache_retention: "24h"` | Not mentioned by either |
+| KIE / ToAPIs Codex (Responses) | `prompt_cache_key` when `sessionId` is set; `"long"` adds `prompt_cache_retention: "24h"`, or `prompt_cache_options: {ttl: "30m"}` for models pi-ai marks as explicit-cache capable (GPT-5.6 and GPT-6), where `"none"` sends `prompt_cache_options: {mode: "explicit"}` | Not mentioned by either |
 | Gemini chat | Nothing: Gemini 2.5+ caches implicitly (prompts of about 2,048–4,096 tokens or more); explicit `cachedContents` is not supported by pi-ai's Gemini adapter | Implicit caching is automatic |
 | Image helpers | Nothing | No caching parameters |
 
@@ -204,7 +256,7 @@ Pass `cacheRetention` explicitly: when it is omitted, pi-ai falls back to the `P
 ## Google AI Studio (server) integration
 
 1. **Secrets.** Put `KIE_API_KEY`, `TOAPIS_API_KEY` and `GEMINI_API_KEY` in the app's server-side Secrets. Never expose them through Vite `define`, client code or a browser request.
-2. **Install.** Add the pinned release URLs to `dependencies` (`"@hk01/pi-ai-extra-kie": "https://github.com/…/kie-v0.2.0/hk01-pi-ai-extra-kie-0.2.0.tgz"`, likewise for ToAPIs and Google; each package has its own version, see Install). Import the packages only from server modules such as `server.ts`. A CommonJS server bundle (`esbuild --format=cjs --packages=external`) works with the main entries.
+2. **Install.** Add the pinned release URLs to `dependencies` (`"@hk01/pi-ai-extra-kie": "https://github.com/…/kie-v0.3.0/hk01-pi-ai-extra-kie-0.3.0.tgz"`, likewise for ToAPIs and Google; each package has its own version, see Install). Import the packages only from server modules such as `server.ts`. A CommonJS server bundle (`esbuild --format=cjs --packages=external`) works with the main entries.
 
    The `/pi-ai` subpath (and pi-ai itself) is ESM-only. AI Studio's preview runs `server.ts` as ESM, so a static `/pi-ai` import works there, but the CommonJS production bundle then fails at startup with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Before using `/pi-ai`, either build the server as ESM (`--format=esm --outfile=dist/server.mjs` and `"start": "node dist/server.mjs"`), or load it with `await import("@earendil-works/pi-ai")` and `await import("@hk01/pi-ai-extra-<provider>/pi-ai")`, which esbuild keeps as runtime imports.
 3. **Generate / edit.** Read the secret on the server and call the helper. Text-to-image and editing differ only by `model` and `referenceImages`:

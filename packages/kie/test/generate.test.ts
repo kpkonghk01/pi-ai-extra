@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createImagesModels } from "@earendil-works/pi-ai";
+import { createModels } from "@earendil-works/pi-ai";
 import {
   bytesResponse,
   createFakeFetch,
@@ -11,7 +11,7 @@ import {
   type RecordedRequest,
 } from "@hk01/pi-ai-extra-internal/testing";
 import { generateKieImage, isPiAiExtraError, KIE_IMAGE_MODELS, type ImageProgressEvent, type KieImageRequest } from "../src/index.ts";
-import { createKieImagesProvider, createKieProvider } from "../src/pi-ai/index.ts";
+import { createKieProvider } from "../src/pi-ai/index.ts";
 
 const UPLOAD_URL = "https://kieai.redpandaai.co/api/file-base64-upload";
 const CREATE_URL = "https://api.kie.ai/api/v1/jobs/createTask";
@@ -253,12 +253,13 @@ describe("KIE catalogue and pi-ai adapters", () => {
     );
   });
 
-  it("generates through pi-ai ImagesModels with validated metadata", async () => {
+  it("generates through pi-ai Models.generateImages with validated metadata", async () => {
     const fake = createFakeFetch(kieRoutes());
-    const images = createImagesModels();
-    images.setProvider(createKieImagesProvider({ apiKey: "kie-key", settings: { poll: FAST_POLL } }));
-    const model = images.getModel("kie", "nano-banana-2");
+    const images = createModels();
+    images.setProvider(createKieProvider({ apiKey: "kie-key", imageSettings: { poll: FAST_POLL } }));
+    const model = images.getModelOfType("image", "kie", "nano-banana-2");
     assert.ok(model);
+    assert.equal(images.getModel("kie", "nano-banana-2"), undefined);
 
     const ok = await images.generateImages(model, { input: [{ type: "text", text: "a fox" }] }, { fetch: fake.fetch, metadata: { aspectRatio: "16:9" } });
     assert.equal(ok.stopReason, "stop");
@@ -273,10 +274,88 @@ describe("KIE catalogue and pi-ai adapters", () => {
   it("registers Codex on OpenAI Responses and Claude on Anthropic Messages with KIE base URLs", () => {
     const provider = createKieProvider({ apiKey: "kie-key" });
     const byId = new Map(provider.getModels().map((model) => [model.id, model]));
-    assert.equal(byId.get("gpt-5.3-codex")?.api, "openai-responses");
-    assert.equal(byId.get("gpt-5.3-codex")?.baseUrl, "https://api.kie.ai/api/v1");
+    assert.deepEqual(
+      provider.getModels().filter((model) => model.api === "openai-responses").map((model) => model.id),
+      ["gpt-6-astra", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-5-6-luna"],
+    );
+    assert.equal(byId.get("gpt-5-6-sol")?.baseUrl, "https://api.kie.ai/openai/v1");
     assert.equal(byId.get("claude-sonnet-5")?.api, "anthropic-messages");
-    assert.equal(byId.get("claude-sonnet-5")?.baseUrl, "https://api.kie.ai/claude");
+    assert.equal(byId.get("claude-sonnet-5")?.baseUrl, "https://api.kie.ai/anthropic");
     assert.throws(() => createKieProvider({ apiKey: "" }), /apiKey is required/);
+  });
+
+  it("takes Codex capability metadata from pi-ai's dotted catalogue ids and KIE's 272K context window", () => {
+    const byId = new Map(createKieProvider({ apiKey: "kie-key" }).getModels().map((model) => [model.id, model]));
+    for (const id of ["gpt-6-astra", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-5-6-luna"]) {
+      assert.equal(byId.get(id)?.contextWindow, 272_000, id);
+      assert.equal(byId.get(id)?.thinkingLevelMap?.xhigh, "xhigh", id);
+    }
+    assert.equal(byId.get("gpt-5-6-sol")?.thinkingLevelMap?.max, "max");
+  });
+
+  it("prices chat models from KIE's published credits (1 credit = $0.005 per 1M tokens)", () => {
+    const cost = new Map(createKieProvider({ apiKey: "kie-key" }).getModels().map((model) => [model.id, model.cost]));
+    const expected: Record<string, [number, number, number, number]> = {
+      // id: [input, output, cacheRead, cacheWrite] in USD per 1M tokens. Codex cache rates are
+      // published; Claude's are not: cache reads at the input rate, cache writes at 1.25 × input.
+      "gpt-6-astra": [2.8, 14, 0.28, 3.5],
+      "gpt-5-6-sol": [1.4, 8.4, 0.14, 1.75],
+      "gpt-5-6-terra": [0.56, 3.36, 0.056, 0.7],
+      "gpt-5-6-luna": [0.056, 0.336, 0.0056, 0.07],
+      "claude-fable-5": [4, 20, 4, 5],
+      "claude-opus-5": [2, 10, 2, 2.5],
+      "claude-opus-4-8": [2, 10, 2, 2.5],
+      "claude-opus-4-7": [1.425, 7.15, 1.425, 1.78125],
+      "claude-opus-4-6": [1.425, 7.15, 1.425, 1.78125],
+      "claude-opus-4-5": [1.425, 7.15, 1.425, 1.78125],
+      "claude-sonnet-5": [0.85, 4.275, 0.85, 1.0625],
+      "claude-sonnet-4-6": [0.85, 4.275, 0.85, 1.0625],
+      "claude-sonnet-4-5": [0.85, 4.275, 0.85, 1.0625],
+      "claude-haiku-4-5": [0.275, 1.425, 0.275, 0.34375],
+    };
+    assert.deepEqual([...cost.keys()].sort(), Object.keys(expected).sort());
+    for (const [id, [input, output, cacheRead, cacheWrite]] of Object.entries(expected)) {
+      assert.deepEqual(cost.get(id), { input, output, cacheRead, cacheWrite }, id);
+    }
+  });
+
+  it("streams Codex through /openai/v1 and still turns a KIE HTTP-200 envelope into an error", async () => {
+    const urls: string[] = [];
+    const fetch = async (input: string | URL | Request) => {
+      urls.push(String(input instanceof Request ? input.url : input));
+      return new Response(JSON.stringify({ code: 402, msg: "Insufficient credits" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const models = createModels();
+    models.setProvider(createKieProvider({ apiKey: "kie-key" }));
+    const model = models.getModel("kie", "gpt-5-6-sol");
+    assert.ok(model);
+    const message = await models.complete(model, { messages: [{ role: "user", content: "hi", timestamp: 0 }] }, { fetch, maxRetries: 0 });
+    assert.equal(message.stopReason, "error");
+    assert.match(message.errorMessage ?? "", /KIE code 402: Insufficient credits/);
+    assert.deepEqual(urls, ["https://api.kie.ai/openai/v1/responses"]);
+  });
+
+  it("sends Claude to /anthropic/v1/messages with Bearer auth only", async () => {
+    const requests: { url: string; headers: Headers }[] = [];
+    const fetch = async (input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      requests.push({ url: request.url, headers: request.headers });
+      // KIE's /anthropic route answers an invalid key with a real HTTP 401 carrying its envelope.
+      return new Response(JSON.stringify({ code: 401, msg: "Unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+    };
+    const models = createModels();
+    models.setProvider(createKieProvider({ apiKey: "kie-key" }));
+    const model = models.getModel("kie", "claude-sonnet-5");
+    assert.ok(model);
+    const message = await models.complete(model, { messages: [{ role: "user", content: "hi", timestamp: 0 }] }, { fetch, maxRetries: 0 });
+    assert.equal(message.stopReason, "error");
+    assert.equal(requests.length, 1);
+    // pi-ai's Anthropic adapter uses the SDK's beta Messages client, which adds `?beta=true`.
+    assert.equal(requests[0]?.url.split("?")[0], "https://api.kie.ai/anthropic/v1/messages");
+    assert.equal(requests[0]?.headers.get("authorization"), "Bearer kie-key");
+    assert.equal(requests[0]?.headers.get("x-api-key"), null);
   });
 });

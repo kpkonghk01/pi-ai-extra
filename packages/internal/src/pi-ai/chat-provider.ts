@@ -4,6 +4,7 @@ import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.l
 import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
 import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
 import { explicitApiKeyAuth } from "./auth.ts";
+import type { HelperImages } from "./images-provider.ts";
 
 export type ChatProtocol = "openai-responses" | "anthropic-messages";
 
@@ -11,12 +12,22 @@ export type ChatProtocol = "openai-responses" | "anthropic-messages";
 export interface ChatModelDefinition {
   id: string;
   protocol: ChatProtocol;
+  /**
+   * pi-ai built-in catalogue id to copy capability metadata from, when the provider spells the
+   * model id differently (for example KIE `gpt-5-6-sol` is pi-ai `gpt-5.6-sol`). Defaults to `id`.
+   */
+  catalogueId?: string | undefined;
   name?: string | undefined;
   reasoning?: boolean | undefined;
   input?: ("text" | "image")[] | undefined;
   contextWindow?: number | undefined;
   maxTokens?: number | undefined;
-  /** Per-million-token cost used for pi-ai usage accounting. Defaults to zero (provider pricing differs from list prices). */
+  /**
+   * USD per million tokens, used for pi-ai usage accounting. Never copied from pi-ai's catalogue
+   * (provider prices differ from list prices). The packages' default model lists set it from each
+   * provider's published rates and offer no model without one. When omitted it is zero, an interim
+   * default until DATA-4568 lets a model have no rate.
+   */
   cost?: ModelCost | undefined;
 }
 
@@ -30,8 +41,15 @@ export interface ChatProviderInput {
   anthropicAuth: "x-api-key" | "bearer";
   /** Optional provider quirk adapter applied to both protocol stream implementations. */
   wrapStreams?: ((streams: ProviderStreams) => ProviderStreams) | undefined;
+  /** Image models served by the same provider (pi-ai 1.2 keeps chat and image models in one `Models`). */
+  images?: HelperImages | undefined;
 }
 
+/**
+ * Cost of a consumer-supplied definition without `cost`. Interim: the glossary's Model rate says
+ * an unpublished rate is no rate, never a zero rate, but pi-ai's `Model.cost` cannot be absent.
+ * DATA-4568 replaces this with "no rate".
+ */
 const ZERO_COST: ModelCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 const DEFAULTS: Record<ChatProtocol, { contextWindow: number; maxTokens: number }> = {
@@ -46,18 +64,24 @@ export function createChatProvider(input: ChatProviderInput): Provider<ChatProto
     id: input.id,
     name: input.name,
     auth: explicitApiKeyAuth(input.name, input.apiKey),
-    models: input.models.map((definition) => buildChatModel(input.id, input.baseUrls[definition.protocol], definition)),
+    models: [
+      ...input.models.map((definition) => buildChatModel(input.id, input.baseUrls[definition.protocol], definition)),
+      ...(input.images?.models ?? []),
+    ],
     api: {
       "openai-responses": wrap(openAIResponsesApi()),
       "anthropic-messages": input.anthropicAuth === "bearer" ? bearerAuthStreams(anthropic) : anthropic,
     },
+    ...(input.images ? { images: input.images.images } : {}),
   });
 }
 
 /**
  * Builds a pi-ai model. Capability metadata (reasoning, context window, thinking
  * levels, request compatibility) is copied from pi-ai's built-in catalogue when the
- * id matches; Anthropic "allowed fallback models" are removed because fallback is prohibited.
+ * id (or `catalogueId`) matches; Anthropic "allowed fallback models" are removed because
+ * fallback is prohibited. Prices are never copied: they come from `definition.cost`, and
+ * a definition without `cost` gets zero rates (interim until DATA-4568 adds "no rate").
  */
 export function buildChatModel(provider: string, baseUrl: string, definition: ChatModelDefinition): Model<ChatProtocol> {
   const builtin = findBuiltinModel(definition);
@@ -99,7 +123,7 @@ function findBuiltinModel(definition: ChatModelDefinition): Model<ChatProtocol> 
     definition.protocol === "anthropic-messages"
       ? (ANTHROPIC_MODELS as unknown as Record<string, Model<ChatProtocol>>)
       : (OPENAI_MODELS as unknown as Record<string, Model<ChatProtocol>>);
-  const candidate = catalog[definition.id];
+  const candidate = catalog[definition.catalogueId ?? definition.id];
   return candidate?.api === definition.protocol ? candidate : undefined;
 }
 

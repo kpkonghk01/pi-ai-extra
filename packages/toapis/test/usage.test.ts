@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createImagesModels } from "@earendil-works/pi-ai";
+import { createModels } from "@earendil-works/pi-ai";
 import { bytesResponse, createFakeFetch, jsonResponse, PNG_BYTES, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import { generateToapisImage, getToapisTask, isPiAiExtraError, type ImageProgressEvent } from "../src/index.ts";
-import { createToapisImagesProvider } from "../src/pi-ai/index.ts";
+import { createToapisProvider } from "../src/pi-ai/index.ts";
 
 const SUBMIT_URL = "https://toapis.com/v1/images/generations";
 const STATUS_URL = /^https:\/\/toapis\.com\/v1\/images\/generations\/tsk_1$/;
@@ -107,9 +107,9 @@ describe("ToAPIs usage", () => {
 
   it("maps token usage into pi-ai AssistantImages.usage", async () => {
     const fake = createFakeFetch(routes(completed(SETTLED)));
-    const images = createImagesModels();
-    images.setProvider(createToapisImagesProvider({ apiKey: "toapis-key", settings: { poll: { initialDelayMs: 1, maxDelayMs: 1 } } }));
-    const model = images.getModel("toapis", "gpt-image-2.5-flare");
+    const images = createModels();
+    images.setProvider(createToapisProvider({ apiKey: "toapis-key", imageSettings: { poll: { initialDelayMs: 1, maxDelayMs: 1 } } }));
+    const model = images.getModelOfType("image", "toapis", "gpt-image-2.5-flare");
     assert.ok(model);
     const result = await images.generateImages(model, { input: [{ type: "text", text: "p" }] }, { fetch: fake.fetch, metadata: { clientBusinessId: "proxy:app-1" } });
     assert.equal(result.stopReason, "stop");

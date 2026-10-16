@@ -2,11 +2,11 @@
 
 - Status: Accepted
 - Date: 2026-09-28
-- Related: [DATA-4512](https://hk01-digital.atlassian.net/browse/DATA-4512), [DATA-4513](https://hk01-digital.atlassian.net/browse/DATA-4513)
+- Related: [DATA-4512](https://hk01-digital.atlassian.net/browse/DATA-4512), [DATA-4513](https://hk01-digital.atlassian.net/browse/DATA-4513), [DATA-4566](https://hk01-digital.atlassian.net/browse/DATA-4566)
 
 ## Context
 
-The first consumer (`open-graph-single`) bundles its server as CommonJS with `--packages=external`, so it loads dependencies with `require()`. Later consumers, such as a usage-recording proxy, are ESM and use pi-ai directly. `@earendil-works/pi-ai@0.87.1` is ESM-only: its package exports have only an `import` condition, so `require()` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+The first consumer (`open-graph-single`) bundles its server as CommonJS with `--packages=external`, so it loads dependencies with `require()`. Later consumers, such as a usage-recording proxy, are ESM and use pi-ai directly. `@earendil-works/pi-ai` (0.87.1 at the time, 1.2.0 since 2026-10-16) is ESM-only: its package exports have only an `import` condition, so `require()` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
 
 TypeScript 7 removed the JavaScript compiler API that tsup's declaration build (rollup-plugin-dts) depends on.
 
@@ -14,8 +14,10 @@ TypeScript 7 removed the JavaScript compiler API that tsup's declaration build (
 
 - Each package's main entry contains the image helper, model catalogue, task lookups and errors. It does not import pi-ai, and it ships as both CommonJS (`.cjs` / `.d.cts`) and ESM (`.mjs` / `.d.mts`).
 - The `/pi-ai` subpath contains the pi-ai factories and is exported for `import` only. Its CommonJS build is excluded from the package.
-- `@earendil-works/pi-ai@0.87.1` is an exact, optional peer dependency. Consumers of the subpath share their own pi-ai instance; helper-only consumers do not install it.
+- `@earendil-works/pi-ai` is an exact, optional peer dependency (currently `1.2.0`). Consumers of the subpath share their own pi-ai instance; helper-only consumers do not install it.
 - Type-checking uses TypeScript 7. tsdown builds JavaScript and declarations, using oxc isolated declarations, so every export carries an explicit type.
+
+Amended 2026-10-16 ([DATA-4566](https://hk01-digital.atlassian.net/browse/DATA-4566)): the exact pi-ai peer moved from `0.87.1` to `1.2.0`, and the Context and the peer-dependency point now name both versions. pi-ai 1.2 is still ESM-only, so the decision stands unchanged: the `/pi-ai` subpath stays ESM-only and the peer stays exact and optional.
 
 ## Consequences
 
