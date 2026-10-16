@@ -436,7 +436,7 @@ describe("KIE and ToAPIs live lists", () => {
     );
     const opus = models.get("claude-opus-5-5");
     assert.equal(opus?.fileDocuments, false, "KIE document input stays off");
-    assert.equal(opus?.responseSchema, false, "an always-thinking Claude without native structured output");
+    assert.equal(opus?.responseSchema, true, "an always-thinking Claude, through KIE's native structured output");
     assert.deepEqual(opus?.rate, { input: 1.6, output: 8 });
     assert.equal(models.get("claude-sonnet-4-6")?.responseSchema, true);
     const turnResult = lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "claude-haiku-4-5" }))));

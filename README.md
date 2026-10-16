@@ -406,7 +406,7 @@ Each model reports what a gateway admin needs to offer it:
 | `id`, `name` | The provider's model id (a turn's `model`) and display name |
 | `input` | What the model reads: `text`, `image`, `file` (PDF) |
 | `fileDocuments` | Whether a turn may send it both PDF and image documents: the provider takes them (not KIE or ToAPIs yet) and the model reads both natively (`input` has `file` and `image`). A model without `file` input is `false`, since a PDF never goes to a paid parser |
-| `responseSchema` | Whether a turn may carry a `responseSchema` (not an always-thinking Claude model on KIE or ToAPIs) |
+| `responseSchema` | Whether a turn may carry a `responseSchema` (not an always-thinking Claude model on ToAPIs) |
 | `contextWindow`, `maxOutputTokens`, `reasoning` | Limits, and whether it can think (`settings.reasoning`) |
 | `rate` | The rate period in force now, as published (an unpublished cache rate is absent here), or absent when the model has no rate |
 
@@ -436,7 +436,7 @@ The request is ordered: system prompt, documents, history, new message. The docu
 | Gemini | `responseMimeType: "application/json"` and `responseJsonSchema`, without `minItems` / `maxItems` (which Gemini rejects) |
 | OpenAI Completions | strict `response_format` (`json_schema`), with OpenRouter `provider.require_parameters` so an endpoint that would ignore it fails instead |
 | OpenAI Responses | strict `text.format` (`json_schema`) |
-| Anthropic Messages | a forced call of one tool whose `input_schema` is the schema; its argument deltas stream as `text`. When the turn thinks, on OpenRouter: native structured output, `output_config.format` (`json_schema`), streamed as `text` |
+| Anthropic Messages | a forced call of one tool whose `input_schema` is the schema; its argument deltas stream as `text`. When the turn thinks, on OpenRouter and KIE: native structured output, `output_config.format` (`json_schema`), streamed as `text` |
 
 `responseSchema.name` is 1–64 letters, digits, `_` or `-`. Anthropic rejects a forced tool call while the model thinks: with `settings.reasoning`, or on a model that always thinks. A model always thinks when its catalogue entry says thinking cannot be turned off, or when its id is in the Claude Opus 5, Fable 5 or 5.5 family, matched without a provider prefix and with `.` read as `-` (`claude-opus-5` on KIE, `anthropic/claude-opus-5` or `anthropic/claude-sonnet-5.5` on OpenRouter), since a provider's catalogue may not say so.
 
@@ -444,8 +444,9 @@ A turn that thinks therefore sends its schema as Anthropic's [native structured 
 
 | Provider | Native structured output on Anthropic Messages |
 | --- | --- |
-| `openrouter` | Yes: its [Messages reference](https://openrouter.ai/docs/api/api-reference/anthropic-messages/create-a-message) documents `output_config.format` |
-| `kie`, `toapis` | Not yet: undocumented, so a thinking turn with a schema fails with `UNSUPPORTED` before anything is sent |
+| `openrouter` | Yes: its [Messages reference](https://openrouter.ai/docs/api/api-reference/anthropic-messages/create-a-message) documents `output_config.format` (not yet checked live) |
+| `kie` | Yes: undocumented, but verified live on 2026-10-16, where `claude-opus-5-5` answered valid JSON under it while thinking |
+| `toapis` | Not yet: undocumented and unverified, so a thinking turn with a schema fails with `UNSUPPORTED` before anything is sent |
 
 ### Errors
 

@@ -46,8 +46,10 @@ interface ProviderKindSpec {
    * Whether the provider takes Anthropic's native structured output (`output_config.format`) on
    * its Anthropic Messages route, so a response schema works on a model that thinks. On for
    * OpenRouter, whose Messages reference documents `output_config.format`
-   * (https://openrouter.ai/docs/api/api-reference/anthropic-messages/create-a-message). Off for
-   * KIE and ToAPIs until a live smoke test verifies it: neither documents it.
+   * (https://openrouter.ai/docs/api/api-reference/anthropic-messages/create-a-message), though a
+   * live check is still pending. On for KIE, which does not document it but answered valid JSON
+   * under it, while thinking, in a live check on 2026-10-16 (`claude-opus-5-5`). Off for ToAPIs
+   * until a live smoke test verifies it.
    */
   readonly nativeStructuredOutput: boolean;
   /** The pi-ai provider for an explicit key; `root` (no trailing slash) replaces its default API root. */
@@ -89,7 +91,7 @@ const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> 
   },
   kie: {
     fileDocuments: false,
-    nativeStructuredOutput: false,
+    nativeStructuredOutput: true,
     create: (apiKey, root) =>
       createKieProvider({ apiKey, ...(root ? { responsesBaseUrl: `${root}/openai/v1`, claudeBaseUrl: `${root}/anthropic` } : {}) }),
     listsInstalled: () => true,
