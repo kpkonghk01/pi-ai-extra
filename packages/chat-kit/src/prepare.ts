@@ -2,6 +2,7 @@ import type { Api, Context, Message, Model, Usage } from "@earendil-works/pi-ai"
 import {
   createDocumentMarker,
   documentKind,
+  NATIVE_INPUT_FOR,
   prepareDocument,
   SUPPORTED_DOCUMENT_TYPES,
   type DocumentKind,
@@ -114,9 +115,9 @@ function checkDocument(document: ChatDocument, provider: RegisteredProvider, lis
       `Provider ${provider.kind} does not take PDF or image documents yet (its file input is undocumented), so ${JSON.stringify(document.name)} cannot be sent.`,
     );
   }
-  const reads = kind === "pdf" ? "file" : "image";
+  const reads = NATIVE_INPUT_FOR[kind];
   if (!listed.input.includes(reads)) {
-    const takes = listed.input.length === 1 ? "takes text only" : `does not read ${kind === "pdf" ? "PDF files" : "images"}`;
+    const takes = listed.input.length === 1 ? "takes text only" : `does not read ${kind === "pdf" ? "PDF files natively" : "images"}`;
     throw new TurnFailure("UNSUPPORTED", `Model ${listed.model.id} ${takes}, so it cannot read ${JSON.stringify(document.name)}.`);
   }
   return kind;

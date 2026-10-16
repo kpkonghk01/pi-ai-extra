@@ -405,7 +405,7 @@ Each model reports what a gateway admin needs to offer it:
 | --- | --- |
 | `id`, `name` | The provider's model id (a turn's `model`) and display name |
 | `input` | What the model reads: `text`, `image`, `file` (PDF) |
-| `fileDocuments` | Whether a turn may send it PDF and image documents: the provider takes them (not KIE or ToAPIs yet) and the model reads them |
+| `fileDocuments` | Whether a turn may send it both PDF and image documents: the provider takes them (not KIE or ToAPIs yet) and the model reads both natively (`input` has `file` and `image`). A model without `file` input is `false`, since a PDF never goes to a paid parser |
 | `responseSchema` | Whether a turn may carry a `responseSchema` (not an always-thinking Claude model on KIE or ToAPIs) |
 | `contextWindow`, `maxOutputTokens`, `reasoning` | Limits, and whether it can think (`settings.reasoning`) |
 | `rate` | The rate period in force now, as published (an unpublished cache rate is absent here), or absent when the model has no rate |
@@ -420,7 +420,7 @@ Each model reports what a gateway admin needs to offer it:
 
 - Plain-text documents are loaded, decoded as UTF-8 and sent on every provider as a text block labelled with the file name (`<document name="notes.md">…</document>`).
 - PDFs and images use each API's native file input: by URL when `url` is set (on Gemini only when `size` is known to be at most 15 MB, and never on Gemini 2.0), inline otherwise.
-- KIE and ToAPIs do not document file input, so PDFs and images fail there with `UNSUPPORTED` until a live smoke test enables them. A model whose catalogue `input` lacks `image` rejects them too, as does any other MIME type.
+- KIE and ToAPIs do not document file input, so PDFs and images fail there with `UNSUPPORTED` until a live smoke test enables them. Elsewhere a PDF needs a model with native file input (`input` has `file`; on OpenRouter, from the live list's `input_modalities`) and an image one with image input; otherwise it fails with `UNSUPPORTED` before anything is sent, as does any other MIME type. So an image-only model such as OpenRouter's `moondream/moondream3-preview` takes images but not PDFs. Until a live list is read, a model from pi-ai's catalogue is taken to read PDFs when it reads images.
 - Every OpenRouter request, on its Completions route and on its Anthropic Messages route (`anthropic/*`), pins the `file-parser` plugin to the `native` PDF engine, so a PDF never falls through to OpenRouter's paid `mistral-ocr` engine. OpenRouter's [Anthropic Messages reference](https://openrouter.ai/docs/api/api-reference/anthropic-messages/create-a-message) takes the same `plugins` array as Completions. KIE and ToAPIs never get the plugin.
 
 Documents never enter pi-ai messages. A unique marker part stands in the first user turn and each API's `onPayload` transform replaces it, exactly once, with the parts above.

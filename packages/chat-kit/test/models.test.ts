@@ -4,7 +4,7 @@ import { createFakeFetch, jsonResponse, type FakeRoute } from "@hk01/pi-ai-extra
 import { createChatKit, type ChatModelInfo, type ChatProviderModels } from "../src/index.ts";
 import { createModelList, FAILED_REFRESH_RETRY_MS, MODEL_LIST_TTL_MS, type ListedModel } from "../src/models/list.ts";
 import { openRouterRate, openRouterThinkingLevelMap } from "../src/models/openrouter.ts";
-import { collect, completionsChunk, completionsUsageChunk, jsonBody, lastEvent, sseResponse, turn } from "./helpers.ts";
+import { collect, completionsChunk, completionsUsageChunk, jsonBody, lastEvent, sseResponse, testDocument, turn } from "./helpers.ts";
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 const GEMINI_MODELS_URL = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\?pageSize=1000/;
@@ -190,6 +190,50 @@ describe("OpenRouter live list", () => {
       cacheRead: 0.2,
       largePrompt: { overPromptTokens: 200_000, input: 4, output: 15, cacheRead: 0.2 },
     });
+  });
+
+  it("offers documents only to a model that reads both natively: an image-only model takes images but fails a PDF", async () => {
+    // As OpenRouter lists moondream/moondream3-preview: image input, no native file input.
+    const list = {
+      data: [
+        {
+          id: "moondream/moondream3-preview",
+          name: "Moondream 3 Preview",
+          architecture: { input_modalities: ["text", "image"], output_modalities: ["text"] },
+          pricing: { prompt: "0.0000003", completion: "0.0000006" },
+        },
+        {
+          id: "acme/file-reader",
+          name: "Acme: File Reader",
+          architecture: { input_modalities: ["text", "file"], output_modalities: ["text"] },
+          pricing: { prompt: "0.0000003", completion: "0.0000006" },
+        },
+      ],
+    };
+    const fake = createFakeFetch([
+      { method: "GET", url: OPENROUTER_MODELS_URL, respond: () => jsonResponse(list) },
+      {
+        method: "POST",
+        url: "https://openrouter.ai/api/v1/chat/completions",
+        respond: () => sseResponse([completionsChunk({ content: "A cat." }, "stop"), "[DONE]"]),
+      },
+    ]);
+    const chat = createChatKit({ providers: [{ name: "router", provider: "openrouter", apiKey: "or-key" }], fetch: fake.fetch });
+    const models = byId((await chat.listModels())[0]);
+    const moondream = models.get("moondream/moondream3-preview");
+    assert.deepEqual([moondream?.input, moondream?.fileDocuments], [["text", "image"], false]);
+    const fileReader = models.get("acme/file-reader");
+    assert.deepEqual([fileReader?.input, fileReader?.fileDocuments], [["text", "file"], false], "PDFs, but not images");
+
+    const pdf = testDocument("brief.pdf", "application/pdf", "%PDF-1.7");
+    const refused = lastEvent(await collect(chat.runTurn(turn({ model: "moondream/moondream3-preview", documents: [pdf] }))));
+    assert.equal(refused.type === "failed" && refused.error.code, "UNSUPPORTED");
+    assert.match(refused.type === "failed" ? refused.error.message : "", /does not read PDF files natively/);
+    assert.equal(pdf.loads, 0);
+    const png = testDocument("cat.png", "image/png", "x");
+    const answered = lastEvent(await collect(chat.runTurn(turn({ model: "moondream/moondream3-preview", documents: [png] }))));
+    assert.equal(answered.type, "done", "an image goes as a native image part");
+    assert.equal(fake.calls.filter((call) => call.method === "POST").length, 1, "only the image turn was sent");
   });
 
   it("runs a live-only id, routing a new anthropic/* family through OpenAI Completions", async () => {

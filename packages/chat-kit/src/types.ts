@@ -75,9 +75,13 @@ export interface ChatModelInfo {
   /** What the model reads, as the provider lists it. */
   input: ChatModelInput[];
   /**
-   * Whether a turn may send this model PDF and image documents, natively: the provider takes
-   * them through the kit (not KIE or ToAPIs yet) and the model reads them (a PDF needs `file`
-   * input, an image `image`). Plain-text documents work on every model.
+   * Whether a turn may send this model both PDF and image documents: the provider takes them
+   * through the kit (not KIE or ToAPIs yet) and the model reads both natively, a PDF as a file
+   * (`input` has `file`) and an image as an image (`input` has `image`). The kit never sends a
+   * PDF to a paid parser, so a model without `file` input is `false` here and a PDF turn on it
+   * fails with `UNSUPPORTED`. A turn checks each document by the same rule, so a model that reads
+   * images but not files (`false` here) still takes image documents where the provider takes
+   * them. Plain-text documents work on every model.
    */
   fileDocuments: boolean;
   /** Whether a turn may carry a `responseSchema` (not on an always-thinking Claude model without native structured output). */

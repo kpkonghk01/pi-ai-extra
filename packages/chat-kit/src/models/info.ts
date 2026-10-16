@@ -1,4 +1,5 @@
 import { ratePeriodAt } from "@hk01/pi-ai-extra-internal/rates";
+import { NATIVE_INPUT_FOR } from "../documents.ts";
 import type { RegisteredProvider } from "../registry.ts";
 import type { ChatModelInfo } from "../types.ts";
 import { wireApiFor } from "../wire/index.ts";
@@ -16,7 +17,11 @@ export function modelInfo(listed: ListedModel, provider: RegisteredProvider, now
     id: model.id,
     name: model.name,
     input: [...listed.input],
-    fileDocuments: wire !== undefined && provider.fileDocuments && (listed.input.includes("file") || listed.input.includes("image")),
+    fileDocuments:
+      wire !== undefined &&
+      provider.fileDocuments &&
+      listed.input.includes(NATIVE_INPUT_FOR.pdf) &&
+      listed.input.includes(NATIVE_INPUT_FOR.image),
     responseSchema:
       wire !== undefined &&
       wire.unsupported(model, { responseSchema: PROBE_SCHEMA, settings: {}, nativeStructuredOutput: provider.nativeStructuredOutput }) ===
