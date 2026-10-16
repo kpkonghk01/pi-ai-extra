@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { TurnFailure } from "./errors.ts";
 import type { ChatDocument } from "./types.ts";
 
 /** How a document reaches the model: decoded into a text block, or as a native file/image part. */
@@ -67,46 +66,4 @@ export function dataUrl(mimeType: string, base64: string): string {
 /** A unique text part that marks where the documents go; each payload transform replaces it. */
 export function createDocumentMarker(): string {
   return `[[chat-kit:documents:${randomUUID()}]]`;
-}
-
-/**
- * Replaces the single part whose text is exactly `marker` with `replacement`. Lists are processed
- * in order and the counter is shared, so callers can check across a whole transcript that the
- * marker was replaced exactly once. A marker embedded in other text is an error: documents are
- * never silently dropped or duplicated.
- */
-export function spliceMarker<P>(
-  parts: readonly P[],
-  marker: string,
-  textOf: (part: P) => string | undefined,
-  replacement: readonly P[],
-  counter: { found: number },
-): P[] {
-  const result: P[] = [];
-  for (const part of parts) {
-    const text = textOf(part);
-    if (text === marker) {
-      counter.found += 1;
-      result.push(...replacement);
-    } else {
-      if (text?.includes(marker)) throw markerError("was merged into other text");
-      result.push(part);
-    }
-  }
-  return result;
-}
-
-/** Throws unless the marker was replaced exactly once. */
-export function assertMarkerReplaced(counter: { found: number }): void {
-  if (counter.found === 0) throw markerError("was not found in the request");
-  if (counter.found > 1) throw markerError(`appeared ${counter.found} times`);
-}
-
-/** Fails when a string-content message carries the marker (it can then not be replaced by parts). */
-export function assertNoMarker(text: string, marker: string): void {
-  if (text.includes(marker)) throw markerError("was merged into a plain-text message");
-}
-
-function markerError(problem: string): TurnFailure {
-  return new TurnFailure("UNSUPPORTED", `chat-kit could not place the documents in this request: the document marker ${problem}.`);
 }

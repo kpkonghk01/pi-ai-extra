@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createModels } from "@earendil-works/pi-ai";
 import {
+  assertRateTable,
   bytesResponse,
   createFakeFetch,
   dataUrl,
@@ -195,11 +196,11 @@ describe("ToAPIs catalogue and pi-ai adapters", () => {
 
   it("generates through pi-ai Models.generateImages", async () => {
     const fake = createFakeFetch(routes());
-    const images = createModels();
-    images.setProvider(createToapisProvider({ apiKey: "toapis-key", imageSettings: { poll: FAST_POLL } }));
-    const model = images.getModelOfType("image", "toapis", "doubao-seedream-5-0-pro");
+    const models = createModels();
+    models.setProvider(createToapisProvider({ apiKey: "toapis-key", imageSettings: { poll: FAST_POLL } }));
+    const model = models.getModelOfType("image", "toapis", "doubao-seedream-5-0-pro");
     assert.ok(model);
-    const result = await images.generateImages(model, { input: [{ type: "text", text: "panda" }] }, { fetch: fake.fetch, metadata: { resolution: "1K" } });
+    const result = await models.generateImages(model, { input: [{ type: "text", text: "panda" }] }, { fetch: fake.fetch, metadata: { resolution: "1K" } });
     assert.equal(result.stopReason, "stop");
     assert.equal(result.responseId, "tsk_1");
   });
@@ -217,19 +218,14 @@ describe("ToAPIs catalogue and pi-ai adapters", () => {
   });
 
   it("prices chat models from the pricing API ratios", () => {
-    const cost = new Map(createToapisProvider({ apiKey: "toapis-key" }).getModels().map((model) => [model.id, model.cost]));
-    const expected: Record<string, [number, number, number, number]> = {
+    assertRateTable(createToapisProvider({ apiKey: "toapis-key" }).getModels(), {
       // id: [input, output, cacheRead, cacheWrite] in USD per 1M tokens. Cache rates are not
-      // published: cache reads at the input rate, cache writes at 1.25 × input.
+      // published; they are derived by the cache fill-in rule (see toModelCost).
       "gpt-5.3-codex-official": [1.4, 11.2, 1.4, 1.75],
       "claude-opus-4-6": [1.5, 7.5, 1.5, 1.875],
       "claude-sonnet-4-6": [0.9, 4.5, 0.9, 1.125],
       "claude-haiku-4-5": [0.3, 1.5, 0.3, 0.375],
-    };
-    assert.deepEqual([...cost.keys()].sort(), Object.keys(expected).sort());
-    for (const [id, [input, output, cacheRead, cacheWrite]] of Object.entries(expected)) {
-      assert.deepEqual(cost.get(id), { input, output, cacheRead, cacheWrite }, id);
-    }
+    });
   });
 
   it("offers only priced chat models by default (an unpublished rate is no rate, never a zero rate)", () => {

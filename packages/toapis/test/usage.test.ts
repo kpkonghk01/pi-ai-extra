@@ -107,11 +107,11 @@ describe("ToAPIs usage", () => {
 
   it("maps token usage into pi-ai AssistantImages.usage", async () => {
     const fake = createFakeFetch(routes(completed(SETTLED)));
-    const images = createModels();
-    images.setProvider(createToapisProvider({ apiKey: "toapis-key", imageSettings: { poll: { initialDelayMs: 1, maxDelayMs: 1 } } }));
-    const model = images.getModelOfType("image", "toapis", "gpt-image-2.5-flare");
+    const models = createModels();
+    models.setProvider(createToapisProvider({ apiKey: "toapis-key", imageSettings: { poll: { initialDelayMs: 1, maxDelayMs: 1 } } }));
+    const model = models.getModelOfType("image", "toapis", "gpt-image-2.5-flare");
     assert.ok(model);
-    const result = await images.generateImages(model, { input: [{ type: "text", text: "p" }] }, { fetch: fake.fetch, metadata: { clientBusinessId: "proxy:app-1" } });
+    const result = await models.generateImages(model, { input: [{ type: "text", text: "p" }] }, { fetch: fake.fetch, metadata: { clientBusinessId: "proxy:app-1" } });
     assert.equal(result.stopReason, "stop");
     assert.deepEqual(
       { input: result.usage?.input, output: result.usage?.output, cacheRead: result.usage?.cacheRead, totalTokens: result.usage?.totalTokens },

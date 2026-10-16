@@ -6,7 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./pi-ai": "./src/pi-ai/index.ts",
-    "./testing": "./src/testing/fake-fetch.ts"
+    "./testing": "./src/testing/index.ts"
   },
   "scripts": {
     "check": "tsc --noEmit -p .",

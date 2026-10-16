@@ -50,11 +50,11 @@ describe("KIE usage", () => {
 
   it("does not expose token usage to pi-ai (KIE reports credits only)", async () => {
     const fake = createFakeFetch(routes(success({ creditsConsumed: 1, costTime: 10 })));
-    const images = createModels();
-    images.setProvider(createKieProvider({ apiKey: "kie-key", imageSettings: { poll: { initialDelayMs: 1, maxDelayMs: 1 } } }));
-    const model = images.getModelOfType("image", "kie", "nano-banana-2");
+    const models = createModels();
+    models.setProvider(createKieProvider({ apiKey: "kie-key", imageSettings: { poll: { initialDelayMs: 1, maxDelayMs: 1 } } }));
+    const model = models.getModelOfType("image", "kie", "nano-banana-2");
     assert.ok(model);
-    const result = await images.generateImages(model, { input: [{ type: "text", text: "x" }] }, { fetch: fake.fetch });
+    const result = await models.generateImages(model, { input: [{ type: "text", text: "x" }] }, { fetch: fake.fetch });
     assert.equal(result.stopReason, "stop");
     assert.equal(result.usage, undefined);
   });

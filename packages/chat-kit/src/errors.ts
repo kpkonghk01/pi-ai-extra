@@ -25,3 +25,7 @@ export function statusFromMessage(message: string | undefined): number | undefin
   const status = match ? Number(match[1]) : undefined;
   return status !== undefined && status >= 400 && status <= 599 ? status : undefined;
 }
+
+export function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

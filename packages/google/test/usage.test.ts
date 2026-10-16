@@ -56,11 +56,11 @@ describe("Gemini usage", () => {
 
   it("fills pi-ai usage with pi-ai's Gemini conventions", async () => {
     const fake = createFakeFetch([{ method: "POST", url: URL_FLASH, respond: withUsage(FULL) }]);
-    const images = createModels();
-    images.setProvider(createGoogleProvider({ apiKey: "k" }));
-    const model = images.getModelOfType("image", "google", "gemini-3.1-flash-image");
+    const models = createModels();
+    models.setProvider(createGoogleProvider({ apiKey: "k" }));
+    const model = models.getModelOfType("image", "google", "gemini-3.1-flash-image");
     assert.ok(model);
-    const result = await images.generateImages(model, { input: [{ type: "text", text: "p" }] }, { fetch: fake.fetch });
+    const result = await models.generateImages(model, { input: [{ type: "text", text: "p" }] }, { fetch: fake.fetch });
     assert.deepEqual(
       {
         input: result.usage?.input,

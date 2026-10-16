@@ -232,23 +232,23 @@ describe("Google catalogue and pi-ai adapter", () => {
 
   it("generates through pi-ai Models.generateImages", async () => {
     const fake = createFakeFetch([{ method: "POST", url: FLASH_URL, respond: imageResponse }]);
-    const images = createModels();
-    images.setProvider(createGoogleProvider({ apiKey: "gemini-key" }));
-    const model = images.getModelOfType("image", "google", "gemini-3.1-flash-image");
+    const models = createModels();
+    models.setProvider(createGoogleProvider({ apiKey: "gemini-key" }));
+    const model = models.getModelOfType("image", "google", "gemini-3.1-flash-image");
     assert.ok(model);
-    const result = await images.generateImages(model, { input: [{ type: "text", text: "p" }] }, { fetch: fake.fetch, metadata: { aspectRatio: "16:9" } });
+    const result = await models.generateImages(model, { input: [{ type: "text", text: "p" }] }, { fetch: fake.fetch, metadata: { aspectRatio: "16:9" } });
     assert.equal(result.stopReason, "stop");
     assert.equal(result.output.length, 1);
   });
 
   it("passes temperature and the system instruction from pi-ai metadata to Gemini", async () => {
     const fake = createFakeFetch([{ method: "POST", url: PRO_URL, respond: imageResponse }]);
-    const images = createModels();
-    images.setProvider(createGoogleProvider({ apiKey: "gemini-key" }));
-    const model = images.getModelOfType("image", "google", "gemini-3-pro-image");
+    const models = createModels();
+    models.setProvider(createGoogleProvider({ apiKey: "gemini-key" }));
+    const model = models.getModelOfType("image", "google", "gemini-3-pro-image");
     assert.ok(model);
     const metadata = { temperature: 0.4, systemInstruction: "Keep the layout." };
-    const result = await images.generateImages(model, { input: [{ type: "text", text: "p" }] }, { fetch: fake.fetch, metadata });
+    const result = await models.generateImages(model, { input: [{ type: "text", text: "p" }] }, { fetch: fake.fetch, metadata });
     assert.equal(result.stopReason, "stop");
     const body = bodyOf(fake.calls[0]);
     assert.deepEqual(body.systemInstruction, { parts: [{ text: "Keep the layout." }] });

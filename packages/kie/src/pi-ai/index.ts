@@ -1,5 +1,5 @@
 import type { Provider } from "@earendil-works/pi-ai";
-import { createChatProvider, helperImages, publishedCost, type ChatModelDefinition, type ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
+import { createChatProvider, helperImages, toModelCost, type ChatModelDefinition, type ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
 import {
   KIE_API_BASE_URL,
   KIE_CLAUDE_BASE_URL,
@@ -18,58 +18,57 @@ export type { ChatModelDefinition, ChatProtocol } from "@hk01/pi-ai-extra-intern
  * Rates as of 2026-10-16, source: https://kie.ai/pricing, read from
  * `POST https://api.kie.ai/client/v1/model-pricing/page` with
  * `{"pageNum":1,"pageSize":100,"interfaceType":"chat"}`. KIE prices chat in credits per
- * 1M tokens; 1 credit = $0.005 (the same listing's `usdPrice`).
+ * 1M tokens; 1 credit = $0.005 (the same listing's `usdPrice`). `toModelCost` derives the cache
+ * rates KIE does not publish.
  */
 const USD_PER_CREDIT = 0.005;
 
-/** KIE credits per 1M tokens to USD per 1M tokens (`publishedCost` rounds the result). */
+/** KIE credits per 1M tokens to USD per 1M tokens (`toModelCost` rounds the result). */
 function usd(credits: number): number {
   return credits * USD_PER_CREDIT;
 }
 
 /**
- * KIE publishes no cache rates for Claude, so `publishedCost` fills them in: cache reads at the
- * input rate (an upper bound) and cache writes at 1.25 × input (Anthropic's 5-minute write).
+ * A Codex model on `POST /openai/v1/responses`, with input, output, cached-input and cache-write
+ * credits per 1M tokens, all published. KIE documents dashed ids (it also accepts the dotted
+ * ones); `catalogueId` points at pi-ai's dotted catalogue entry for capability metadata.
  */
+function codex(
+  id: string,
+  credits: { input: number; output: number; cacheRead: number; cacheWrite: number },
+  catalogueId?: string,
+): ChatModelDefinition {
+  return {
+    id,
+    ...(catalogueId === undefined ? {} : { catalogueId }),
+    protocol: "openai-responses",
+    cost: toModelCost({
+      input: usd(credits.input),
+      output: usd(credits.output),
+      cacheRead: usd(credits.cacheRead),
+      cacheWrite: usd(credits.cacheWrite),
+    }),
+  };
+}
+
+/** A Claude model on Anthropic Messages, with input and output credits per 1M tokens; KIE publishes no cache rates for Claude. */
 function claude(id: string, inputCredits: number, outputCredits: number): ChatModelDefinition {
-  return { id, protocol: "anthropic-messages", cost: publishedCost({ input: usd(inputCredits), output: usd(outputCredits) }) };
+  return { id, protocol: "anthropic-messages", cost: toModelCost({ input: usd(inputCredits), output: usd(outputCredits) }) };
 }
 
 /**
- * Codex models on `POST /openai/v1/responses`. KIE documents dashed ids (it also accepts the
- * dotted ones); `catalogueId` points at pi-ai's dotted catalogue entry for capability metadata.
- * Costs: input, output, cached input and cache writes as published (credits per 1M tokens).
- *
- * `gpt-5-5` is listed and priced by KIE but was rejected on both Codex routes in a live check on
- * 2026-10-16 ("not supported when using Codex with a ChatGPT account"), so it is not offered.
+ * Codex models. `gpt-5-5` is listed and priced by KIE but was rejected on both Codex routes in a
+ * live check on 2026-10-16 ("not supported when using Codex with a ChatGPT account"), so it is not
+ * offered.
  */
 const CODEX_MODELS: readonly ChatModelDefinition[] = [
-  {
-    id: "gpt-6-astra",
-    protocol: "openai-responses",
-    cost: publishedCost({ input: usd(560), output: usd(2800), cacheRead: usd(56), cacheWrite: usd(700) }),
-  },
-  {
-    id: "gpt-5-6-sol",
-    catalogueId: "gpt-5.6-sol",
-    protocol: "openai-responses",
-    cost: publishedCost({ input: usd(280), output: usd(1680), cacheRead: usd(28), cacheWrite: usd(350) }),
-  },
-  {
-    id: "gpt-5-6-terra",
-    catalogueId: "gpt-5.6-terra",
-    protocol: "openai-responses",
-    cost: publishedCost({ input: usd(112), output: usd(672), cacheRead: usd(11.2), cacheWrite: usd(140) }),
-  },
-  {
-    id: "gpt-5-6-luna",
-    catalogueId: "gpt-5.6-luna",
-    protocol: "openai-responses",
-    cost: publishedCost({ input: usd(11.2), output: usd(67.2), cacheRead: usd(1.12), cacheWrite: usd(14) }),
-  },
+  codex("gpt-6-astra", { input: 560, output: 2800, cacheRead: 56, cacheWrite: 700 }),
+  codex("gpt-5-6-sol", { input: 280, output: 1680, cacheRead: 28, cacheWrite: 350 }, "gpt-5.6-sol"),
+  codex("gpt-5-6-terra", { input: 112, output: 672, cacheRead: 11.2, cacheWrite: 140 }, "gpt-5.6-terra"),
+  codex("gpt-5-6-luna", { input: 11.2, output: 67.2, cacheRead: 1.12, cacheWrite: 14 }, "gpt-5.6-luna"),
 ];
 
-/** Claude models on Anthropic Messages, with input and output credits per 1M tokens. */
+/** Claude models on Anthropic Messages. */
 const CLAUDE_MODELS: readonly ChatModelDefinition[] = [
   claude("claude-fable-5", 800, 4000),
   claude("claude-opus-5", 400, 2000),
