@@ -6,7 +6,10 @@ import type { ModelCost } from "@earendil-works/pi-ai";
  * a zero rate. A request is priced at the period in force when it was made.
  */
 
-/** Per-token rates in USD per 1M tokens. Omit a cache rate the provider does not publish: `toModelCost` derives it. */
+/**
+ * Per-token rates in USD per 1M tokens. Omit a cache rate the provider does not publish: it is
+ * derived when a request is priced, by the cache fill-in rule in the README's "Chat rates" section.
+ */
 export interface TokenRates {
   input: number;
   output: number;

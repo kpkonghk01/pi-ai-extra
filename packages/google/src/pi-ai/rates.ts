@@ -59,7 +59,7 @@ const CATALOGUE_COSTS: Readonly<Record<string, ModelCost>> = Object.fromEntries(
  * The API has served `-preview` ids for models the price page lists without the suffix, so a
  * `-preview` id the table does not list takes the rate of the id without it; a preview with its
  * own rate still matches itself first. Not in the table at all: Google's list price from pi-ai's
- * catalogue for that id (`catalogueRate`: one period, and a zero price is no rate). Neither: no rate.
+ * catalogue for that id, as one period, where a zero price is no rate. Neither: no rate.
  */
 export function googleChatRate(modelId: string): ModelRate | undefined {
   return tableRate(modelId) ?? catalogueRate(CATALOGUE_COSTS[modelId]);
