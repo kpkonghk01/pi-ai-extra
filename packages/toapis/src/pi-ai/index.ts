@@ -1,19 +1,21 @@
-import type { ModelCost, Provider } from "@earendil-works/pi-ai";
+import type { Provider } from "@earendil-works/pi-ai";
 import { withoutTrailingSlash } from "@hk01/pi-ai-extra-internal";
-import { createChatProvider, helperImages, toModelCost, type ChatModelDefinition, type ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
+import { createChatProvider, helperImages, singleRate, type ChatModelDefinition, type ChatProtocol, type ModelRate } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { TOAPIS_BASE_URL, TOAPIS_IMAGES_API, TOAPIS_PROVIDER_ID, TOAPIS_PROVIDER_NAME, toapisResponsesBaseUrl } from "../constants.ts";
 import { generateToapisImage, type ToapisImageRequest, type ToapisImageSettings } from "../generate.ts";
 import { TOAPIS_IMAGE_MODELS } from "../models.ts";
 
-export type { ChatModelDefinition, ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
+export type { ChatModelDefinition, ChatProtocol, LargePromptRates, ModelRate, RatePeriod, TokenRates } from "@hk01/pi-ai-extra-internal/pi-ai";
 
 /**
- * USD per 1M tokens from a ToAPIs pricing entry: input = 2 × `model_ratio`, output =
- * 2 × `model_ratio` × `completion_ratio` (every group ratio is 1). ToAPIs publishes no cache
- * rates; `toModelCost` derives them.
+ * A one-period schedule in USD per 1M tokens from a ToAPIs pricing entry: input =
+ * 2 × `model_ratio`, output = 2 × `model_ratio` × `completion_ratio` (every group ratio is 1).
+ * ToAPIs publishes no dates and no cache rates; pricing derives the cache rates
+ * (`toModelCost`).
  */
-function ratioCost(modelRatio: number, completionRatio: number): ModelCost {
-  return toModelCost({ input: 2 * modelRatio, output: 2 * modelRatio * completionRatio });
+function ratioRate(modelRatio: number, completionRatio: number): ModelRate {
+  const round = (usd: number) => Math.round(usd * 1e6) / 1e6;
+  return singleRate({ input: round(2 * modelRatio), output: round(2 * modelRatio * completionRatio) });
 }
 
 /**
@@ -28,10 +30,10 @@ function ratioCost(modelRatio: number, completionRatio: number): ModelCost {
  * that wants them passes them in the factory's `models` option.
  */
 export const TOAPIS_CHAT_MODELS: readonly ChatModelDefinition[] = [
-  { id: "gpt-5.3-codex-official", protocol: "openai-responses", cost: ratioCost(0.7, 8) },
-  { id: "claude-opus-4-6", protocol: "anthropic-messages", cost: ratioCost(0.75, 5) },
-  { id: "claude-sonnet-4-6", protocol: "anthropic-messages", cost: ratioCost(0.45, 5) },
-  { id: "claude-haiku-4-5", protocol: "anthropic-messages", cost: ratioCost(0.15, 5) },
+  { id: "gpt-5.3-codex-official", protocol: "openai-responses", rate: ratioRate(0.7, 8) },
+  { id: "claude-opus-4-6", protocol: "anthropic-messages", rate: ratioRate(0.75, 5) },
+  { id: "claude-sonnet-4-6", protocol: "anthropic-messages", rate: ratioRate(0.45, 5) },
+  { id: "claude-haiku-4-5", protocol: "anthropic-messages", rate: ratioRate(0.15, 5) },
 ];
 
 export interface ToapisProviderOptions {

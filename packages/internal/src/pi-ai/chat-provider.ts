@@ -1,10 +1,10 @@
-import { createProvider, type Model, type ModelCost, type Provider, type ProviderHeaders, type ProviderStreams } from "@earendil-works/pi-ai";
+import { createProvider, type Model, type Provider, type ProviderHeaders, type ProviderStreams } from "@earendil-works/pi-ai";
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
 import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
 import { explicitApiKeyAuth } from "./auth.ts";
-import { INTERIM_ZERO_COST } from "./cost.ts";
+import { assertModelRate, modelCostAt, type ModelRate } from "./rates.ts";
 import type { HelperImages } from "./images-provider.ts";
 
 export type ChatProtocol = "openai-responses" | "anthropic-messages";
@@ -24,13 +24,14 @@ export interface ChatModelDefinition {
   contextWindow?: number | undefined;
   maxTokens?: number | undefined;
   /**
-   * USD per million tokens, used for pi-ai usage accounting. Never copied from pi-ai's catalogue
+   * The model's published rate schedule, in USD per 1M tokens. Never copied from pi-ai's catalogue
    * (provider prices differ from list prices). The packages' default model lists set it from each
-   * provider's published rates and offer no model without one. When omitted, every rate is `0`
-   * and pi-ai reports a zero `usage.cost` for the model. That zero is not a published rate: it is
-   * an interim value, because pi-ai's `Model.cost` cannot be absent.
+   * provider's published rates and offer no model without one. Omitted: the model has no rate,
+   * never a zero rate. pi-ai's `Model.cost` is set from the period in force when the provider is
+   * created, and is all zeros for a model with no rate (a placeholder: pi-ai requires the field);
+   * the chat kit prices each turn from the schedule at call time.
    */
-  cost?: ModelCost | undefined;
+  rate?: ModelRate | undefined;
 }
 
 export interface ChatProviderInput {
@@ -75,10 +76,12 @@ export function createChatProvider(input: ChatProviderInput): Provider<ChatProto
  * Builds a pi-ai model. Capability metadata (reasoning, context window, thinking
  * levels, request compatibility) is copied from pi-ai's built-in catalogue when the
  * id (or `catalogueId`) matches; Anthropic "allowed fallback models" are removed because
- * fallback is prohibited. Prices are never copied: they come from `definition.cost`, or are
- * `INTERIM_ZERO_COST` without it.
+ * fallback is prohibited. Prices are never copied: `cost` is the period of `definition.rate` in
+ * force at `at` (default now), or pi-ai's required placeholder when the model has no rate. An
+ * invalid rate schedule throws a `TypeError`.
  */
-export function buildChatModel(provider: string, baseUrl: string, definition: ChatModelDefinition): Model<ChatProtocol> {
+export function buildChatModel(provider: string, baseUrl: string, definition: ChatModelDefinition, at: Date = new Date()): Model<ChatProtocol> {
+  if (definition.rate !== undefined) assertModelRate(definition.rate, `${provider} chat model ${definition.id}`);
   const builtin = findBuiltinModel(definition);
   const defaults = DEFAULTS[definition.protocol];
   const model: Model<ChatProtocol> = {
@@ -89,7 +92,7 @@ export function buildChatModel(provider: string, baseUrl: string, definition: Ch
     baseUrl,
     reasoning: definition.reasoning ?? builtin?.reasoning ?? true,
     input: definition.input ?? builtin?.input ?? ["text", "image"],
-    cost: definition.cost ?? INTERIM_ZERO_COST,
+    cost: modelCostAt(definition.rate, at),
     contextWindow: definition.contextWindow ?? builtin?.contextWindow ?? defaults.contextWindow,
     maxTokens: definition.maxTokens ?? builtin?.maxTokens ?? defaults.maxTokens,
     ...(builtin?.thinkingLevelMap ? { thinkingLevelMap: builtin.thinkingLevelMap } : {}),
