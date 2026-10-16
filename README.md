@@ -152,7 +152,7 @@ import { createToapisProvider } from "@hk01/pi-ai-extra-toapis/pi-ai";
 import { createGoogleProvider } from "@hk01/pi-ai-extra-google/pi-ai";
 
 const models = createModels();
-models.setProvider(createKieProvider({ apiKey: kieKey }));       // Codex on https://api.kie.ai/codex/v1, Claude on https://api.kie.ai/anthropic (Bearer)
+models.setProvider(createKieProvider({ apiKey: kieKey }));       // Codex on https://api.kie.ai/openai/v1, Claude on https://api.kie.ai/anthropic (Bearer)
 models.setProvider(createToapisProvider({ apiKey: toapisKey })); // Codex on https://toapis.com/v1, Claude on https://toapis.com
 models.setProvider(createGoogleProvider({ apiKey: geminiKey }));  // Gemini chat; never reads GEMINI_API_KEY
 
@@ -182,7 +182,6 @@ KIE and ToAPIs chat models use pi-ai's own OpenAI Responses and Anthropic Messag
 | KIE | `gpt-5-6-sol` | 1.40 | 8.40 | 0.14 | 1.75 |
 | KIE | `gpt-5-6-terra` | 0.56 | 3.36 | 0.056 | 0.70 |
 | KIE | `gpt-5-6-luna` | 0.056 | 0.336 | 0.0056 | 0.07 |
-| KIE | `gpt-5-5` | 1.40 | 8.40 | 0.14 | 1.40* |
 | KIE | `claude-fable-5` | 4.00 | 20.00 | 4.00* | 4.00* |
 | KIE | `claude-opus-5`, `claude-opus-4-8` | 2.00 | 10.00 | 2.00* | 2.00* |
 | KIE | `claude-opus-4-7`, `claude-opus-4-6`, `claude-opus-4-5` | 1.425 | 7.15 | 1.425* | 1.425* |
@@ -228,7 +227,7 @@ Register each package's provider once: a second provider with the same id replac
 
 `KIE_CHAT_MODELS` and `TOAPIS_CHAT_MODELS` now carry published rates instead of zero cost (see [Chat rates](#chat-rates)). ToAPIs Claude Haiku is `claude-haiku-4-5`, the public catalogue id, instead of `claude-haiku-4-5-20251001`.
 
-KIE chat defaults changed as well. Codex moved to `https://api.kie.ai/codex/v1` (`POST /codex/v1/responses`) and now offers `gpt-6-astra`, `gpt-5-6-sol`, `gpt-5-6-terra`, `gpt-5-6-luna` and `gpt-5-5`; the `gpt-5.x-codex` ids are delisted. Claude uses `https://api.kie.ai/anthropic`, the base URL in KIE's Claude Code guides; the model pages still show `/claude/v1/messages`, which `claudeBaseUrl: "https://api.kie.ai/claude"` keeps.
+KIE chat defaults changed as well. Codex moved to `https://api.kie.ai/openai/v1` (`POST /openai/v1/responses`, the route in KIE's Codex CLI guide, which returns real HTTP statuses) and now offers `gpt-6-astra`, `gpt-5-6-sol`, `gpt-5-6-terra` and `gpt-5-6-luna`; the `gpt-5.x-codex` ids are delisted, and `gpt-5-5` is left out because KIE rejects it for Codex. `responsesBaseUrl: "https://api.kie.ai/codex/v1"` selects the API reference's route instead. Claude uses `https://api.kie.ai/anthropic`, the base URL in KIE's Claude Code guides; the model pages still show `/claude/v1/messages`, which `claudeBaseUrl: "https://api.kie.ai/claude"` keeps.
 
 ### Prompt caching
 

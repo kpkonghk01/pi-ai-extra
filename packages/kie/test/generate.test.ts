@@ -276,9 +276,9 @@ describe("KIE catalogue and pi-ai adapters", () => {
     const byId = new Map(provider.getModels().map((model) => [model.id, model]));
     assert.deepEqual(
       provider.getModels().filter((model) => model.api === "openai-responses").map((model) => model.id),
-      ["gpt-6-astra", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-5-6-luna", "gpt-5-5"],
+      ["gpt-6-astra", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-5-6-luna"],
     );
-    assert.equal(byId.get("gpt-5-6-sol")?.baseUrl, "https://api.kie.ai/codex/v1");
+    assert.equal(byId.get("gpt-5-6-sol")?.baseUrl, "https://api.kie.ai/openai/v1");
     assert.equal(byId.get("claude-sonnet-5")?.api, "anthropic-messages");
     assert.equal(byId.get("claude-sonnet-5")?.baseUrl, "https://api.kie.ai/anthropic");
     assert.throws(() => createKieProvider({ apiKey: "" }), /apiKey is required/);
@@ -286,12 +286,10 @@ describe("KIE catalogue and pi-ai adapters", () => {
 
   it("takes Codex capability metadata from pi-ai's dotted catalogue ids and KIE's 272K context window", () => {
     const byId = new Map(createKieProvider({ apiKey: "kie-key" }).getModels().map((model) => [model.id, model]));
-    for (const id of ["gpt-6-astra", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-5-6-luna", "gpt-5-5"]) {
+    for (const id of ["gpt-6-astra", "gpt-5-6-sol", "gpt-5-6-terra", "gpt-5-6-luna"]) {
       assert.equal(byId.get(id)?.contextWindow, 272_000, id);
       assert.equal(byId.get(id)?.thinkingLevelMap?.xhigh, "xhigh", id);
     }
-    // KIE: `max` is not available for gpt-5-5.
-    assert.equal(byId.get("gpt-5-5")?.thinkingLevelMap?.max, null);
     assert.equal(byId.get("gpt-5-6-sol")?.thinkingLevelMap?.max, "max");
   });
 
@@ -303,7 +301,6 @@ describe("KIE catalogue and pi-ai adapters", () => {
       "gpt-5-6-sol": [1.4, 8.4, 0.14, 1.75],
       "gpt-5-6-terra": [0.56, 3.36, 0.056, 0.7],
       "gpt-5-6-luna": [0.056, 0.336, 0.0056, 0.07],
-      "gpt-5-5": [1.4, 8.4, 0.14, 1.4],
       "claude-fable-5": [4, 20, 4, 4],
       "claude-opus-5": [2, 10, 2, 2],
       "claude-opus-4-8": [2, 10, 2, 2],
@@ -321,7 +318,7 @@ describe("KIE catalogue and pi-ai adapters", () => {
     }
   });
 
-  it("streams Codex through the moved endpoint and turns KIE's HTTP-200 envelope into an error", async () => {
+  it("streams Codex through /openai/v1 and still turns a KIE HTTP-200 envelope into an error", async () => {
     const urls: string[] = [];
     const fetch = async (input: string | URL | Request) => {
       urls.push(String(input instanceof Request ? input.url : input));
@@ -337,7 +334,7 @@ describe("KIE catalogue and pi-ai adapters", () => {
     const message = await models.complete(model, { messages: [{ role: "user", content: "hi", timestamp: 0 }] }, { fetch, maxRetries: 0 });
     assert.equal(message.stopReason, "error");
     assert.match(message.errorMessage ?? "", /KIE code 402: Insufficient credits/);
-    assert.deepEqual(urls, ["https://api.kie.ai/codex/v1/responses"]);
+    assert.deepEqual(urls, ["https://api.kie.ai/openai/v1/responses"]);
   });
 
   it("sends Claude to /anthropic/v1/messages with Bearer auth only", async () => {

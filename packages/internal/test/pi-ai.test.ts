@@ -159,14 +159,14 @@ describe("chat provider helpers", () => {
     assert.deepEqual(model.cost, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
     assert.equal("allowedFallbackModels" in (model.compat ?? {}), false);
 
-    const unknown = buildChatModel("kie", "https://api.kie.ai/codex/v1", { id: "gpt-5.4-codex", protocol: "openai-responses" });
+    const unknown = buildChatModel("kie", "https://api.kie.ai/openai/v1", { id: "gpt-5.4-codex", protocol: "openai-responses" });
     assert.equal(unknown.contextWindow, 400_000);
     assert.equal(unknown.api, "openai-responses");
     assert.equal(unknown.thinkingLevelMap, undefined);
   });
 
   it("copies metadata from catalogueId when the provider spells the id differently, but never its prices", () => {
-    const model = buildChatModel("kie", "https://api.kie.ai/codex/v1", { id: "gpt-5-6-sol", catalogueId: "gpt-5.6-sol", protocol: "openai-responses" });
+    const model = buildChatModel("kie", "https://api.kie.ai/openai/v1", { id: "gpt-5-6-sol", catalogueId: "gpt-5.6-sol", protocol: "openai-responses" });
     assert.equal(model.id, "gpt-5-6-sol");
     assert.equal(model.name, "GPT-5.6 Sol");
     assert.equal(model.contextWindow, 272_000);

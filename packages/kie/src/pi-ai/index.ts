@@ -37,9 +37,12 @@ function claude(id: string, inputCredits: number, outputCredits: number): ChatMo
 }
 
 /**
- * Codex models on `POST /codex/v1/responses`. KIE documents dashed ids (it also accepts the
+ * Codex models on `POST /openai/v1/responses`. KIE documents dashed ids (it also accepts the
  * dotted ones); `catalogueId` points at pi-ai's dotted catalogue entry for capability metadata.
  * Costs: input, output, cached input and cache writes as published (credits per 1M tokens).
+ *
+ * `gpt-5-5` is listed and priced by KIE but was rejected on both Codex routes in a live check on
+ * 2026-10-16 ("not supported when using Codex with a ChatGPT account"), so it is not offered.
  */
 const CODEX_MODELS: readonly ChatModelDefinition[] = [
   {
@@ -64,13 +67,6 @@ const CODEX_MODELS: readonly ChatModelDefinition[] = [
     catalogueId: "gpt-5.6-luna",
     protocol: "openai-responses",
     cost: { input: usd(11.2), output: usd(67.2), cacheRead: usd(1.12), cacheWrite: usd(14) },
-  },
-  {
-    id: "gpt-5-5",
-    catalogueId: "gpt-5.5",
-    protocol: "openai-responses",
-    // No published cache-write rate: set to the input rate as a conservative upper bound.
-    cost: { input: usd(280), output: usd(1680), cacheRead: usd(28), cacheWrite: usd(280) },
   },
 ];
 
@@ -99,7 +95,7 @@ export interface KieProviderOptions {
   apiKey: string;
   /** Replaces the default chat model list. The image models are always `KIE_IMAGE_MODELS`. */
   models?: readonly ChatModelDefinition[] | undefined;
-  /** Codex (OpenAI Responses) parent path; pi-ai appends `/responses`. Default `https://api.kie.ai/codex/v1`. */
+  /** Codex (OpenAI Responses) parent path; pi-ai appends `/responses`. Default `https://api.kie.ai/openai/v1`. */
   responsesBaseUrl?: string | undefined;
   /** Claude (Anthropic Messages) base URL; pi-ai appends `/v1/messages`. Default `https://api.kie.ai/anthropic`. */
   claudeBaseUrl?: string | undefined;
