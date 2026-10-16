@@ -94,9 +94,31 @@ export function transformAnthropicPayload(payload: unknown, plan: PayloadPlan): 
 }
 
 /**
+ * Claude families that always think: Opus 5, Fable 5 and every 5.5 model. A point release or dated
+ * snapshot (`claude-fable-5.1`, `claude-opus-5-20261001`) belongs to its family.
+ */
+const ALWAYS_THINKING_CLAUDE = /^claude-(?:(?:opus|fable)-5|[a-z]+-5-5)(?![0-9])/;
+
+/**
+ * Whether a model id names an always-thinking Claude family, whatever its catalogue entry says
+ * (OpenRouter's `anthropic/claude-opus-5` lists thinking as `off: "none"`). The id is matched
+ * without a provider prefix such as `anthropic/`, and with `.` read as `-`, so KIE's
+ * `claude-opus-5`, OpenRouter's `anthropic/claude-opus-5` and `anthropic/claude-sonnet-5.5` match.
+ */
+export function isAlwaysThinkingClaude(modelId: string): boolean {
+  const id = modelId
+    .slice(modelId.lastIndexOf("/") + 1)
+    .toLowerCase()
+    .replaceAll(".", "-");
+  return ALWAYS_THINKING_CLAUDE.test(id);
+}
+
+/**
  * A forced tool call is incompatible with thinking. That rules out a requested reasoning level,
- * and models that always think: pi-ai's managed-effort models (`supportsMidConvoEffort`) and
- * models whose thinking cannot be turned off (`thinkingLevelMap.off === null`).
+ * and models that always think: by catalogue metadata, pi-ai's managed-effort models
+ * (`supportsMidConvoEffort`) and models whose thinking cannot be turned off
+ * (`thinkingLevelMap.off === null`); by model id, the always-thinking Claude families, which a
+ * provider's catalogue may not mark.
  */
 export function anthropicSchemaUnsupported(
   model: Model<Api>,
@@ -107,7 +129,8 @@ export function anthropicSchemaUnsupported(
     return "a response schema on Anthropic Messages is a forced tool call, which Anthropic does not allow with thinking; remove settings.reasoning.";
   }
   const compat = (model as { compat?: { supportsMidConvoEffort?: boolean } }).compat;
-  if (compat?.supportsMidConvoEffort === true || model.thinkingLevelMap?.off === null) {
+  const alwaysThinks = compat?.supportsMidConvoEffort === true || model.thinkingLevelMap?.off === null || isAlwaysThinkingClaude(model.id);
+  if (alwaysThinks) {
     return "a response schema on Anthropic Messages is a forced tool call, which Anthropic does not allow with thinking, and this model always thinks.";
   }
   return undefined;

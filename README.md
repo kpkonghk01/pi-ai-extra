@@ -354,7 +354,7 @@ The request is ordered: system prompt, documents, history, new message. The docu
 | OpenAI Responses | strict `text.format` (`json_schema`) |
 | Anthropic Messages | a forced call of one tool whose `input_schema` is the schema; its argument deltas stream as `text` |
 
-`responseSchema.name` is 1–64 letters, digits, `_` or `-`. Anthropic rejects a forced tool call while the model thinks, so on Anthropic Messages a schema together with `settings.reasoning`, or on a model that always thinks (for example Claude Opus 5 or Fable 5), fails with `UNSUPPORTED` before anything is sent.
+`responseSchema.name` is 1–64 letters, digits, `_` or `-`. Anthropic rejects a forced tool call while the model thinks, so on Anthropic Messages a schema together with `settings.reasoning`, or on a model that always thinks, fails with `UNSUPPORTED` before anything is sent. A model always thinks when its catalogue entry says thinking cannot be turned off, or when its id is in the Claude Opus 5, Fable 5 or 5.5 family, matched without a provider prefix and with `.` read as `-` (`claude-opus-5` on KIE, `anthropic/claude-opus-5` or `anthropic/claude-sonnet-5.5` on OpenRouter), since a provider's catalogue may not say so.
 
 ### Errors
 

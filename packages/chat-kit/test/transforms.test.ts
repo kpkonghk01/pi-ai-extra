@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { TurnFailure } from "../src/errors.ts";
 import type { PreparedDocument } from "../src/documents.ts";
-import { transformAnthropicPayload } from "../src/wire/anthropic-messages.ts";
+import { isAlwaysThinkingClaude, transformAnthropicPayload } from "../src/wire/anthropic-messages.ts";
 import { sanitizeSchemaForGemini } from "../src/wire/gemini-schema.ts";
 import { placeGoogleDocument, transformGooglePayload } from "../src/wire/google.ts";
 import { transformOpenAICompletionsPayload } from "../src/wire/openai-completions.ts";
@@ -318,6 +318,36 @@ describe("Anthropic Messages payload transform", () => {
         ),
       /appeared 2 times/,
     );
+  });
+});
+
+describe("always-thinking Claude families", () => {
+  it("matches Opus 5, Fable 5 and the 5.5 family with or without a provider prefix, dotted or dashed", () => {
+    for (const id of [
+      "claude-opus-5",
+      "anthropic/claude-opus-5",
+      "claude-fable-5",
+      "anthropic/claude-fable-5.1",
+      "claude-opus-5-20261001",
+      "anthropic/claude-sonnet-5.5",
+      "claude-haiku-5-5",
+      "anthropic/claude-opus-5.5",
+    ]) {
+      assert.equal(isAlwaysThinkingClaude(id), true, id);
+    }
+  });
+
+  it("does not match models whose thinking can be turned off", () => {
+    for (const id of [
+      "claude-sonnet-5",
+      "anthropic/claude-sonnet-5",
+      "claude-opus-4-8",
+      "anthropic/claude-sonnet-4.6",
+      "claude-opus-50",
+      "gpt-5-5",
+    ]) {
+      assert.equal(isAlwaysThinkingClaude(id), false, id);
+    }
   });
 });
 

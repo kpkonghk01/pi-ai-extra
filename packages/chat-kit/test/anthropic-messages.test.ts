@@ -265,4 +265,18 @@ describe("runTurn on Anthropic Messages", () => {
     assert.match(alwaysThinks.type === "failed" ? alwaysThinks.error.message : "", /always thinks/);
     assert.equal(fake.calls.length, 0);
   });
+
+  it("rejects a response schema on OpenRouter's anthropic/claude-opus-5, whose catalogue entry lets thinking off", async () => {
+    const { chat, fake } = kit([]);
+    const events = await collect(
+      chat.runTurn(turn({ model: "anthropic/claude-opus-5", responseSchema: { name: "answer", schema: SCHEMA } })),
+    );
+    assert.equal(events.length, 1);
+    const last = lastEvent(events);
+    assert.equal(last.type, "failed");
+    if (last.type !== "failed") return;
+    assert.equal(last.error.code, "UNSUPPORTED");
+    assert.match(last.error.message, /^\[router\/anthropic\/claude-opus-5\] .*always thinks/);
+    assert.equal(fake.calls.length, 0, "nothing is sent");
+  });
 });
