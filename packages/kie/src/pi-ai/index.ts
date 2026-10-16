@@ -63,7 +63,10 @@ function claude(id: string, inputCredits: number, outputCredits: number): ChatMo
  * offered.
  */
 const CODEX_MODELS: readonly ChatModelDefinition[] = [
+  codex("gpt-6-1-sol", { input: 120, output: 600, cacheRead: 6, cacheWrite: 150 }, "gpt-6.1-sol"),
   codex("gpt-6-astra", { input: 560, output: 2800, cacheRead: 56, cacheWrite: 700 }),
+  codex("gpt-6-sol", { input: 120, output: 600, cacheRead: 12, cacheWrite: 150 }),
+  codex("gpt-6-luna", { input: 6, output: 30, cacheRead: 0.6, cacheWrite: 7.5 }),
   codex("gpt-5-6-sol", { input: 280, output: 1680, cacheRead: 28, cacheWrite: 350 }, "gpt-5.6-sol"),
   codex("gpt-5-6-terra", { input: 112, output: 672, cacheRead: 11.2, cacheWrite: 140 }, "gpt-5.6-terra"),
   codex("gpt-5-6-luna", { input: 11.2, output: 67.2, cacheRead: 1.12, cacheWrite: 14 }, "gpt-5.6-luna"),
@@ -71,6 +74,9 @@ const CODEX_MODELS: readonly ChatModelDefinition[] = [
 
 /** Claude models on Anthropic Messages. */
 const CLAUDE_MODELS: readonly ChatModelDefinition[] = [
+  claude("claude-opus-5-5", 320, 1600),
+  claude("claude-sonnet-5-5", 160, 800),
+  claude("claude-haiku-5-5", 12, 60),
   claude("claude-fable-5", 800, 4000),
   claude("claude-opus-5", 400, 2000),
   claude("claude-opus-4-8", 400, 2000),
