@@ -210,5 +210,9 @@ describe("ToAPIs catalogue and pi-ai adapters", () => {
     assert.equal(byId.get("gpt-5.3-codex")?.baseUrl, "https://toapis.com/v1");
     assert.equal(byId.get("claude-sonnet-4-6")?.baseUrl, "https://toapis.com");
     assert.equal(byId.get("claude-sonnet-4-6")?.api, "anthropic-messages");
+    assert.deepEqual(
+      provider.getModels().map((model) => model.id),
+      ["gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.3-codex-official", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
+    );
   });
 });

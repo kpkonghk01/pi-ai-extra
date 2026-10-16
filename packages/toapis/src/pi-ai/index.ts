@@ -7,14 +7,17 @@ import { TOAPIS_IMAGE_MODELS } from "../models.ts";
 
 export type { ChatModelDefinition, ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
 
-/** Chat models documented by ToAPIs: Codex (OpenAI Responses) and Claude (Anthropic Messages). */
+/**
+ * Chat models documented by ToAPIs: Codex (OpenAI Responses) and Claude (Anthropic Messages),
+ * with the ids of its public model catalogue.
+ */
 export const TOAPIS_CHAT_MODELS: readonly ChatModelDefinition[] = [
   { id: "gpt-5.3-codex", protocol: "openai-responses" },
   { id: "gpt-5.3-codex-spark", protocol: "openai-responses" },
   { id: "gpt-5.3-codex-official", protocol: "openai-responses" },
   { id: "claude-opus-4-6", protocol: "anthropic-messages" },
   { id: "claude-sonnet-4-6", protocol: "anthropic-messages" },
-  { id: "claude-haiku-4-5-20251001", protocol: "anthropic-messages" },
+  { id: "claude-haiku-4-5", protocol: "anthropic-messages" },
 ];
 
 export interface ToapisProviderOptions {
