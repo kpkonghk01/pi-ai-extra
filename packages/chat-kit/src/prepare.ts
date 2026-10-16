@@ -7,10 +7,11 @@ import {
   type DocumentKind,
   type PreparedDocument,
 } from "./documents.ts";
+import { untilAborted } from "./abort.ts";
 import type { TurnPricing } from "./cost.ts";
 import { errorText, TurnFailure } from "./errors.ts";
 import { parseTurnInput } from "./input.ts";
-import type { RegisteredProvider } from "./registry.ts";
+import type { ListedModel, RegisteredProvider } from "./registry.ts";
 import type { ChatDocument, ChatTurnInput, ChatTurnSettings } from "./types.ts";
 import { wireApiFor, type PayloadPlan, type WireApi } from "./wire/index.ts";
 import { targetsOpenRouter } from "./wire/openrouter.ts";
@@ -57,21 +58,23 @@ export async function prepareTurn(
   const provider = registry.get(input.provider);
   if (!provider) throw new TurnFailure("UNKNOWN_MODEL", `No provider named ${JSON.stringify(input.provider)} is configured.`);
   const startedAt = Date.now();
-  const listed = provider.findModel(input.model);
+  const { model: listed, snapshot } = await untilAborted(provider.models.find(input.model), signal, turnAborted);
   if (!listed) {
-    throw new TurnFailure("UNKNOWN_MODEL", `Model ${JSON.stringify(input.model)} is not in the ${provider.kind} chat catalogue.`);
+    const why = snapshot.refreshError === undefined ? "" : ` (its live model list could not be read: ${snapshot.refreshError})`;
+    throw new TurnFailure("UNKNOWN_MODEL", `Model ${JSON.stringify(input.model)} is not in the ${provider.kind} model list${why}.`);
   }
   const { model } = listed;
   const wire = wireApiFor(model.api);
   if (!wire) throw new TurnFailure("UNSUPPORTED", `chat-kit does not support the ${JSON.stringify(model.api)} API of this model.`);
   const settings = input.settings ?? {};
-  const kinds = input.documents.map((document) => checkDocument(document, provider, model));
+  const kinds = input.documents.map((document) => checkDocument(document, provider, listed));
   const unsupported = wire.unsupported(model, { responseSchema: input.responseSchema, settings });
   if (unsupported) throw new TurnFailure("UNSUPPORTED", `This model cannot take this request: ${unsupported}`);
 
   const documents = await untilAborted(
     Promise.all(input.documents.map((document, index) => loadDocument(document, kinds[index]!, wire, model))),
     signal,
+    turnAborted,
   );
   const marker = documents.length > 0 ? createDocumentMarker() : undefined;
   return {
@@ -93,7 +96,7 @@ export async function prepareTurn(
   };
 }
 
-function checkDocument(document: ChatDocument, provider: RegisteredProvider, model: Model<Api>): DocumentKind {
+function checkDocument(document: ChatDocument, provider: RegisteredProvider, listed: ListedModel): DocumentKind {
   const kind = documentKind(document.mimeType);
   if (kind === undefined) {
     throw new TurnFailure(
@@ -108,8 +111,10 @@ function checkDocument(document: ChatDocument, provider: RegisteredProvider, mod
       `Provider ${provider.kind} does not take PDF or image documents yet (its file input is undocumented), so ${JSON.stringify(document.name)} cannot be sent.`,
     );
   }
-  if (!model.input.includes("image")) {
-    throw new TurnFailure("UNSUPPORTED", `Model ${model.id} takes text only, so it cannot read ${JSON.stringify(document.name)}.`);
+  const reads = kind === "pdf" ? "file" : "image";
+  if (!listed.input.includes(reads)) {
+    const takes = listed.input.length === 1 ? "takes text only" : `does not read ${kind === "pdf" ? "PDF files" : "images"}`;
+    throw new TurnFailure("UNSUPPORTED", `Model ${listed.model.id} ${takes}, so it cannot read ${JSON.stringify(document.name)}.`);
   }
   return kind;
 }
@@ -162,21 +167,6 @@ function buildContext(input: ChatTurnInput, model: Model<Api>, marker: string | 
   return { ...(input.systemPrompt ? { systemPrompt: input.systemPrompt } : {}), messages };
 }
 
-function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  const aborted = () => new TurnFailure("ABORTED", "The turn was aborted.");
-  if (signal.aborted) return Promise.reject(aborted());
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(aborted());
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-      },
-    );
-  });
+function turnAborted(): TurnFailure {
+  return new TurnFailure("ABORTED", "The turn was aborted.");
 }
