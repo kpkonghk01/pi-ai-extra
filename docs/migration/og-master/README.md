@@ -2,7 +2,7 @@
 
 本指南把「Remix: OG 拼貼大師」（下稱 og-master）的兩條生圖 route 改為使用 `@hk01/pi-ai-extra-*` packages：拼貼生成（`/api/generate-collage`）和圖片編輯（`/api/edit-image`，包括 AI 擦除 Logo）。改完後，使用者可以按 provider 分組，選擇 Google、ToAPIs、KIE 共 11 個圖片模型。對應 [DATA-4517](https://hk01-digital.atlassian.net/browse/DATA-4517)。
 
-og-master 是 Auto OG（「OG 拼貼大師（自動駕駛版）」）的 **Backup app**：Auto OG 用不到時，由用戶自行轉用；轉用是人的決定，不是 fallback（見 [CONTEXT.md](../../../CONTEXT.md)）。兩者出自同一個舊版本，所以這次沿用 [auto-og](../auto-og/) 的做法：模型設定、解像度表、費用計算和錯誤處理都相同。
+og-master 是 Auto OG（「OG 拼貼大師（自動駕駛版）」）的 **Backup app**：Auto OG 用不到時，由用戶自行轉用；轉用是人的決定，不是 fallback（見 [CONTEXT.md](../../../CONTEXT.md)）。兩者出自同一個舊版本，所以這次沿用 [auto-og](https://github.com/kpkonghk01/pi-ai-extra/tree/4f87f16/docs/migration/auto-og) 的做法：模型設定、解像度表、費用計算和錯誤處理都相同。
 
 DATA-4517 原本的 AC 寫的是瀏覽器端的 zip module。這個方案已被 [ADR 0006](../../adr/0006-image-kit-package.md) 和 [ADR 0007](../../adr/0007-catalogue-policy-model-selection.md) 取代。og-master 改為跟其他 app 一樣，在 server 端用 `@hk01/pi-ai-extra-image-kit` 0.2，API key 不會進入瀏覽器。og-master 沒有文字模型的呼叫，只有生圖和編輯。
 

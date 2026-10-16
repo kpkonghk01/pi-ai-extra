@@ -226,7 +226,7 @@ Pass `cacheRetention` explicitly: when it is omitted, pi-ai falls back to the `P
 6. **Usage.** Log `result.taskId` and `result.usage` per request. Send a unique `clientBusinessId` on ToAPIs requests. Re-read ToAPIs tasks whose `billingStatus` is `pending` with `getToapisTask()`, and keep one record per task id.
 7. **Upgrade / rollback.** Change the release URL in `package.json` to the new (or previous) version and redeploy. Released assets are never replaced, so a URL always installs the same bytes.
 
-A worked migration of `open-graph-single`, with paste-ready files verified against its CommonJS production build, is in [docs/migration/open-graph-single](docs/migration/open-graph-single/README.md). [docs/migration/infocard](docs/migration/infocard/README.md) migrates an app through the image kit instead, which covers steps 3–6 (and the model selector and error panel) for you.
+A worked migration through the image kit, with paste-ready files, is in [docs/migration/og-master](docs/migration/og-master/README.md); the image kit covers steps 3–6 (and the model selector and error panel) for you. The finished guides for open-graph-single, Auto OG, InfoCard and opengraph2 remain in the history at [`4f87f16`](https://github.com/kpkonghk01/pi-ai-extra/tree/4f87f16/docs/migration).
 
 ## Playground (not released)
 
