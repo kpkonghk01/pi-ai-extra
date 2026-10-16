@@ -77,6 +77,7 @@ describe("runTurn on Anthropic Messages", () => {
     assert.deepEqual(messages[2], { role: "user", content: [{ type: "text", text: "Q2", cache_control: { type: "ephemeral" } }] });
     const breakpoints = JSON.stringify(body).split('"cache_control"').length - 1;
     assert.equal(breakpoints, 3, "system, last document and last message: within Anthropic's four");
+    assert.deepEqual(body.plugins, [{ id: "file-parser", pdf: { engine: "native" } }], "OpenRouter's PDF parser stays native");
   });
 
   it("streams a forced tool call's arguments as the answer text for a response schema", async () => {
@@ -236,11 +237,13 @@ describe("runTurn on Anthropic Messages", () => {
     ]);
     const events = await collect(chat.runTurn(turn({ provider: "kie", model: "claude-sonnet-4-6", documents: [notes] })));
     assert.equal(lastEvent(events).type, "done");
-    const messages = jsonBody(fake.calls[0]?.body).messages as { content: unknown }[];
+    const body = jsonBody(fake.calls[0]?.body);
+    const messages = body.messages as { content: unknown }[];
     assert.deepEqual(messages[0]?.content, [
       { type: "text", text: '<document name="notes.csv">\na,b\n1,2\n</document>', cache_control: { type: "ephemeral" } },
       { type: "text", text: "Hello", cache_control: { type: "ephemeral" } },
     ]);
+    assert.ok(!("plugins" in body), "OpenRouter's plugins never go to KIE");
   });
 
   it("rejects a response schema with reasoning, or on a model that always thinks, before sending anything", async () => {

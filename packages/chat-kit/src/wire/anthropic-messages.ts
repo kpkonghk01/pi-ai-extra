@@ -4,6 +4,7 @@ import { TurnFailure } from "../errors.ts";
 import { isRecord } from "../guards.ts";
 import type { ChatUsage } from "../types.ts";
 import { billingFields, tokenCount, toChatUsage } from "../usage.ts";
+import { withFileParser } from "./openrouter.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
 type AnthropicBlock = Record<string, unknown>;
@@ -48,10 +49,15 @@ function thinkingEnabled(thinking: unknown): boolean {
  * last document block so the prefix up to the end of the documents is cached across turns. That
  * makes three breakpoints with pi-ai's two (system prompt, last user message), within Anthropic's
  * four. The response schema is a forced call of a single tool whose input schema is the schema.
+ *
+ * On OpenRouter the file-parser plugin is pinned to `native`, as on its Completions route: its
+ * Anthropic-compatible `/v1/messages` takes the same `plugins` array
+ * (https://openrouter.ai/docs/api/api-reference/anthropic-messages/create-a-message). KIE and
+ * ToAPIs never get it.
  */
 export function transformAnthropicPayload(payload: unknown, plan: PayloadPlan): unknown {
   if (!isRecord(payload)) return payload;
-  const next: Record<string, unknown> = { ...payload };
+  const next: Record<string, unknown> = { ...payload, ...(plan.openRouter ? { plugins: withFileParser(payload.plugins) } : {}) };
   if (plan.marker !== undefined) {
     const marker = plan.marker;
     const replacement = plan.documents.map(anthropicBlock);

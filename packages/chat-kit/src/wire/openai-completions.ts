@@ -3,15 +3,10 @@ import { assertMarkerReplaced, assertNoMarker, dataUrl, renderTextDocument, spli
 import { isRecord } from "../guards.ts";
 import type { ChatUsage } from "../types.ts";
 import { billingFields, tokenCount, toChatUsage } from "../usage.ts";
+import { withFileParser } from "./openrouter.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
 type CompletionsPart = Record<string, unknown>;
-
-/**
- * OpenRouter's PDF parser pinned to the model's native file input, so a PDF never falls
- * through to the paid OCR engine.
- */
-export const OPENROUTER_FILE_PARSER = { id: "file-parser", pdf: { engine: "native" } } as const;
 
 function completionsPart(document: PreparedDocument): CompletionsPart {
   if (document.kind === "text") return { type: "text", text: renderTextDocument(document) };
@@ -21,14 +16,10 @@ function completionsPart(document: PreparedDocument): CompletionsPart {
     : { type: "image_url", image_url: { url } };
 }
 
-function withFileParser(plugins: unknown): unknown[] {
-  const others = Array.isArray(plugins) ? plugins.filter((plugin) => !(isRecord(plugin) && plugin.id === "file-parser")) : [];
-  return [...others, OPENROUTER_FILE_PARSER];
-}
-
 /**
- * OpenAI Chat Completions (OpenRouter): documents replace the marker part (`file` for PDFs,
- * `image_url` for images), the file-parser plugin is always pinned to `native`, and the
+ * OpenAI Chat Completions (OpenRouter, the only provider of the kit on this API): documents replace
+ * the marker part (`file` for PDFs, `image_url` for images), the file-parser plugin is always
+ * pinned to `native`, and the
  * response schema becomes a strict `response_format`. With a schema, OpenRouter is asked to route
  * only to endpoints that honour it (`provider.require_parameters`), so an endpoint that would
  * ignore the schema fails instead.

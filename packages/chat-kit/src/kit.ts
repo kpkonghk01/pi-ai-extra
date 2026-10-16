@@ -22,6 +22,7 @@ import type {
   ChatUsage,
 } from "./types.ts";
 import { wireApiFor, type PayloadPlan, type StreamObserver, type WireApi } from "./wire/index.ts";
+import { targetsOpenRouter } from "./wire/openrouter.ts";
 
 /**
  * pi-ai retries only the initial request, before the response stream starts (408, 409, 429, 5xx
@@ -138,7 +139,13 @@ async function prepareTurn(
     model,
     wire,
     context: buildContext(input, model, marker),
-    plan: { marker, documents, responseSchema: input.responseSchema, grounding: provider.grounding },
+    plan: {
+      marker,
+      documents,
+      responseSchema: input.responseSchema,
+      grounding: provider.grounding,
+      openRouter: targetsOpenRouter(model),
+    },
     settings,
     schemaAsToolCall: wire.schemaAsToolCall && input.responseSchema !== undefined,
   };

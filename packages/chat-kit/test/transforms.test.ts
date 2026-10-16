@@ -8,6 +8,7 @@ import { sanitizeSchemaForGemini } from "../src/wire/gemini-schema.ts";
 import { placeGoogleDocument, transformGooglePayload } from "../src/wire/google.ts";
 import { transformOpenAICompletionsPayload } from "../src/wire/openai-completions.ts";
 import { transformOpenAIResponsesPayload } from "../src/wire/openai-responses.ts";
+import { targetsOpenRouter } from "../src/wire/openrouter.ts";
 import type { PayloadPlan } from "../src/wire/types.ts";
 
 const MARKER = "[[chat-kit:documents:test]]";
@@ -41,7 +42,14 @@ const PNG_INLINE: PreparedDocument = {
 const TEXT_PART = '<document name="notes.md">\n# Notes\n</document>';
 
 function plan(overrides: Partial<PayloadPlan> = {}): PayloadPlan {
-  return { marker: MARKER, documents: [TEXT_DOC, PDF_BY_URL, PNG_INLINE], responseSchema: undefined, grounding: false, ...overrides };
+  return {
+    marker: MARKER,
+    documents: [TEXT_DOC, PDF_BY_URL, PNG_INLINE],
+    responseSchema: undefined,
+    grounding: false,
+    openRouter: false,
+    ...overrides,
+  };
 }
 
 function expectMarkerFailure(run: () => unknown, problem: RegExp): void {
@@ -293,6 +301,16 @@ describe("Anthropic Messages payload transform", () => {
     assert.deepEqual(next.tool_choice, { type: "tool", name: "answer" });
   });
 
+  it("pins OpenRouter's native file parser on OpenRouter only, replacing a caller's file-parser setting", () => {
+    const withPlugins = { ...payload(), plugins: [{ id: "web" }, { id: "file-parser", pdf: { engine: "mistral-ocr" } }] };
+    const openRouter = transformAnthropicPayload(withPlugins, plan({ openRouter: true })) as Record<string, unknown>;
+    assert.deepEqual(openRouter.plugins, [{ id: "web" }, { id: "file-parser", pdf: { engine: "native" } }]);
+    const bare = transformAnthropicPayload(payload(), plan({ openRouter: true })) as Record<string, unknown>;
+    assert.deepEqual(bare.plugins, [{ id: "file-parser", pdf: { engine: "native" } }]);
+    const kie = transformAnthropicPayload(payload(), plan({ openRouter: false })) as Record<string, unknown>;
+    assert.ok(!("plugins" in kie), "KIE and ToAPIs never get OpenRouter's plugins");
+  });
+
   it("refuses a forced tool call while thinking is on", () => {
     assert.throws(
       () =>
@@ -318,6 +336,17 @@ describe("Anthropic Messages payload transform", () => {
         ),
       /appeared 2 times/,
     );
+  });
+});
+
+describe("targetsOpenRouter", () => {
+  const model = (provider: string, baseUrl: string) => ({ provider, baseUrl }) as Model<Api>;
+  it("is true for the openrouter provider, whatever its base URL, and for a base URL on openrouter.ai", () => {
+    assert.equal(targetsOpenRouter(model("openrouter", "https://proxy.example.com/openrouter")), true);
+    assert.equal(targetsOpenRouter(model("custom", "https://openrouter.ai/api")), true);
+    assert.equal(targetsOpenRouter(model("kie", "https://api.kie.ai/anthropic")), false);
+    assert.equal(targetsOpenRouter(model("toapis", "https://toapis.com")), false);
+    assert.equal(targetsOpenRouter(model("kie", "https://openrouter.ai.example.com")), false);
   });
 });
 

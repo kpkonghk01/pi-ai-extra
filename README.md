@@ -337,7 +337,7 @@ A turn emits `text` deltas (thinking is never streamed), then exactly one `done`
 - Plain-text documents are loaded, decoded as UTF-8 and sent on every provider as a text block labelled with the file name (`<document name="notes.md">…</document>`).
 - PDFs and images use each API's native file input: by URL when `url` is set (on Gemini only when `size` is known to be at most 15 MB, and never on Gemini 2.0), inline otherwise.
 - KIE and ToAPIs do not document file input, so PDFs and images fail there with `UNSUPPORTED` until a live smoke test enables them. A model whose catalogue `input` lacks `image` rejects them too, as does any other MIME type.
-- OpenRouter Completions requests always pin the `file-parser` plugin to the `native` PDF engine, so a PDF never falls through to paid OCR.
+- Every OpenRouter request, on its Completions route and on its Anthropic Messages route (`anthropic/*`), pins the `file-parser` plugin to the `native` PDF engine, so a PDF never falls through to OpenRouter's paid `mistral-ocr` engine. OpenRouter's [Anthropic Messages reference](https://openrouter.ai/docs/api/api-reference/anthropic-messages/create-a-message) takes the same `plugins` array as Completions. KIE and ToAPIs never get the plugin.
 
 Documents never enter pi-ai messages. A unique marker part stands in the first user turn and each API's `onPayload` transform replaces it, exactly once, with the parts above.
 
