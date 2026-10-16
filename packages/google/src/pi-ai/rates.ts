@@ -1,6 +1,6 @@
 import type { ModelCost } from "@earendil-works/pi-ai";
 import { GOOGLE_MODELS } from "@earendil-works/pi-ai/providers/google.models";
-import { singleRate, type ModelRate } from "@hk01/pi-ai-extra-internal/pi-ai";
+import { catalogueRate, singleRate, type ModelRate } from "@hk01/pi-ai-extra-internal/pi-ai";
 
 /** Every rate in Gemini 3.8 and 3.6 Flash's schedule doubles on this day. */
 const FLASH_DOUBLING_DAY = "2027-01-01";
@@ -59,7 +59,7 @@ const CATALOGUE_COSTS: Readonly<Record<string, ModelCost>> = Object.fromEntries(
  * The API has served `-preview` ids for models the price page lists without the suffix, so a
  * `-preview` id the table does not list takes the rate of the id without it; a preview with its
  * own rate still matches itself first. Not in the table at all: Google's list price from pi-ai's
- * catalogue for that id (as one period). Neither: no rate.
+ * catalogue for that id (`catalogueRate`: one period, and a zero price is no rate). Neither: no rate.
  */
 export function googleChatRate(modelId: string): ModelRate | undefined {
   return tableRate(modelId) ?? catalogueRate(CATALOGUE_COSTS[modelId]);
@@ -71,31 +71,4 @@ export function tableRate(modelId: string): ModelRate | undefined {
   if (own !== undefined) return own;
   const withoutPreview = modelId.replace(/-preview$/, "");
   return withoutPreview === modelId ? undefined : GEMINI_CHAT_RATES[withoutPreview];
-}
-
-/**
- * A pi-ai catalogue price as a one-period schedule. pi-ai's catalogue has no "unpublished", so a
- * zero cache rate is read as unpublished and a model priced at zero for both input and output has
- * no rate: an unknown price is never a zero price.
- */
-function catalogueRate(cost: ModelCost | undefined): ModelRate | undefined {
-  if (cost === undefined || (cost.input === 0 && cost.output === 0)) return undefined;
-  const tier = cost.tiers?.[0];
-  return singleRate({
-    input: cost.input,
-    output: cost.output,
-    ...(cost.cacheRead > 0 ? { cacheRead: cost.cacheRead } : {}),
-    ...(cost.cacheWrite > 0 ? { cacheWrite: cost.cacheWrite } : {}),
-    ...(tier === undefined
-      ? {}
-      : {
-          largePrompt: {
-            overPromptTokens: tier.inputTokensAbove,
-            input: tier.input,
-            output: tier.output,
-            ...(tier.cacheRead > 0 ? { cacheRead: tier.cacheRead } : {}),
-            ...(tier.cacheWrite > 0 ? { cacheWrite: tier.cacheWrite } : {}),
-          },
-        }),
-  });
 }

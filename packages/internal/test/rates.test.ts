@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   assertModelRate,
   buildChatModel,
+  catalogueRate,
   estimateCostUsd,
   modelCostAt,
   NO_RATE_PLACEHOLDER_COST,
@@ -148,5 +149,23 @@ describe("estimateCostUsd", () => {
     assert.equal(estimateCostUsd(DOUBLING, { cacheRead: 1_000 }, BEFORE), undefined);
     assert.equal(estimateCostUsd(DOUBLING, {}, BEFORE), undefined);
     assert.equal(estimateCostUsd({ periods: [] }, { input: 1 }, BEFORE), undefined);
+  });
+});
+
+describe("catalogueRate", () => {
+  it("reads a pi-ai catalogue price as one period, a zero cache rate as unpublished and an all-zero price as no rate", () => {
+    assert.deepEqual(catalogueRate({ input: 3, output: 15, cacheRead: 0.3, cacheWrite: 0 }), { periods: [{ input: 3, output: 15, cacheRead: 0.3 }] });
+    assert.deepEqual(
+      catalogueRate({
+        input: 1.25,
+        output: 10,
+        cacheRead: 0.125,
+        cacheWrite: 0,
+        tiers: [{ inputTokensAbove: 200_000, input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 0 }],
+      }),
+      { periods: [{ input: 1.25, output: 10, cacheRead: 0.125, largePrompt: { overPromptTokens: 200_000, input: 2.5, output: 15, cacheRead: 0.25 } }] },
+    );
+    assert.equal(catalogueRate({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }), undefined);
+    assert.equal(catalogueRate(undefined), undefined);
   });
 });

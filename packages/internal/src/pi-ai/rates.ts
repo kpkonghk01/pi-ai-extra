@@ -119,6 +119,30 @@ export function modelCostAt(rate: ModelRate | undefined, at: Date | number): Mod
 }
 
 /**
+ * A pi-ai catalogue price (`Model.cost`) as a one-period schedule, for a model whose provider
+ * publishes no schedule of its own. pi-ai's catalogue has no "unpublished", so a zero cache rate
+ * is read as unpublished, and a model priced at zero for both input and output has no rate: an
+ * unknown price is never a zero price. The first pi-ai cost tier becomes the large-prompt tier.
+ */
+export function catalogueRate(cost: ModelCost | undefined): ModelRate | undefined {
+  if (cost === undefined || (cost.input === 0 && cost.output === 0)) return undefined;
+  const tier = cost.tiers?.[0];
+  return singleRate({
+    ...publishedOf(cost),
+    ...(tier === undefined ? {} : { largePrompt: { overPromptTokens: tier.inputTokensAbove, ...publishedOf(tier) } }),
+  });
+}
+
+function publishedOf(rates: { input: number; output: number; cacheRead: number; cacheWrite: number }): TokenRates {
+  return {
+    input: rates.input,
+    output: rates.output,
+    ...(rates.cacheRead > 0 ? { cacheRead: rates.cacheRead } : {}),
+    ...(rates.cacheWrite > 0 ? { cacheWrite: rates.cacheWrite } : {}),
+  };
+}
+
+/**
  * Estimated USD cost of one request from the period in force at `at`, applied to the counts the
  * provider reported: the large-prompt tier is chosen by the prompt count, cached and cache-write
  * tokens are charged at their (filled-in) rates and the rest of the prompt at the input rate;

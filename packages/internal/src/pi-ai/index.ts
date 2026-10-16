@@ -9,6 +9,7 @@ export {
 } from "./chat-provider.ts";
 export {
   assertModelRate,
+  catalogueRate,
   estimateCostUsd,
   modelCostAt,
   NO_RATE_PLACEHOLDER_COST,
