@@ -4,6 +4,7 @@ import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.l
 import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
 import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
 import { explicitApiKeyAuth } from "./auth.ts";
+import { UNPRICED_MODEL_COST } from "./cost.ts";
 import type { HelperImages } from "./images-provider.ts";
 
 export type ChatProtocol = "openai-responses" | "anthropic-messages";
@@ -25,8 +26,8 @@ export interface ChatModelDefinition {
   /**
    * USD per million tokens, used for pi-ai usage accounting. Never copied from pi-ai's catalogue
    * (provider prices differ from list prices). The packages' default model lists set it from each
-   * provider's published rates and offer no model without one. When omitted it is zero, an interim
-   * default until DATA-4568 lets a model have no rate.
+   * provider's published rates and offer no model without one. When omitted: the interim zero
+   * described at `fillCacheRates`.
    */
   cost?: ModelCost | undefined;
 }
@@ -44,13 +45,6 @@ export interface ChatProviderInput {
   /** Image models served by the same provider (pi-ai 1.2 keeps chat and image models in one `Models`). */
   images?: HelperImages | undefined;
 }
-
-/**
- * Cost of a consumer-supplied definition without `cost`. Interim: the glossary's Model rate says
- * an unpublished rate is no rate, never a zero rate, but pi-ai's `Model.cost` cannot be absent.
- * DATA-4568 replaces this with "no rate".
- */
-const ZERO_COST: ModelCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 const DEFAULTS: Record<ChatProtocol, { contextWindow: number; maxTokens: number }> = {
   "openai-responses": { contextWindow: 400_000, maxTokens: 128_000 },
@@ -80,8 +74,8 @@ export function createChatProvider(input: ChatProviderInput): Provider<ChatProto
  * Builds a pi-ai model. Capability metadata (reasoning, context window, thinking
  * levels, request compatibility) is copied from pi-ai's built-in catalogue when the
  * id (or `catalogueId`) matches; Anthropic "allowed fallback models" are removed because
- * fallback is prohibited. Prices are never copied: they come from `definition.cost`, and
- * a definition without `cost` gets zero rates (interim until DATA-4568 adds "no rate").
+ * fallback is prohibited. Prices are never copied: they come from `definition.cost`, or the
+ * interim zero described at `fillCacheRates`.
  */
 export function buildChatModel(provider: string, baseUrl: string, definition: ChatModelDefinition): Model<ChatProtocol> {
   const builtin = findBuiltinModel(definition);
@@ -94,7 +88,7 @@ export function buildChatModel(provider: string, baseUrl: string, definition: Ch
     baseUrl,
     reasoning: definition.reasoning ?? builtin?.reasoning ?? true,
     input: definition.input ?? builtin?.input ?? ["text", "image"],
-    cost: definition.cost ?? ZERO_COST,
+    cost: definition.cost ?? UNPRICED_MODEL_COST,
     contextWindow: definition.contextWindow ?? builtin?.contextWindow ?? defaults.contextWindow,
     maxTokens: definition.maxTokens ?? builtin?.maxTokens ?? defaults.maxTokens,
     ...(builtin?.thinkingLevelMap ? { thinkingLevelMap: builtin.thinkingLevelMap } : {}),

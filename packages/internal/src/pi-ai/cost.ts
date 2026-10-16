@@ -19,13 +19,23 @@ export interface PublishedRates {
 const UNPUBLISHED_CACHE_WRITE_FACTOR = 1.25;
 
 /**
- * pi-ai `ModelCost` from a provider's published rates. A cache rate the provider does not
- * publish is filled in: cache reads at the input rate, an upper bound (Anthropic and OpenAI
- * charge less for cached input), and cache writes at 1.25 × input, Anthropic's 5-minute ratio.
- * This rule is interim until DATA-4568 settles model rates. Every rate is rounded to 6 decimal
+ * pi-ai `ModelCost` from a provider's published rates, with every cache rate it does not publish
+ * filled in. This is the one place the rule is applied and explained; the rate tables point here.
+ *
+ * **Cache fill-in rule.** The filled-in rates are derived, not published:
+ * - an unpublished cache-read rate is the input rate, an upper bound (Anthropic and OpenAI charge
+ *   less for cached input);
+ * - an unpublished cache-write rate is 1.25 × input, Anthropic's 5-minute write and KIE's own
+ *   Codex ratio (a 1-hour write costs 2 × input on Anthropic).
+ *
+ * **Interim zero.** A consumer-supplied chat model definition without `cost` gets
+ * `UNPRICED_MODEL_COST` instead: the glossary's Model rate says an unpublished rate is no rate,
+ * never a zero rate, but pi-ai's `Model.cost` cannot be absent.
+ *
+ * Both rules are interim until DATA-4568 settles model rates. Every rate is rounded to 6 decimal
  * places to drop floating-point noise.
  */
-export function publishedCost(rates: PublishedRates): ModelCost {
+export function fillCacheRates(rates: PublishedRates): ModelCost {
   return {
     input: roundRate(rates.input),
     output: roundRate(rates.output),
@@ -33,6 +43,9 @@ export function publishedCost(rates: PublishedRates): ModelCost {
     cacheWrite: roundRate(rates.cacheWrite ?? rates.input * UNPUBLISHED_CACHE_WRITE_FACTOR),
   };
 }
+
+/** The interim zero cost of a consumer-supplied definition without `cost` (see `fillCacheRates`). */
+export const UNPRICED_MODEL_COST: ModelCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 /** `170 × 0.005` is `0.85`, not `0.8500000000000001`. */
 function roundRate(usd: number): number {
