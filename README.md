@@ -19,6 +19,8 @@ The `/pi-ai` subpath is ESM-only because pi-ai itself is ESM-only; a CommonJS se
 
 A fourth package, [`@hk01/pi-ai-extra-image-kit`](packages/image-kit/README.md), is the image client for Google AI Studio apps built on the three provider packages (their peer dependencies): model families derived from the installed catalogues through an app-owned, route-scoped catalogue policy, request validation, NDJSON streaming, a browser reader and React UI (model selector, error panel). Only its `/server` entry imports the provider packages; its `/browser` and `/react` entries run in the browser and never hold keys or provider code ([ADR 0006](docs/adr/0006-image-kit-package.md), [ADR 0007](docs/adr/0007-catalogue-policy-model-selection.md)).
 
+A fifth package, [`@hk01/pi-ai-extra-chat-kit`](#chat-kit), runs one chat turn the same way on Gemini, OpenRouter, KIE and ToAPIs (documents, response schema, safety blocks, usage), for a server-side gateway with no per-provider code. It is ESM-only and server-only ([ADR 0008](docs/adr/0008-chat-kit-package.md)).
+
 Non-negotiable behaviour (see [ADR 0003](docs/adr/0003-explicit-provider-execution.md)):
 
 - API keys are passed explicitly from server-side configuration. The packages never read environment variables and must not be bundled into browser code.
@@ -34,6 +36,7 @@ pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.3.0/
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.3.0/hk01-pi-ai-extra-toapis-0.3.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.4.0/hk01-pi-ai-extra-google-0.4.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/image-kit-v0.2.0/hk01-pi-ai-extra-image-kit-0.2.0.tgz   # optional, needs all three
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.1.0/hk01-pi-ai-extra-chat-kit-0.1.0.tgz     # optional, needs all three and pi-ai
 ```
 
 npm works the same way (`npm install <url>`). Upgrade or roll back by changing the URL. `zod@4.6.5` is installed automatically; install `@earendil-works/pi-ai@1.2.0` only if you use the `/pi-ai` subpath.
@@ -253,6 +256,125 @@ await models.complete(model, context, { cacheRetention: "short", sessionId: `og-
 
 Pass `cacheRetention` explicitly: when it is omitted, pi-ai falls back to the `PI_CACHE_RETENTION` environment variable. Prefer `"short"` with KIE/ToAPIs Codex until `"long"` has been verified against the gateway.
 
+## Chat kit
+
+`@hk01/pi-ai-extra-chat-kit` is the server-side chat counterpart of the image kit ([ADR 0008](docs/adr/0008-chat-kit-package.md)). A gateway calls `runTurn()` for every chat turn and needs no per-provider code: Gemini, OpenRouter, KIE and ToAPIs get the same turn features (reference documents, a response schema, safety-block reporting, usage), filled in per wire API where pi-ai 1.2 has none. It is ESM-only (like pi-ai) and server-only. It never chooses a provider and never falls back ([ADR 0003](docs/adr/0003-explicit-provider-execution.md)).
+
+### Install
+
+```sh
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.1.0/hk01-pi-ai-extra-chat-kit-0.1.0.tgz
+pnpm add @earendil-works/pi-ai@1.2.0   # peer, with the KIE, ToAPIs and Google packages above
+```
+
+### `createChatKit`
+
+```ts
+import { createChatKit } from "@hk01/pi-ai-extra-chat-kit";
+
+const chat = createChatKit({
+  providers: [
+    { name: "gemini", provider: "google", apiKey: geminiKey, grounding: true },
+    { name: "openrouter", provider: "openrouter", apiKey: openRouterKey },
+    { name: "kie", provider: "kie", apiKey: kieKey },
+    { name: "toapis", provider: "toapis", apiKey: toapisKey, baseUrl: "https://toapis.cn" },
+  ],
+});
+```
+
+| `provider` | pi-ai wire APIs | `baseUrl` (optional) | PDF and image documents |
+| --- | --- | --- | --- |
+| `google` | Gemini | Chat base URL, default `https://generativelanguage.googleapis.com/v1beta` | Yes |
+| `openrouter` | OpenAI Completions; Anthropic Messages for `anthropic/*` | API root, default `https://openrouter.ai/api` (Completions at `<root>/v1`) | Yes |
+| `kie` | OpenAI Responses (Codex), Anthropic Messages (Claude) | Host, default `https://api.kie.ai` (`/codex/v1`, `/anthropic`) | Not yet |
+| `toapis` | OpenAI Responses (Codex), Anthropic Messages (Claude) | Host, default `https://toapis.com` | Not yet |
+
+- `name` is the consumer's own (for example `gemini` for `google`) and is what a turn's `provider` names. Names are unique; two names may share a provider kind, each with its own key.
+- Each provider is registered with its explicit key, in its own pi-ai `Models` collection with an empty auth context: the kit never reads `GEMINI_API_KEY`, `OPENROUTER_API_KEY` or any other environment variable. Google comes from `@hk01/pi-ai-extra-google/pi-ai`, OpenRouter is pi-ai's built-in provider with its environment and OAuth auth replaced by the key, and KIE and ToAPIs come from their `/pi-ai` factories.
+- A turn's `model` must be in that provider's pi-ai catalogue (`GOOGLE_CHAT_MODEL_IDS`, pi-ai's OpenRouter catalogue, `KIE_CHAT_MODELS`, `TOAPIS_CHAT_MODELS`); otherwise it fails with `UNKNOWN_MODEL`.
+- `grounding: true` (Google only) adds the Google Search and URL context tools to every turn.
+- `fetch` (optional) is for tests or instrumentation. It is not applied to Gemini, whose pi-ai adapter rejects a custom fetch.
+- An unknown provider, a duplicate name, an empty key, an unknown option or `grounding` on another provider throws a `TypeError`.
+
+### `runTurn`
+
+```ts
+for await (const event of chat.runTurn(
+  {
+    provider: "gemini",
+    model: "gemini-3.5-flash",
+    systemPrompt: gem.instructions,
+    documents: gem.files.map((file) => ({
+      name: file.name,
+      mimeType: file.mimeType,
+      url: file.publicUrl, // optional: the provider fetches the file itself (keep it stable for caching)
+      size: file.bytes, // optional: Gemini fetches by URL only when the size is known to be at most 15 MB
+      load: () => blobStore.read(file.key), // called only when the bytes must be sent
+    })),
+    history: session.turns, // [{ role: "user" | "assistant", text }]
+    message: userMessage,
+    responseSchema: { name: "reply", schema: replyJsonSchema }, // optional: the answer streams as JSON text
+    settings: { temperature: 0.7, maxOutputTokens: 2048, reasoning: "low" }, // optional
+  },
+  { signal: abortController.signal },
+)) {
+  if (event.type === "text") res.write(event.delta);
+  else if (event.type === "done") await usageLog.record(event.usage);
+  else await session.saveFailedTurn(event.error, event.usage); // "failed" is always the last event
+}
+```
+
+A turn emits `text` deltas (thinking is never streamed), then exactly one `done` (with `usage`) or `failed` (with `error`, and `usage` when the provider reported it). It never throws. Aborting the signal, or stopping the iteration, cancels the request. `settings.reasoning` is pi-ai's `ThinkingLevel` (`minimal` to `max`), clamped to what the model supports; without it, thinking is off where the model allows. Unknown keys in the input, `responseSchema` and `settings` are rejected.
+
+### Documents
+
+| Type | Gemini | OpenAI Completions (OpenRouter) | Anthropic Messages | OpenAI Responses |
+| --- | --- | --- | --- | --- |
+| `text/plain`, `text/markdown`, `text/csv`, `text/html`, `application/json` | `text` part | `text` part | `text` block | `input_text` |
+| `application/pdf` | `fileData` or `inlineData` | `file` (`file_data`: URL or data URL) | `document` (URL or base64 source) | `input_file` (`file_url` or `file_data`) |
+| `image/png`, `image/jpeg`, `image/webp` | `fileData` or `inlineData` | `image_url` | `image` (URL or base64 source) | `input_image` |
+
+- Plain-text documents are loaded, decoded as UTF-8 and sent on every provider as a text block labelled with the file name (`<document name="notes.md">…</document>`).
+- PDFs and images use each API's native file input: by URL when `url` is set (on Gemini only when `size` is known to be at most 15 MB, and never on Gemini 2.0), inline otherwise.
+- KIE and ToAPIs do not document file input, so PDFs and images fail there with `UNSUPPORTED` until a live smoke test enables them. A model whose catalogue `input` lacks `image` rejects them too, as does any other MIME type.
+- OpenRouter Completions requests always pin the `file-parser` plugin to the `native` PDF engine, so a PDF never falls through to paid OCR.
+
+Documents never enter pi-ai messages. A unique marker part stands in the first user turn and each API's `onPayload` transform replaces it, exactly once, with the parts above.
+
+### Prompt layout and caching
+
+The request is ordered: system prompt, documents, history, new message. The documents open the first user turn of the transcript (the first user message of `history`, or else the new message), so the prompt is identical across turns, and across sessions with the same documents, up to the end of the documents. Keep each document's `url` stable for that to hold. The kit passes `cacheRetention: "short"`. On Anthropic Messages it adds one cache breakpoint on the last document block, beside pi-ai's own on the system prompt and the last user message (three of Anthropic's four). Gemini caches implicitly.
+
+### Response schema
+
+| API | Sent as |
+| --- | --- |
+| Gemini | `responseMimeType: "application/json"` and `responseJsonSchema`, without `minItems` / `maxItems` (which Gemini rejects) |
+| OpenAI Completions | strict `response_format` (`json_schema`), with OpenRouter `provider.require_parameters` so an endpoint that would ignore it fails instead |
+| OpenAI Responses | strict `text.format` (`json_schema`) |
+| Anthropic Messages | a forced call of one tool whose `input_schema` is the schema; its argument deltas stream as `text` |
+
+`responseSchema.name` is 1–64 letters, digits, `_` or `-`. Anthropic rejects a forced tool call while the model thinks, so on Anthropic Messages a schema together with `settings.reasoning`, or on a model that always thinks (for example Claude Opus 5 or Fable 5), fails with `UNSUPPORTED` before anything is sent.
+
+### Errors
+
+| `error.code` | Meaning |
+| --- | --- |
+| `CONTENT_BLOCKED` | A safety system blocked the prompt or the answer. `reason` is the provider's value: Gemini `SAFETY`, `PROHIBITED_CONTENT`, `BLOCKLIST` or `SPII` (finish reason) or the prompt's `promptFeedback.blockReason`; `content_filter` on the OpenAI APIs, and `refusal` on OpenAI Responses; `refusal` or `sensitive` on Anthropic. |
+| `PROVIDER_ERROR` | The provider failed (`status` is its HTTP status, when there was one), or the answer stopped early: Gemini `RECITATION`, the output token limit (`reason` `MAX_TOKENS`, `length` or `max_tokens`), a broken stream. |
+| `UNSUPPORTED` | The provider or model cannot take this request (documents, a schema with thinking). Nothing was sent. |
+| `UNKNOWN_MODEL` | The provider name is not configured, or the model is not in its catalogue. Nothing was sent. |
+| `INVALID_REQUEST` | The input is malformed, or a document's `load()` failed. Nothing was sent. |
+| `ABORTED` | The signal aborted the turn. |
+
+`error.message` starts with `[provider/model]`, the configured name and the model id. A turn cut off after partial text still ends `failed`; the text already streamed is the consumer's to keep or drop. Gemini bills blocked prompts, so `failed` carries `usage` whenever the provider reported it.
+
+Only the initial request is retried, before the response stream starts: up to twice, by pi-ai, for 408, 409, 429, 5xx and connection errors, honouring `Retry-After`. A turn is never re-sent after its first token, and never to another provider or model.
+
+### Usage
+
+`usage` holds the provider's token counts: `inputTokens` (every prompt token, cached ones included), `outputTokens` (reasoning included), `cachedInputTokens`, `cacheWriteTokens`, `reasoningTokens` (when reported) and `totalTokens`. `raw` is the provider's own record under its own field names: `{ usageMetadata }` on Gemini, otherwise `{ usage }`, plus any cost or credit field reported beside it. OpenRouter's cost is `raw.usage.cost` and KIE's credits are `raw.credits_consumed`. The kit computes no cost.
+
 ## Google AI Studio (server) integration
 
 1. **Secrets.** Put `KIE_API_KEY`, `TOAPIS_API_KEY` and `GEMINI_API_KEY` in the app's server-side Secrets. Never expose them through Vite `define`, client code or a browser request.
@@ -292,15 +414,15 @@ Enter provider keys in the page, then run text-to-image, image-to-image and mult
 ## Release
 
 ```sh
-git tag kie-v0.1.0 && git push origin kie-v0.1.0      # or toapis-vX.Y.Z / google-vX.Y.Z / image-kit-vX.Y.Z
+git tag kie-v0.1.0 && git push origin kie-v0.1.0      # or toapis-vX.Y.Z / google-vX.Y.Z / image-kit-vX.Y.Z / chat-kit-vX.Y.Z
 ```
 
 Tag the release commit on `main`. The workflow:
 
 1. checks that the tag matches the package version;
-2. runs check, build and test for the package and its workspace dependencies (the image kit's tests load the provider packages' built entries);
+2. runs check, build and test for the package and its workspace dependencies (the kits' tests load the provider packages' built entries);
 3. packs the `.tgz`;
-4. installs it into a fresh project and loads it with `require()` and `import()` (the image kit together with packed copies of its provider peers and React);
+4. installs it into a fresh project and loads it with `require()` and `import()` (the kits together with packed copies of their provider peers; the image kit with React; the chat kit with pi-ai, from `import()` only, and runs one offline turn);
 5. attaches it to a GitHub Release using `GITHUB_TOKEN`.
 
 Each package is released by its own tag, so a KIE fix does not republish ToAPIs or Google. Never replace an asset that consumers use; publish a new patch version instead ([ADR 0001](docs/adr/0001-registry-free-package-releases.md)).
@@ -312,7 +434,7 @@ pnpm install --ignore-scripts
 pnpm run check   # TypeScript 7 (tsc --noEmit)
 pnpm run test    # node:test contract tests with a fake fetch, no network
 pnpm run build   # tsdown: dual CJS/ESM + declarations (oxc isolated declarations)
-pnpm run pack:kie && pnpm run pack:toapis && pnpm run pack:google && pnpm run pack:image-kit   # → release-artifacts/
+pnpm run pack:kie && pnpm run pack:toapis && pnpm run pack:google && pnpm run pack:image-kit && pnpm run pack:chat-kit   # → release-artifacts/
 ```
 
 Exported declarations need explicit types (`isolatedDeclarations`). Provider contracts are in [`referenc-docs/`](referenc-docs/); check them before adding or changing a model operation. Wokey is intentionally excluded.
