@@ -295,6 +295,32 @@ describe("KIE catalogue and pi-ai adapters", () => {
     assert.equal(byId.get("gpt-5-6-sol")?.thinkingLevelMap?.max, "max");
   });
 
+  it("prices chat models from KIE's published credits (1 credit = $0.005 per 1M tokens)", () => {
+    const cost = new Map(createKieProvider({ apiKey: "kie-key" }).getModels().map((model) => [model.id, model.cost]));
+    const expected: Record<string, [number, number, number, number]> = {
+      // id: [input, output, cacheRead, cacheWrite] in USD per 1M tokens
+      "gpt-6-astra": [2.8, 14, 0.28, 3.5],
+      "gpt-5-6-sol": [1.4, 8.4, 0.14, 1.75],
+      "gpt-5-6-terra": [0.56, 3.36, 0.056, 0.7],
+      "gpt-5-6-luna": [0.056, 0.336, 0.0056, 0.07],
+      "gpt-5-5": [1.4, 8.4, 0.14, 1.4],
+      "claude-fable-5": [4, 20, 4, 4],
+      "claude-opus-5": [2, 10, 2, 2],
+      "claude-opus-4-8": [2, 10, 2, 2],
+      "claude-opus-4-7": [1.425, 7.15, 1.425, 1.425],
+      "claude-opus-4-6": [1.425, 7.15, 1.425, 1.425],
+      "claude-opus-4-5": [1.425, 7.15, 1.425, 1.425],
+      "claude-sonnet-5": [0.85, 4.275, 0.85, 0.85],
+      "claude-sonnet-4-6": [0.85, 4.275, 0.85, 0.85],
+      "claude-sonnet-4-5": [0.85, 4.275, 0.85, 0.85],
+      "claude-haiku-4-5": [0.275, 1.425, 0.275, 0.275],
+    };
+    assert.deepEqual([...cost.keys()].sort(), Object.keys(expected).sort());
+    for (const [id, [input, output, cacheRead, cacheWrite]] of Object.entries(expected)) {
+      assert.deepEqual(cost.get(id), { input, output, cacheRead, cacheWrite }, id);
+    }
+  });
+
   it("streams Codex through the moved endpoint and turns KIE's HTTP-200 envelope into an error", async () => {
     const urls: string[] = [];
     const fetch = async (input: string | URL | Request) => {

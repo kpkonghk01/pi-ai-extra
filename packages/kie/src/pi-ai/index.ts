@@ -14,35 +14,85 @@ import { kieEnvelopeStreams } from "./envelope-fetch.ts";
 
 export type { ChatModelDefinition, ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
 
+/*
+ * Rates as of 2026-10-16, source: https://kie.ai/pricing, read from
+ * `POST https://api.kie.ai/client/v1/model-pricing/page` with
+ * `{"pageNum":1,"pageSize":100,"interfaceType":"chat"}`. KIE prices chat in credits per
+ * 1M tokens; 1 credit = $0.005 (the same listing's `usdPrice`).
+ */
+const USD_PER_CREDIT = 0.005;
+
+/** KIE credits per 1M tokens to USD per 1M tokens, rounded to drop floating-point noise. */
+function usd(credits: number): number {
+  return Math.round(credits * USD_PER_CREDIT * 1e6) / 1e6;
+}
+
+/**
+ * KIE publishes no cache rates for Claude: `cacheRead` and `cacheWrite` are set to the input
+ * rate as a conservative upper bound.
+ */
+function claude(id: string, inputCredits: number, outputCredits: number): ChatModelDefinition {
+  const input = usd(inputCredits);
+  return { id, protocol: "anthropic-messages", cost: { input, output: usd(outputCredits), cacheRead: input, cacheWrite: input } };
+}
+
 /**
  * Codex models on `POST /codex/v1/responses`. KIE documents dashed ids (it also accepts the
  * dotted ones); `catalogueId` points at pi-ai's dotted catalogue entry for capability metadata.
+ * Costs: input, output, cached input and cache writes as published (credits per 1M tokens).
  */
 const CODEX_MODELS: readonly ChatModelDefinition[] = [
-  { id: "gpt-6-astra", protocol: "openai-responses" },
-  { id: "gpt-5-6-sol", catalogueId: "gpt-5.6-sol", protocol: "openai-responses" },
-  { id: "gpt-5-6-terra", catalogueId: "gpt-5.6-terra", protocol: "openai-responses" },
-  { id: "gpt-5-6-luna", catalogueId: "gpt-5.6-luna", protocol: "openai-responses" },
-  { id: "gpt-5-5", catalogueId: "gpt-5.5", protocol: "openai-responses" },
-];
-const CLAUDE_MODELS = [
-  "claude-fable-5",
-  "claude-opus-5",
-  "claude-opus-4-8",
-  "claude-opus-4-7",
-  "claude-opus-4-6",
-  "claude-opus-4-5",
-  "claude-sonnet-5",
-  "claude-sonnet-4-6",
-  "claude-sonnet-4-5",
-  "claude-haiku-4-5",
+  {
+    id: "gpt-6-astra",
+    protocol: "openai-responses",
+    cost: { input: usd(560), output: usd(2800), cacheRead: usd(56), cacheWrite: usd(700) },
+  },
+  {
+    id: "gpt-5-6-sol",
+    catalogueId: "gpt-5.6-sol",
+    protocol: "openai-responses",
+    cost: { input: usd(280), output: usd(1680), cacheRead: usd(28), cacheWrite: usd(350) },
+  },
+  {
+    id: "gpt-5-6-terra",
+    catalogueId: "gpt-5.6-terra",
+    protocol: "openai-responses",
+    cost: { input: usd(112), output: usd(672), cacheRead: usd(11.2), cacheWrite: usd(140) },
+  },
+  {
+    id: "gpt-5-6-luna",
+    catalogueId: "gpt-5.6-luna",
+    protocol: "openai-responses",
+    cost: { input: usd(11.2), output: usd(67.2), cacheRead: usd(1.12), cacheWrite: usd(14) },
+  },
+  {
+    id: "gpt-5-5",
+    catalogueId: "gpt-5.5",
+    protocol: "openai-responses",
+    // No published cache-write rate: set to the input rate as a conservative upper bound.
+    cost: { input: usd(280), output: usd(1680), cacheRead: usd(28), cacheWrite: usd(280) },
+  },
 ];
 
-/** Chat models documented by KIE: Codex (OpenAI Responses) and Claude (Anthropic Messages). */
-export const KIE_CHAT_MODELS: readonly ChatModelDefinition[] = [
-  ...CODEX_MODELS,
-  ...CLAUDE_MODELS.map((id): ChatModelDefinition => ({ id, protocol: "anthropic-messages" })),
+/** Claude models on Anthropic Messages, with input and output credits per 1M tokens. */
+const CLAUDE_MODELS: readonly ChatModelDefinition[] = [
+  claude("claude-fable-5", 800, 4000),
+  claude("claude-opus-5", 400, 2000),
+  claude("claude-opus-4-8", 400, 2000),
+  claude("claude-opus-4-7", 285, 1430),
+  claude("claude-opus-4-6", 285, 1430),
+  claude("claude-opus-4-5", 285, 1430),
+  claude("claude-sonnet-5", 170, 855),
+  claude("claude-sonnet-4-6", 170, 855),
+  claude("claude-sonnet-4-5", 170, 855),
+  claude("claude-haiku-4-5", 55, 285),
 ];
+
+/**
+ * Chat models documented by KIE: Codex (OpenAI Responses) and Claude (Anthropic Messages),
+ * priced in USD per 1M tokens from KIE's published rates (see above).
+ */
+export const KIE_CHAT_MODELS: readonly ChatModelDefinition[] = [...CODEX_MODELS, ...CLAUDE_MODELS];
 
 export interface KieProviderOptions {
   /** KIE API key from server-side secret configuration; used for chat and images. */

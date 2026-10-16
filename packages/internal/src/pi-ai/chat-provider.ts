@@ -22,7 +22,11 @@ export interface ChatModelDefinition {
   input?: ("text" | "image")[] | undefined;
   contextWindow?: number | undefined;
   maxTokens?: number | undefined;
-  /** Per-million-token cost used for pi-ai usage accounting. Defaults to zero (provider pricing differs from list prices). */
+  /**
+   * USD per million tokens, used for pi-ai usage accounting. Never copied from pi-ai's catalogue
+   * (provider prices differ from list prices); zero when omitted. The packages' default model
+   * lists set it from each provider's published prices.
+   */
   cost?: ModelCost | undefined;
 }
 
@@ -70,7 +74,7 @@ export function createChatProvider(input: ChatProviderInput): Provider<ChatProto
  * Builds a pi-ai model. Capability metadata (reasoning, context window, thinking
  * levels, request compatibility) is copied from pi-ai's built-in catalogue when the
  * id (or `catalogueId`) matches; Anthropic "allowed fallback models" are removed because
- * fallback is prohibited.
+ * fallback is prohibited. Prices are never copied: they come from `definition.cost`.
  */
 export function buildChatModel(provider: string, baseUrl: string, definition: ChatModelDefinition): Model<ChatProtocol> {
   const builtin = findBuiltinModel(definition);

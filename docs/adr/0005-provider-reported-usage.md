@@ -21,6 +21,8 @@ A proxy service will record per-app spend by provider. Providers report usage di
 - ToAPIs requests may carry a validated `clientBusinessId`, sent as top-level `client_business_id`, for attribution.
 - The pi-ai image adapter fills `AssistantImages.usage` only when token counts exist, following pi-ai's own conventions. Chat model cost stays `0` by default; consumers set `ChatModelDefinition.cost` from their provider's prices.
 
+Amended 2026-10-16 ([DATA-4566](https://hk01-digital.atlassian.net/browse/DATA-4566)): the KIE and ToAPIs default chat model lists now carry each provider's published per-token rates, with the date and source next to them, so pi-ai computes chat `usage.cost`. That cost is pi-ai's calculation from token counts, not a provider-reported charge, and it changes only with a package release. Where a provider publishes no cache rate, the cache rates equal the input rate as an upper bound; a model with no published price keeps `0` until a rate format can express "no rate" ([DATA-4568](https://hk01-digital.atlassian.net/browse/DATA-4568)). Consumers can still replace `cost`.
+
 ## Consequences
 
 Recorded spend matches what each provider settles, including refunds. Consumers must handle provider-specific units (KIE credits as numbers, ToAPIs credits/USD as decimal strings) and re-query pending ToAPIs billing later.

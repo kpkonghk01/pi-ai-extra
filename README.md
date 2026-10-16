@@ -170,13 +170,45 @@ pi-ai 1.2 keeps chat and image models in one `Models` collection, so each packag
 
 `createGoogleProvider({ apiKey, modelIds?, baseUrl?, imageSettings? })` serves pi-ai's own Gemini adapter and model catalogue (`GOOGLE_CHAT_MODEL_IDS`) unchanged, including Google's list prices, but authenticates only with the explicit key: unlike pi-ai's `googleProvider()`, it never reads `GEMINI_API_KEY`. `modelIds` restricts the chat list; unknown ids throw.
 
-KIE and ToAPIs chat models use pi-ai's own OpenAI Responses and Anthropic Messages adapters. Capability metadata (context window, thinking levels) is copied from pi-ai's catalogue when the id, or `ChatModelDefinition.catalogueId`, matches; KIE's dashed Codex ids (`gpt-5-6-sol`) point at pi-ai's dotted ones (`gpt-5.6-sol`). `ChatModelDefinition.cost` defaults to `0`, because KIE and ToAPIs prices differ from list prices; set it from your provider's current price sheet if you want pi-ai to compute cost:
+KIE and ToAPIs chat models use pi-ai's own OpenAI Responses and Anthropic Messages adapters. Capability metadata (context window, thinking levels) is copied from pi-ai's catalogue when the id, or `ChatModelDefinition.catalogueId`, matches; KIE's dashed Codex ids (`gpt-5-6-sol`) point at pi-ai's dotted ones (`gpt-5.6-sol`). Prices are never copied from pi-ai's catalogue, because KIE and ToAPIs prices differ from list prices.
+
+### Chat rates
+
+`KIE_CHAT_MODELS` and `TOAPIS_CHAT_MODELS` carry each model's `cost` in USD per 1M tokens, so pi-ai fills `message.usage.cost`. This is pi-ai's calculation from token counts and the rates below, not a provider-reported charge. Rates as of 2026-10-16:
+
+| Provider | Model | Input | Output | Cache read | Cache write |
+| --- | --- | ---: | ---: | ---: | ---: |
+| KIE | `gpt-6-astra` | 2.80 | 14.00 | 0.28 | 3.50 |
+| KIE | `gpt-5-6-sol` | 1.40 | 8.40 | 0.14 | 1.75 |
+| KIE | `gpt-5-6-terra` | 0.56 | 3.36 | 0.056 | 0.70 |
+| KIE | `gpt-5-6-luna` | 0.056 | 0.336 | 0.0056 | 0.07 |
+| KIE | `gpt-5-5` | 1.40 | 8.40 | 0.14 | 1.40* |
+| KIE | `claude-fable-5` | 4.00 | 20.00 | 4.00* | 4.00* |
+| KIE | `claude-opus-5`, `claude-opus-4-8` | 2.00 | 10.00 | 2.00* | 2.00* |
+| KIE | `claude-opus-4-7`, `claude-opus-4-6`, `claude-opus-4-5` | 1.425 | 7.15 | 1.425* | 1.425* |
+| KIE | `claude-sonnet-5`, `claude-sonnet-4-6`, `claude-sonnet-4-5` | 0.85 | 4.275 | 0.85* | 0.85* |
+| KIE | `claude-haiku-4-5` | 0.275 | 1.425 | 0.275* | 0.275* |
+| ToAPIs | `gpt-5.3-codex-official` | 1.40 | 11.20 | 1.40* | 1.40* |
+| ToAPIs | `claude-opus-4-6` | 1.50 | 7.50 | 1.50* | 1.50* |
+| ToAPIs | `claude-sonnet-4-6` | 0.90 | 4.50 | 0.90* | 0.90* |
+| ToAPIs | `claude-haiku-4-5` | 0.30 | 1.50 | 0.30* | 0.30* |
+| ToAPIs | `gpt-5.3-codex`, `gpt-5.3-codex-spark` | unpublished (0) | unpublished (0) | unpublished (0) | unpublished (0) |
+
+- **KIE**: [kie.ai/pricing](https://kie.ai/pricing), read from `POST https://api.kie.ai/client/v1/model-pricing/page` with `{"pageNum":1,"pageSize":100,"interfaceType":"chat"}`. KIE prices chat in credits per 1M tokens, and 1 credit is $0.005 (for example `claude-sonnet-4-6`: 170 credits in, 855 out).
+- **ToAPIs**: `GET https://toapis.com/api/pricing`. Input is 2 × `model_ratio` and output is 2 × `model_ratio` × `completion_ratio` (every group ratio is 1). `gpt-5.3-codex` and `gpt-5.3-codex-spark` are listed as chat models but have no published price, so their cost stays 0.
+- \* Not published. The cache rate is set to the input rate, a conservative upper bound.
+
+Prices change. To use your own rate, replace the model's `cost` and keep the rest of the list:
 
 ```ts
+import { createToapisProvider, TOAPIS_CHAT_MODELS } from "@hk01/pi-ai-extra-toapis/pi-ai";
+
 createToapisProvider({
   apiKey: toapisKey,
-  // Example numbers only — use USD per million tokens from your current ToAPIs/KIE price sheet.
-  models: [{ id: "claude-sonnet-4-6", protocol: "anthropic-messages", cost: { input: 1.5, output: 7.5, cacheRead: 0.15, cacheWrite: 1.9 } }],
+  // Your own rates in USD per 1M tokens, for example a negotiated price.
+  models: TOAPIS_CHAT_MODELS.map((model) =>
+    model.id === "claude-sonnet-4-6" ? { ...model, cost: { input: 0.9, output: 4.5, cacheRead: 0.09, cacheWrite: 1.125 } } : model,
+  ),
 });
 ```
 
@@ -193,6 +225,8 @@ pi-ai 1.2 removed `createImagesModels()`, `createImagesProvider()`, `ImagesProvi
 | `images.generateImages(model, context, options)` | `models.generateImages(model, context, options)` (same context, options and result) |
 
 Register each package's provider once: a second provider with the same id replaces the first in a `Models` collection.
+
+`KIE_CHAT_MODELS` and `TOAPIS_CHAT_MODELS` now carry published rates instead of zero cost (see [Chat rates](#chat-rates)). ToAPIs Claude Haiku is `claude-haiku-4-5`, the public catalogue id, instead of `claude-haiku-4-5-20251001`.
 
 KIE chat defaults changed as well. Codex moved to `https://api.kie.ai/codex/v1` (`POST /codex/v1/responses`) and now offers `gpt-6-astra`, `gpt-5-6-sol`, `gpt-5-6-terra`, `gpt-5-6-luna` and `gpt-5-5`; the `gpt-5.x-codex` ids are delisted. Claude uses `https://api.kie.ai/anthropic`, the base URL in KIE's Claude Code guides; the model pages still show `/claude/v1/messages`, which `claudeBaseUrl: "https://api.kie.ai/claude"` keeps.
 

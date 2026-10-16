@@ -215,4 +215,20 @@ describe("ToAPIs catalogue and pi-ai adapters", () => {
       ["gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.3-codex-official", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
     );
   });
+
+  it("prices chat models from the pricing API ratios and leaves unpublished rates at zero", () => {
+    const cost = new Map(createToapisProvider({ apiKey: "toapis-key" }).getModels().map((model) => [model.id, model.cost]));
+    const expected: Record<string, [number, number]> = {
+      // id: [input, output] in USD per 1M tokens; cache rates equal the input rate (unpublished)
+      "gpt-5.3-codex": [0, 0],
+      "gpt-5.3-codex-spark": [0, 0],
+      "gpt-5.3-codex-official": [1.4, 11.2],
+      "claude-opus-4-6": [1.5, 7.5],
+      "claude-sonnet-4-6": [0.9, 4.5],
+      "claude-haiku-4-5": [0.3, 1.5],
+    };
+    for (const [id, [input, output]] of Object.entries(expected)) {
+      assert.deepEqual(cost.get(id), { input, output, cacheRead: input, cacheWrite: input }, id);
+    }
+  });
 });
