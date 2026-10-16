@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createModels } from "@earendil-works/pi-ai";
 import {
+  assertRateTable,
   bytesResponse,
   createFakeFetch,
   dataUrl,
@@ -255,18 +256,18 @@ describe("KIE catalogue and pi-ai adapters", () => {
 
   it("generates through pi-ai Models.generateImages with validated metadata", async () => {
     const fake = createFakeFetch(kieRoutes());
-    const images = createModels();
-    images.setProvider(createKieProvider({ apiKey: "kie-key", imageSettings: { poll: FAST_POLL } }));
-    const model = images.getModelOfType("image", "kie", "nano-banana-2");
+    const models = createModels();
+    models.setProvider(createKieProvider({ apiKey: "kie-key", imageSettings: { poll: FAST_POLL } }));
+    const model = models.getModelOfType("image", "kie", "nano-banana-2");
     assert.ok(model);
-    assert.equal(images.getModel("kie", "nano-banana-2"), undefined);
+    assert.equal(models.getModel("kie", "nano-banana-2"), undefined);
 
-    const ok = await images.generateImages(model, { input: [{ type: "text", text: "a fox" }] }, { fetch: fake.fetch, metadata: { aspectRatio: "16:9" } });
+    const ok = await models.generateImages(model, { input: [{ type: "text", text: "a fox" }] }, { fetch: fake.fetch, metadata: { aspectRatio: "16:9" } });
     assert.equal(ok.stopReason, "stop");
     assert.equal(ok.output[0]?.type, "image");
     assert.equal((bodyOf(fake.callsTo(CREATE_URL)[0]).input as Record<string, unknown>).aspect_ratio, "16:9");
 
-    const bad = await images.generateImages(model, { input: [{ type: "text", text: "a fox" }] }, { fetch: fake.fetch, metadata: { ratio: "16:9" } });
+    const bad = await models.generateImages(model, { input: [{ type: "text", text: "a fox" }] }, { fetch: fake.fetch, metadata: { ratio: "16:9" } });
     assert.equal(bad.stopReason, "error");
     assert.match(bad.errorMessage ?? "", /\[kie\/nano-banana-2\].*ratio/);
   });
@@ -294,8 +295,7 @@ describe("KIE catalogue and pi-ai adapters", () => {
   });
 
   it("prices chat models from KIE's published credits (1 credit = $0.005 per 1M tokens)", () => {
-    const cost = new Map(createKieProvider({ apiKey: "kie-key" }).getModels().map((model) => [model.id, model.cost]));
-    const expected: Record<string, [number, number, number, number]> = {
+    assertRateTable(createKieProvider({ apiKey: "kie-key" }).getModels(), {
       // id: [input, output, cacheRead, cacheWrite] in USD per 1M tokens. Codex cache rates are
       // published; Claude's are not: cache reads at the input rate, cache writes at 1.25 × input.
       "gpt-6-astra": [2.8, 14, 0.28, 3.5],
@@ -312,11 +312,7 @@ describe("KIE catalogue and pi-ai adapters", () => {
       "claude-sonnet-4-6": [0.85, 4.275, 0.85, 1.0625],
       "claude-sonnet-4-5": [0.85, 4.275, 0.85, 1.0625],
       "claude-haiku-4-5": [0.275, 1.425, 0.275, 0.34375],
-    };
-    assert.deepEqual([...cost.keys()].sort(), Object.keys(expected).sort());
-    for (const [id, [input, output, cacheRead, cacheWrite]] of Object.entries(expected)) {
-      assert.deepEqual(cost.get(id), { input, output, cacheRead, cacheWrite }, id);
-    }
+    });
   });
 
   it("streams Codex through /openai/v1 and still turns a KIE HTTP-200 envelope into an error", async () => {
