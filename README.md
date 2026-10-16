@@ -191,11 +191,16 @@ KIE and ToAPIs chat models use pi-ai's own OpenAI Responses and Anthropic Messag
 | ToAPIs | `claude-opus-4-6` | 1.50 | 7.50 | 1.50* | 1.50* |
 | ToAPIs | `claude-sonnet-4-6` | 0.90 | 4.50 | 0.90* | 0.90* |
 | ToAPIs | `claude-haiku-4-5` | 0.30 | 1.50 | 0.30* | 0.30* |
-| ToAPIs | `gpt-5.3-codex`, `gpt-5.3-codex-spark` | unpublished (0) | unpublished (0) | unpublished (0) | unpublished (0) |
 
 - **KIE**: [kie.ai/pricing](https://kie.ai/pricing), read from `POST https://api.kie.ai/client/v1/model-pricing/page` with `{"pageNum":1,"pageSize":100,"interfaceType":"chat"}`. KIE prices chat in credits per 1M tokens, and 1 credit is $0.005 (for example `claude-sonnet-4-6`: 170 credits in, 855 out).
-- **ToAPIs**: `GET https://toapis.com/api/pricing`. Input is 2 × `model_ratio` and output is 2 × `model_ratio` × `completion_ratio` (every group ratio is 1). `gpt-5.3-codex` and `gpt-5.3-codex-spark` are listed as chat models but have no published price, so their cost stays 0.
+- **ToAPIs**: `GET https://toapis.com/api/pricing`. Input is 2 × `model_ratio` and output is 2 × `model_ratio` × `completion_ratio` (every group ratio is 1).
 - \* Not published. The cache rate is set to the input rate, a conservative upper bound.
+
+Only models with a published rate are in the default lists. ToAPIs also documents `gpt-5.3-codex` and `gpt-5.3-codex-spark` as chat models, but they have no published price and are not in its public model catalogue, so `TOAPIS_CHAT_MODELS` leaves them out. To use one anyway, pass it in the factory's `models` option. Without a `cost`, pi-ai prices it at 0, so treat its `usage.cost` as unknown, not free:
+
+```ts
+createToapisProvider({ apiKey: toapisKey, models: [...TOAPIS_CHAT_MODELS, { id: "gpt-5.3-codex", protocol: "openai-responses" }] });
+```
 
 Prices change. To use your own rate, replace the model's `cost` and keep the rest of the list:
 
@@ -225,7 +230,7 @@ pi-ai 1.2 removed `createImagesModels()`, `createImagesProvider()`, `ImagesProvi
 
 Register each package's provider once: a second provider with the same id replaces the first in a `Models` collection.
 
-`KIE_CHAT_MODELS` and `TOAPIS_CHAT_MODELS` now carry published rates instead of zero cost (see [Chat rates](#chat-rates)). ToAPIs Claude Haiku is `claude-haiku-4-5`, the public catalogue id, instead of `claude-haiku-4-5-20251001`.
+`KIE_CHAT_MODELS` and `TOAPIS_CHAT_MODELS` now carry published rates instead of zero cost (see [Chat rates](#chat-rates)). ToAPIs Claude Haiku is `claude-haiku-4-5`, the public catalogue id, instead of `claude-haiku-4-5-20251001`. ToAPIs `gpt-5.3-codex` and `gpt-5.3-codex-spark` are no longer in the default list, because they have no published rate; pass them in `models` to keep using them.
 
 KIE chat defaults changed as well. Codex moved to `https://api.kie.ai/openai/v1` (`POST /openai/v1/responses`, the route in KIE's Codex CLI guide, which returns real HTTP statuses) and now offers `gpt-6-astra`, `gpt-5-6-sol`, `gpt-5-6-terra` and `gpt-5-6-luna`; the `gpt-5.x-codex` ids are delisted, and `gpt-5-5` is left out because KIE rejects it for Codex. `responsesBaseUrl: "https://api.kie.ai/codex/v1"` selects the API reference's route instead. Claude uses `https://api.kie.ai/anthropic`, the base URL in KIE's Claude Code guides; the model pages still show `/claude/v1/messages`, which `claudeBaseUrl: "https://api.kie.ai/claude"` keeps.
 

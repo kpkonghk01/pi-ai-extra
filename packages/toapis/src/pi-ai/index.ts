@@ -20,16 +20,16 @@ function ratioCost(modelRatio: number, completionRatio: number): ModelCost {
 
 /**
  * Chat models documented by ToAPIs: Codex (OpenAI Responses) and Claude (Anthropic Messages),
- * with the ids of its public model catalogue.
+ * with the ids of its public model catalogue. Only models with a published rate are offered.
  *
  * Rates as of 2026-10-16, source: `GET https://toapis.com/api/pricing` (`model_ratio`,
  * `completion_ratio`).
+ *
+ * `gpt-5.3-codex` and `gpt-5.3-codex-spark` are left out: ToAPIs documents them as chat models,
+ * but they have no published rate and are absent from its public model catalogue. A consumer
+ * that wants them passes them in the factory's `models` option.
  */
 export const TOAPIS_CHAT_MODELS: readonly ChatModelDefinition[] = [
-  // gpt-5.3-codex and gpt-5.3-codex-spark are listed as chat models but have no published rate
-  // (absent from the pricing API): cost stays 0 until DATA-4568 can express "no rate".
-  { id: "gpt-5.3-codex", protocol: "openai-responses" },
-  { id: "gpt-5.3-codex-spark", protocol: "openai-responses" },
   { id: "gpt-5.3-codex-official", protocol: "openai-responses", cost: ratioCost(0.7, 8) },
   { id: "claude-opus-4-6", protocol: "anthropic-messages", cost: ratioCost(0.75, 5) },
   { id: "claude-sonnet-4-6", protocol: "anthropic-messages", cost: ratioCost(0.45, 5) },
