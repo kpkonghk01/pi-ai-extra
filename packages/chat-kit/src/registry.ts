@@ -58,10 +58,10 @@ interface ProviderKindSpec {
   /** The pi-ai provider for an explicit key; `root` (no trailing slash) replaces its default API root. */
   create(apiKey: string, root: string | undefined): Provider;
   /**
-   * Which installed models are listed and run while no live list has been read: the models the
-   * live list would keep (`isOfferedGeminiId`, `isOfferedInstalledOpenRouterModel`).
+   * Which installed models are offered (listed and run) while no live list has been read: the
+   * models the live list would keep (`isOfferedGeminiId`, `isOfferedInstalledOpenRouterModel`).
    */
-  listsInstalled(model: Model<Api>): boolean;
+  offersInstalled(model: Model<Api>): boolean;
   /**
    * What an installed model reads. pi-ai's catalogues list text and image input only. The Gemini,
    * Claude and GPT models that read images read PDFs too, so `file` follows `image` there.
@@ -101,7 +101,7 @@ export const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKind
     fileDocuments: true,
     nativeStructuredOutput: false,
     create: (apiKey, root) => createGoogleProvider({ apiKey, ...(root ? { baseUrl: root } : {}) }),
-    listsInstalled: (model) => isOfferedGeminiId(model.id),
+    offersInstalled: (model) => isOfferedGeminiId(model.id),
     installedInput: fileWithImage,
     rateOf: (model) => googleChatRate(model.id),
     fetchLive: (context) => fetchGeminiModels({ ...context, baseUrl: context.provider.baseUrl ?? context.root ?? "" }),
@@ -111,7 +111,7 @@ export const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKind
     fileDocuments: true,
     nativeStructuredOutput: true,
     create: explicitOpenRouterProvider,
-    listsInstalled: isOfferedInstalledOpenRouterModel,
+    offersInstalled: isOfferedInstalledOpenRouterModel,
     installedInput: (model) => (model.input.includes("image") ? ["text", "image"] : ["text"]),
     rateOf: (model) => catalogueRate(model.cost),
     fetchLive: (context) => fetchOpenRouterModels({ ...context, root: context.root ?? OPENROUTER_API_ROOT }),
@@ -123,7 +123,7 @@ export const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKind
     nativeStructuredOutput: true,
     create: (apiKey, root) =>
       createKieProvider({ apiKey, ...(root ? { responsesBaseUrl: `${root}/openai/v1`, claudeBaseUrl: `${root}/anthropic` } : {}) }),
-    listsInstalled: () => true,
+    offersInstalled: () => true,
     installedInput: fileWithImage,
     rateOf: definitionRate(KIE_CHAT_MODELS),
     fetchLive: (context) => fetchKieModels({ ...context, host: context.root ?? KIE_HOST }),
@@ -141,7 +141,7 @@ export const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKind
     fileDocuments: false,
     nativeStructuredOutput: false,
     create: (apiKey, root) => createToapisProvider({ apiKey, ...(root ? { baseUrl: root } : {}) }),
-    listsInstalled: () => true,
+    offersInstalled: () => true,
     installedInput: fileWithImage,
     rateOf: definitionRate(TOAPIS_CHAT_MODELS),
     fetchLive: (context) => fetchToapisModels({ ...context, host: context.root ?? TOAPIS_HOST }),
@@ -195,7 +195,7 @@ export function createProviderRegistry(configs: readonly ChatProviderConfig[], o
     models.setProvider(provider);
     const installed = provider
       .getModels()
-      .filter((model) => spec.listsInstalled(model))
+      .filter((model) => spec.offersInstalled(model))
       .map((model): ListedModel => ({ model, rate: spec.rateOf(model), input: spec.installedInput(model) }));
     registry.set(config.name, {
       name: config.name,
