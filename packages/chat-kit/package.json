@@ -1,7 +1,7 @@
 {
   "name": "@hk01/pi-ai-extra-chat-kit",
   "version": "0.2.0",
-  "description": "Server-side chat kit on pi-ai: runs one chat turn the same way on Gemini, OpenRouter, KIE and ToAPIs (documents, response schema, safety blocks, usage)",
+  "description": "Server-side chat kit on pi-ai: runs one chat turn the same way on Gemini, OpenRouter, KIE and ToAPIs (documents, response schema, safety blocks, usage and cost) and lists each provider's live models",
   "license": "UNLICENSED",
   "type": "module",
   "module": "./dist/index.mjs",

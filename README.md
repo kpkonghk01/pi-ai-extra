@@ -192,7 +192,7 @@ const rate: ModelRate = {
 // { input: 2, output: 12, cacheRead: 0.2, largePrompt: { overPromptTokens: 200_000, input: 4, output: 18, cacheRead: 0.4 } }
 ```
 
-- A period applies from its `from` day (UTC, `YYYY-MM-DD`). Only the first period may omit it. A price change announced ahead of time is published ahead of time, and a request is priced at the period in force when it was made.
+- A period applies from its `from` day (UTC, `YYYY-MM-DD`). Only the first period may omit it; when it does not, the model has no rate before that day. A price change announced ahead of time is published ahead of time, and a request is priced at the period in force when it was made.
 - A cache rate the provider does not publish is left out, and derived when a request is priced: cache reads at the input rate, an upper bound, and cache writes at 1.25 × input, the price of a 5-minute write on Anthropic and in KIE's own Codex rows. A 1-hour write (`cacheRetention: "long"`) costs 2 × input on Anthropic.
 - pi-ai's `Model.cost` is required, so each provider fills it from the period in force when the provider is created, with the derived cache rates and the large-prompt tier as a pi-ai cost tier. pi-ai's `message.usage.cost` is pi-ai's calculation from token counts and that period, not a provider-reported charge. A model with no rate carries zeros in `Model.cost`, which are not a rate. The [chat kit](#usage-and-cost) prices each turn from the schedule itself, at call time.
 - An invalid schedule (no period, a later period without `from`, dates out of order, a negative rate) throws a `TypeError` when the provider is created.
@@ -221,7 +221,7 @@ const rate: ModelRate = {
 | ToAPIs | `claude-sonnet-4-6` | 0.90 | 4.50 | 0.90* | 1.125† |
 | ToAPIs | `claude-haiku-4-5` | 0.30 | 1.50 | 0.30* | 0.375† |
 
-- **KIE**: [kie.ai/pricing](https://kie.ai/pricing), read from `POST https://api.kie.ai/client/v1/model-pricing/page` with `{"pageNum":1,"pageSize":100,"interfaceType":"chat"}`. KIE prices chat in credits per 1M tokens, and 1 credit is $0.005 (for example `claude-sonnet-4-6`: 170 credits in, 855 out).
+- **KIE**: [kie.ai/pricing](https://kie.ai/pricing), read from `POST https://api.kie.ai/client/v1/model-pricing/page` with `{"pageNum":1,"pageSize":100,"interfaceType":"chat"}`. KIE prices chat in credits per 1M tokens, and 1 credit is $0.005, exported as `KIE_USD_PER_CREDIT` (for example `claude-sonnet-4-6`: 170 credits in, 855 out).
 - **ToAPIs**: `GET https://toapis.com/api/pricing`. Input is 2 × `model_ratio` and output is 2 × `model_ratio` × `completion_ratio` (every group ratio is 1).
 - \* Not published: derived at the input rate. † Not published: derived at 1.25 × input.
 
@@ -265,7 +265,7 @@ createToapisProvider({
 | A definition without `cost` priced at 0 | A definition without `rate` has no rate (pi-ai's `Model.cost` holds zeros, which are not a rate) |
 | Gemini models at pi-ai's list prices | Models in `GEMINI_CHAT_RATES` at its schedule, including the 2027-01-01 doubling |
 
-KIE adds `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `gpt-6-sol`, `gpt-6-luna` and `gpt-6-1-sol`. The rate types (`ModelRate`, `RatePeriod`, `TokenRates`, `LargePromptRates`) are exported by each `/pi-ai` entry.
+KIE adds `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `gpt-6-sol`, `gpt-6-luna` and `gpt-6-1-sol`, and exports its credit price as `KIE_USD_PER_CREDIT`. The rate types (`ModelRate`, `RatePeriod`, `TokenRates`, `LargePromptRates`) are exported by each `/pi-ai` entry.
 
 ### Upgrading from KIE/ToAPIs 0.2 and Google 0.3
 
@@ -338,7 +338,7 @@ const chat = createChatKit({
 
 - `name` is the consumer's own (for example `gemini` for `google`) and is what a turn's `provider` names. Names are unique; two names may share a provider kind, each with its own key.
 - Each provider is registered with its explicit key, in its own pi-ai `Models` collection with an empty auth context: the kit never reads `GEMINI_API_KEY`, `OPENROUTER_API_KEY` or any other environment variable. Google comes from `@hk01/pi-ai-extra-google/pi-ai`, OpenRouter is pi-ai's built-in provider with its environment and OAuth auth replaced by the key, and KIE and ToAPIs come from their `/pi-ai` factories.
-- A turn's `model` must be in that provider's model list (see [`listModels`](#listmodels)): its live list, or, until one has been read, its installed catalogue (`GOOGLE_CHAT_MODEL_IDS`, pi-ai's OpenRouter catalogue) or package definitions (`KIE_CHAT_MODELS`, `TOAPIS_CHAT_MODELS`). Otherwise it fails with `UNKNOWN_MODEL`.
+- A turn's `model` must be in that provider's model list (see [`listModels`](#listmodels)): its live list, which a new kit reads before its first turn, or, while no live list could be read, its installed catalogue (`GOOGLE_CHAT_MODEL_IDS`, pi-ai's OpenRouter catalogue, each filtered as the live list is) or package definitions (`KIE_CHAT_MODELS`, `TOAPIS_CHAT_MODELS`). Otherwise it fails with `UNKNOWN_MODEL`.
 - `grounding: true` (Google only) adds the Google Search and URL context tools to every turn.
 - `fetch` (optional) is for tests or instrumentation. It serves every model list, and every turn except Gemini's, whose pi-ai adapter rejects a custom fetch.
 - An unknown provider, a duplicate name, an empty key, an unknown option or `grounding` on another provider throws a `TypeError`.
@@ -388,15 +388,15 @@ for (const entry of await chat.listModels({ signal })) {
 
 | `kind` | Live list | Kept |
 | --- | --- | --- |
-| `openrouter` | Public `GET <root>/v1/models` (no key) | Every model that answers in text, tool support or not; not `:batch` models |
-| `google` | `models.list` (`GET <base>/models`) with the key | `generateContent` models, `models/` prefix stripped; plain text chat only: not embedding, Imagen, Veo, TTS, Live (`-live-`), computer use, image-output (`-image`) or Deep Research models. The installed catalogue is filtered the same way |
+| `openrouter` | Public `GET <root>/v1/models` (no key) | Every model that answers in text, tool support or not; not `:batch` or `:free` models. pi-ai's catalogue is filtered the same way |
+| `google` | `models.list` (`GET <base>/models`) with the key | `generateContent` models, `models/` prefix stripped; plain text chat only: not embedding, Imagen, Veo, TTS, Live (`-live-`), computer use, image-output (`-image`) or Deep Research models, and no `-latest` alias. The installed catalogue is filtered the same way |
 | `kie` | `GET <host>/openai/v1/models` (Codex) and `GET <host>/anthropic/v1/models` (Claude) with the key | Only ids with a package definition (`KIE_CHAT_MODELS`), matched across `.` and `-` spellings |
 | `toapis` | `GET <host>/v1/models?type=text` with the key | Only ids with a package definition (`TOAPIS_CHAT_MODELS`) |
 
-- **Refresh.** A live list is fresh for 30 minutes; the next `listModels()` or model lookup after that reads it again. A failed refresh keeps the last good list (`source: "live"`), or the installed catalogue or definitions when no live list has been read yet (`source: "installed"`), and reports why in `refreshError`. It is retried after a minute. Concurrent callers share one refresh. Aborting `signal` makes `listModels()` reject with its reason; the refresh itself completes for the others.
-- **Turns use the same list.** `runTurn` resolves its `model` against it, and a model it does not find refreshes a stale list first, so a model only the live list has works, and a model the live list dropped fails with `UNKNOWN_MODEL`.
-- **OpenRouter models** are built the way pi-ai's own catalogue generator builds them. A model pi-ai's catalogue knows keeps that entry (its API, compat and thinking fixes) with the live limits and price. A new `anthropic/*` id goes through OpenAI Completions, so a new Claude family is never sent budget-thinking parameters it may reject. `input` comes from `architecture.input_modalities`. A live price of -1 (routers such as `openrouter/auto`) is no rate.
-- **Gemini models** that pi-ai's catalogue knows keep its metadata (thinking levels, limits). A new id gets text input only, the limits Gemini reports, no thinking levels and, unless the Gemini rate table has it, no rate.
+- **Refresh.** A kit's first `listModels()` or turn reads the live list before it answers. A live list is fresh for 30 minutes; the first `listModels()` or turn after that reads it again, also before it answers. A failed refresh keeps the last good list (`source: "live"`), or uses the installed catalogue or definitions when no live list has been read (`source: "installed"`), and reports why in `refreshError`; the next attempt waits a minute. Concurrent callers share one refresh. A list request times out after 15 seconds. Aborting `signal` makes `listModels()` reject with its reason; the refresh itself completes for the others.
+- **Turns use the same list.** `runTurn` resolves its `model` against the list after the same refresh, so a model only the live list has works, and a model the live list no longer has fails with `UNKNOWN_MODEL` from the first read that drops it.
+- **OpenRouter models** are built the way pi-ai's own catalogue generator builds them. A model pi-ai's catalogue knows keeps that entry (its API, compat and thinking fixes) with the live limits and price. A new `anthropic/*` id goes through OpenAI Completions, so a new Claude family is never sent budget-thinking parameters it may reject. `input` comes from `architecture.input_modalities`. A live price of -1 (routers such as `openrouter/auto`) is no rate. `:batch` models are left out, since the kit sends no batch requests, and so are `:free` models: they are heavily rate-limited, and their providers may train on the prompts, which does not suit a newsroom gateway.
+- **Gemini models** that pi-ai's catalogue knows keep its metadata (thinking levels, limits). A new id gets text input only, the limits Gemini reports, no thinking levels and, unless the Gemini rate table has it, no rate. A `-latest` alias (`gemini-flash-latest`, `gemini-flash-lite-latest`, `gemini-pro-latest`) is left out: Google can point it at another model at any time, which silently changes both its behaviour and its price.
 - **KIE** does not document its model lists' response shape: it is read as an OpenAI-style `{ data: [{ id }] }` list. A list that names none of the package's models counts as a failed refresh, so the definitions stay in use.
 
 Each model reports what a gateway admin needs to offer it:
@@ -405,7 +405,7 @@ Each model reports what a gateway admin needs to offer it:
 | --- | --- |
 | `id`, `name` | The provider's model id (a turn's `model`) and display name |
 | `input` | What the model reads: `text`, `image`, `file` (PDF) |
-| `fileDocuments` | Whether a turn may send it both PDF and image documents: the provider takes them (not KIE or ToAPIs yet) and the model reads both natively (`input` has `file` and `image`). A model without `file` input is `false`, since a PDF never goes to a paid parser |
+| `fileDocuments` | Whether a turn may send it both PDF and image documents: the provider takes them (not KIE or ToAPIs yet) and the model reads both natively (`input` has `file` and `image`). A model without `file` input is `false`, since a PDF never goes to a paid parser. A model from pi-ai's OpenRouter catalogue (the live list unreadable) is `false` too |
 | `responseSchema` | Whether a turn may carry a `responseSchema` (not an always-thinking Claude model on ToAPIs) |
 | `contextWindow`, `maxOutputTokens`, `reasoning` | Limits, and whether it can think (`settings.reasoning`) |
 | `rate` | The rate period in force now, as published (an unpublished cache rate is absent here), or absent when the model has no rate |
@@ -420,7 +420,7 @@ Each model reports what a gateway admin needs to offer it:
 
 - Plain-text documents are loaded, decoded as UTF-8 and sent on every provider as a text block labelled with the file name (`<document name="notes.md">…</document>`).
 - PDFs and images use each API's native file input: by URL when `url` is set (on Gemini only when `size` is known to be at most 15 MB, and never on Gemini 2.0), inline otherwise.
-- KIE and ToAPIs do not document file input, so PDFs and images fail there with `UNSUPPORTED` until a live smoke test enables them. Elsewhere a PDF needs a model with native file input (`input` has `file`; on OpenRouter, from the live list's `input_modalities`) and an image one with image input; otherwise it fails with `UNSUPPORTED` before anything is sent, as does any other MIME type. So an image-only model such as OpenRouter's `moondream/moondream3-preview` takes images but not PDFs. Until a live list is read, a model from pi-ai's catalogue is taken to read PDFs when it reads images.
+- KIE and ToAPIs do not document file input, so PDFs and images fail there with `UNSUPPORTED` until a live smoke test enables them. Elsewhere a PDF needs a model with native file input (`input` has `file`; on OpenRouter, from the live list's `input_modalities`) and an image one with image input; otherwise it fails with `UNSUPPORTED` before anything is sent, as does any other MIME type. So an image-only model such as OpenRouter's `moondream/moondream3-preview` takes images but not PDFs. While OpenRouter's list cannot be read, its models come from pi-ai's catalogue, which has no file input: they report `fileDocuments: false` and a PDF fails with `UNSUPPORTED`, while an image still goes to a model that reads images. A Gemini model from the installed catalogue is taken to read PDFs when it reads images.
 - Every OpenRouter request, on its Completions route and on its Anthropic Messages route (`anthropic/*`), pins the `file-parser` plugin to the `native` PDF engine, so a PDF never falls through to OpenRouter's paid `mistral-ocr` engine. OpenRouter's [Anthropic Messages reference](https://openrouter.ai/docs/api/api-reference/anthropic-messages/create-a-message) takes the same `plugins` array as Completions. KIE and ToAPIs never get the plugin.
 
 Documents never enter pi-ai messages. A unique marker part stands in the first user turn and each API's `onPayload` transform replaces it, exactly once, with the parts above.
@@ -482,7 +482,7 @@ Only the initial request is retried, before the response stream starts: up to tw
 The cost comes from the first source that applies:
 
 1. **Provider-reported** (`costSource: "provider"`): OpenRouter's `usage.cost`, or KIE's `credits_consumed` × $0.005. KIE's cost always comes from its credits, because its token counts are unreliable (hidden prompt tokens, some zero input counts), so a KIE turn without credits has no cost. On KIE Codex (OpenAI Responses) the credits are read wherever the stream carries them: next to `type` on the `response.completed` event (where KIE documents them), on the response object, or in a usage object; `raw` keeps them at its top level.
-2. **Estimated** (`costSource: "estimated"`): the model's [rate](#chat-rates) in force when the turn started, applied to the reported counts. The large-prompt tier is chosen by `inputTokens`. Cached and cache-write tokens are charged at their rates, an unpublished one derived (reads at the input rate, writes at 1.25 × input), and the rest of the prompt at the input rate. `outputTokens`, reasoning included, are charged at the output rate. A count the provider did not report adds nothing. Rates come from the KIE and ToAPIs definitions, the Gemini rate table (`googleChatRate`) and OpenRouter's live price (pi-ai's catalogue price until a live list is read).
+2. **Estimated** (`costSource: "estimated"`): the model's [rate](#chat-rates) in force when the turn started, applied to the reported counts. The large-prompt tier is chosen by `inputTokens`. Cached and cache-write tokens are charged at their rates, an unpublished one derived (reads at the input rate, writes at 1.25 × input), and the rest of the prompt at the input rate. `outputTokens`, reasoning included, are charged at the output rate. A count the provider did not report adds nothing. Rates come from the KIE and ToAPIs definitions, the Gemini rate table (`googleChatRate`) and OpenRouter's live price (pi-ai's catalogue price while no live list could be read).
 3. **None**: no rate, or no counts to price. `costUsd` and `costSource` are absent, never `0`.
 
 ## Google AI Studio (server) integration

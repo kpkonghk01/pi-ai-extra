@@ -33,8 +33,8 @@ function stripUnsupported(schema: unknown): unknown {
   return out;
 }
 
-// The sanitized form of a schema object never changes, and consumers usually pass a stable
-// schema object per Gem, so cache by identity rather than re-walking the tree on every turn.
+// The sanitized form of a schema object never changes, and consumers usually pass the same
+// schema object on every turn, so cache by identity rather than re-walking the tree each time.
 const sanitizedCache = new WeakMap<object, unknown>();
 
 /** A copy of `schema` that Gemini's `responseJsonSchema` accepts (no `minItems` / `maxItems`). */

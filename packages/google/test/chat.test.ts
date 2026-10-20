@@ -89,7 +89,7 @@ describe("Gemini chat rates", () => {
     assert.equal(googleChatRate("gemini-3.1-pro-preview"), GEMINI_CHAT_RATES["gemini-3.1-pro-preview"]);
   });
 
-  it("falls back to pi-ai's catalogue price for an id outside the table, and has no rate otherwise", () => {
+  it("takes pi-ai's catalogue price for an id outside the table, and has no rate otherwise", () => {
     assert.deepEqual(googleChatRate("gemini-3.5-flash"), { periods: [{ input: 1.5, output: 9, cacheRead: 0.15 }] });
     assert.deepEqual(googleChatRate("gemini-2.5-pro")?.periods[0]?.largePrompt, {
       overPromptTokens: 200_000,

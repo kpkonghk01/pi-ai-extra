@@ -85,8 +85,9 @@ function ratesForPrompt(period: RatePeriod, promptTokens: number | undefined): T
  * rounded to 6 decimal places to drop floating-point noise, and a cache rate the provider does
  * not publish is derived; when all four are published (KIE Codex), nothing is derived.
  *
- * **Cache fill-in rule.** This is the one place it is stated; the rate tables and their tests
- * point here. A derived rate is not part of the published rate (the glossary's Model rate):
+ * **Cache fill-in rule.** This is the one place in code that states it; the rate tables and
+ * their tests point here. A derived rate is not part of the published rate (the glossary's
+ * Model rate):
  * - an unpublished cache-read rate is the input rate, an upper bound (Anthropic and OpenAI charge
  *   less for cached input);
  * - an unpublished cache-write rate is 1.25 × input, Anthropic's 5-minute write and KIE's own

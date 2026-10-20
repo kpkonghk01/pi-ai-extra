@@ -2,7 +2,7 @@ import type { ModelCost } from "@earendil-works/pi-ai";
 import { GOOGLE_MODELS } from "@earendil-works/pi-ai/providers/google.models";
 import { catalogueRate, singleRate, type ModelRate } from "@hk01/pi-ai-extra-internal/pi-ai";
 
-/** Every rate in Gemini 3.8 and 3.6 Flash's schedule doubles on this day. */
+/** Every rate in the Gemini 3.8, 3.7 and 3.6 Flash schedules doubles on this day. */
 const FLASH_DOUBLING_DAY = "2027-01-01";
 
 /**
@@ -11,9 +11,9 @@ const FLASH_DOUBLING_DAY = "2027-01-01";
  * 2026-10-16, source: https://ai.google.dev/gemini-api/docs/pricing, ported from the
  * data-gen-ai-portal price table (`src/lib/pricing.ts`). Text models only.
  *
- * - Google schedules increases ahead of time, so a schedule has dated periods: 3.8 and 3.6 Flash
- *   double every rate on 2027-01-01 (the page: "through December 31, 2026", "starting
- *   January 1, 2027").
+ * - Google schedules increases ahead of time, so a schedule has dated periods: 3.8, 3.7 and 3.6
+ *   Flash double every rate on 2027-01-01. For 3.8 and 3.6 the page says so ("through December
+ *   31, 2026", "starting January 1, 2027").
  * - 3.7 Flash is no longer on the page. Its rates are the portal's, which double on the same day;
  *   with no published cached-input rate, a cache read is priced at the input rate.
  * - Gemini publishes no per-token cache-write price (cache storage is billed per hour) and reports

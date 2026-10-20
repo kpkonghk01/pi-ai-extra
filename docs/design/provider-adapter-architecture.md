@@ -80,7 +80,7 @@ Use the committed provider files in [`referenc-docs/`](../../referenc-docs/) bef
 
 ## Release path
 
-A `kie-vX.Y.Z`, `toapis-vX.Y.Z`, `google-vX.Y.Z`, `image-kit-vX.Y.Z` or `chat-kit-vX.Y.Z` tag triggers the GitHub Actions release workflow. The workflow validates the corresponding package version, checks, builds, tests and packs it, installs the packed `.tgz` into a fresh project as a consumer would, then attaches it to a GitHub Release. For the kits, the smoke test installs packed copies of the three provider packages as their peers (they are not on a registry): the image kit is loaded from `require()` and `import()` with React, and the chat kit, with pi-ai, from `import()` only (its `require()` must fail), lists every provider's models offline (each falls back to its installed catalogue or definitions) and runs one offline turn.
+A `kie-vX.Y.Z`, `toapis-vX.Y.Z`, `google-vX.Y.Z`, `image-kit-vX.Y.Z` or `chat-kit-vX.Y.Z` tag triggers the GitHub Actions release workflow. The workflow validates the corresponding package version, checks, builds, tests and packs it, installs the packed `.tgz` into a fresh project as a consumer would, then attaches it to a GitHub Release. For the kits, the smoke test installs packed copies of the three provider packages as their peers (they are not on a registry): the image kit is loaded from `require()` and `import()` with React, and the chat kit, with pi-ai, from `import()` only (its `require()` must fail), lists every provider's models offline (each uses its installed catalogue or definitions) and runs one offline turn.
 
 Related ADRs:
 
