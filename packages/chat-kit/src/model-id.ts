@@ -1,4 +1,4 @@
-/** A model id compared across spellings: lower case, `.` read as `-` (`gpt-5.6-sol` is `gpt-5-6-sol`). */
-export function sameModelId(id: string): string {
+/** The key model ids are compared by across spellings: lower case, `.` read as `-` (`gpt-5.6-sol` and `gpt-5-6-sol` share one). */
+export function modelIdKey(id: string): string {
   return id.toLowerCase().replaceAll(".", "-");
 }

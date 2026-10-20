@@ -1,4 +1,4 @@
-import { sameModelId } from "../model-id.ts";
+import { modelIdKey } from "../model-id.ts";
 import { getModelListJson, modelIdsOf } from "./http.ts";
 import type { ListedModel } from "./list.ts";
 
@@ -19,7 +19,7 @@ export async function fetchKieModels(input: {
 }): Promise<ListedModel[]> {
   const auth = { authorization: `Bearer ${input.apiKey}` };
   const read = async (path: string) =>
-    new Set(modelIdsOf(await getModelListJson(input.fetch, `${input.host}${path}`, auth, input.signal), `KIE ${path}`).map(sameModelId));
+    new Set(modelIdsOf(await getModelListJson(input.fetch, `${input.host}${path}`, auth, input.signal), `KIE ${path}`).map(modelIdKey));
   const [codex, claude] = await Promise.all([read("/openai/v1/models"), read("/anthropic/v1/models")]);
   return keepListed(input.installed, (listed) => (listed.model.api === "anthropic-messages" ? claude : codex), "KIE");
 }
@@ -36,7 +36,7 @@ export async function fetchToapisModels(input: {
   signal: AbortSignal;
 }): Promise<ListedModel[]> {
   const body = await getModelListJson(input.fetch, `${input.host}/v1/models?type=text`, { authorization: `Bearer ${input.apiKey}` }, input.signal);
-  const ids = new Set(modelIdsOf(body, "ToAPIs /v1/models").map(sameModelId));
+  const ids = new Set(modelIdsOf(body, "ToAPIs /v1/models").map(modelIdKey));
   return keepListed(input.installed, () => ids, "ToAPIs");
 }
 
@@ -46,7 +46,7 @@ export async function fetchToapisModels(input: {
  * were not recognised, and the installed definitions stay in use.
  */
 function keepListed(installed: readonly ListedModel[], listFor: (listed: ListedModel) => ReadonlySet<string>, provider: string): ListedModel[] {
-  const kept = installed.filter((listed) => listFor(listed).has(sameModelId(listed.model.id)));
+  const kept = installed.filter((listed) => listFor(listed).has(modelIdKey(listed.model.id)));
   if (kept.length === 0) throw new Error(`the ${provider} model lists name none of the package's chat models`);
   return kept;
 }

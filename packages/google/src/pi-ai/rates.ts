@@ -15,7 +15,7 @@ const FLASH_DOUBLING_DAY = "2027-01-01";
  *   Flash double every rate on 2027-01-01. For 3.8 and 3.6 the page says so ("through December
  *   31, 2026", "starting January 1, 2027").
  * - 3.7 Flash is no longer on the page. Its rates are the portal's, which double on the same day;
- *   with no published cached-input rate, a cache read is priced at the input rate.
+ *   it has no published cached-input rate, so pricing derives one (`toModelCost`).
  * - Gemini publishes no per-token cache-write price (cache storage is billed per hour) and reports
  *   no cache-write tokens, so no cache-write rate is given.
  * - Audio input, priced higher on some models, is not modelled.

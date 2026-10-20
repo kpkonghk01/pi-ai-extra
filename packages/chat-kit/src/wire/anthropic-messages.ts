@@ -1,7 +1,7 @@
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { TurnFailure } from "../errors.ts";
 import { isRecord } from "../guards.ts";
-import { sameModelId } from "../model-id.ts";
+import { modelIdKey } from "../model-id.ts";
 import type { ChatUsage } from "../types.ts";
 import { createUsageCapture, tokenCount, toChatUsage } from "../usage.ts";
 import { sanitizeSchemaForAnthropic } from "./anthropic-schema.ts";
@@ -105,7 +105,7 @@ const ALWAYS_THINKING_CLAUDE = /^claude-(?:(?:opus|fable)-5|[a-z]+-5-5)(?![0-9])
  * `claude-opus-5`, OpenRouter's `anthropic/claude-opus-5` and `anthropic/claude-sonnet-5.5` match.
  */
 export function isAlwaysThinkingClaude(modelId: string): boolean {
-  return ALWAYS_THINKING_CLAUDE.test(sameModelId(modelId.slice(modelId.lastIndexOf("/") + 1)));
+  return ALWAYS_THINKING_CLAUDE.test(modelIdKey(modelId.slice(modelId.lastIndexOf("/") + 1)));
 }
 
 /**

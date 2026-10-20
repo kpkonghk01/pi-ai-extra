@@ -70,12 +70,12 @@ export function isOfferedOpenRouterId(id: string): boolean {
 }
 
 /**
- * Whether an installed OpenRouter model is listed, by the live list's rules. pi-ai's chat
+ * Whether an installed OpenRouter model is offered, by the live list's rules. pi-ai's chat
  * catalogue is built from OpenRouter's default listing, which has no image-only models, and
  * `getModels()` serves its chat models only, so a chat model there answers in text; the id rules
  * (`isOfferedOpenRouterId`) apply as on the live list.
  */
-export function listsInstalledOpenRouterModel(model: Model<Api>): boolean {
+export function isOfferedInstalledOpenRouterModel(model: Model<Api>): boolean {
   return (model.type ?? "chat") === "chat" && isOfferedOpenRouterId(model.id);
 }
 

@@ -16,9 +16,9 @@ import { createKieProvider, KIE_CHAT_MODELS, KIE_USD_PER_CREDIT } from "@hk01/pi
 import { createToapisProvider, TOAPIS_CHAT_MODELS } from "@hk01/pi-ai-extra-toapis/pi-ai";
 import { reportedAmount, type CostPolicy } from "./cost.ts";
 import { isRecord } from "./guards.ts";
-import { fetchGeminiModels, isGeminiChatModel } from "./models/gemini.ts";
+import { fetchGeminiModels, isOfferedGeminiId } from "./models/gemini.ts";
 import { createModelList, type ListedModel, type ModelList } from "./models/list.ts";
-import { fetchOpenRouterModels, listsInstalledOpenRouterModel } from "./models/openrouter.ts";
+import { fetchOpenRouterModels, isOfferedInstalledOpenRouterModel } from "./models/openrouter.ts";
 import { fetchKieModels, fetchToapisModels } from "./models/resellers.ts";
 import type { ChatModelInput, ChatProviderConfig, ChatProviderKind } from "./types.ts";
 
@@ -58,8 +58,7 @@ interface ProviderKindSpec {
   create(apiKey: string, root: string | undefined): Provider;
   /**
    * Which installed models are listed and run while no live list has been read: the models the
-   * live list would keep. Gemini keeps plain chat models under their own ids; OpenRouter drops
-   * `:batch` and `:free` models.
+   * live list would keep (`isOfferedGeminiId`, `isOfferedInstalledOpenRouterModel`).
    */
   listsInstalled(model: Model<Api>): boolean;
   /**
@@ -101,7 +100,7 @@ export const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKind
     fileDocuments: true,
     nativeStructuredOutput: false,
     create: (apiKey, root) => createGoogleProvider({ apiKey, ...(root ? { baseUrl: root } : {}) }),
-    listsInstalled: (model) => isGeminiChatModel(model.id),
+    listsInstalled: (model) => isOfferedGeminiId(model.id),
     installedInput: fileWithImage,
     rateOf: (model) => googleChatRate(model.id),
     fetchLive: (context) => fetchGeminiModels({ ...context, baseUrl: context.provider.baseUrl ?? context.root ?? "" }),
@@ -111,7 +110,7 @@ export const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKind
     fileDocuments: true,
     nativeStructuredOutput: true,
     create: explicitOpenRouterProvider,
-    listsInstalled: listsInstalledOpenRouterModel,
+    listsInstalled: isOfferedInstalledOpenRouterModel,
     installedInput: (model) => (model.input.includes("image") ? ["text", "image"] : ["text"]),
     rateOf: (model) => catalogueRate(model.cost),
     fetchLive: (context) => fetchOpenRouterModels({ ...context, root: context.root ?? OPENROUTER_API_ROOT }),

@@ -213,11 +213,11 @@ export interface ChatTurnError {
 }
 
 /**
- * Usage as the provider reported it (the glossary's Usage record, ADR 0005). Every count is
- * optional: one the provider did not report is absent, never estimated or set to zero. A turn has
- * `usage` whenever the provider reported a token count or a cost or credit, which `raw` keeps even
- * when a count is missing; only a turn with neither has none. The cost fields are the one
- * addition: the provider's own charge, or the kit's estimate from the model's rate (ADR 0008).
+ * The counts the provider reported for a turn (ADR 0005), plus the kit's cost beside them. Every
+ * count is optional: one the provider did not report is absent, never estimated or set to zero. A
+ * turn has `usage` whenever the provider reported a token count or a cost or credit, which `raw`
+ * keeps even when a count is missing; only a turn with neither has none. The cost fields are the
+ * kit's: the provider's own charge, or the kit's estimate from the model's rate (ADR 0008).
  */
 export interface ChatUsage {
   /**
@@ -246,14 +246,10 @@ export interface ChatUsage {
    */
   costUsd?: number;
   /**
-   * - `provider`: the provider reported the charge: OpenRouter `usage.cost`, or KIE
-   *   `credits_consumed` × $0.005 (KIE's cost always comes from its credits, because its token
-   *   counts are unreliable).
-   * - `estimated`: the kit applied the model's rate in force at call time to the reported counts:
-   *   the large-prompt tier by `inputTokens`, cached and cache-write tokens at their rates (an
-   *   unpublished cache rate is derived: reads at the input rate, writes at 1.25 × input), the
-   *   rest of the prompt at the input rate, and `outputTokens`, reasoning included, at the output
-   *   rate. A count the provider did not report adds nothing.
+   * Where `costUsd` came from:
+   * - `provider`: the charge the provider reported for the turn;
+   * - `estimated`: the kit's estimate, the model's rate in force when the turn started applied to
+   *   the reported counts. A count the provider did not report adds nothing.
    */
   costSource?: "provider" | "estimated";
   /**

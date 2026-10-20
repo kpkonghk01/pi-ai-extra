@@ -25,7 +25,7 @@ const MOVING_ALIAS = /-latest$/i;
  * Whether a Gemini model id is offered: a plain text chat model under its own id, not a moving
  * alias. The live list and the installed catalogue both keep only these.
  */
-export function isGeminiChatModel(id: string): boolean {
+export function isOfferedGeminiId(id: string): boolean {
   return !NOT_PLAIN_CHAT.test(id) && !MOVING_ALIAS.test(id);
 }
 
@@ -39,7 +39,7 @@ const UNKNOWN_MAX_OUTPUT_TOKENS = 8_192;
 /**
  * Gemini's live chat list: the ids `GET <base>/models` lists for the key (`x-goog-api-key`), with
  * the `models/` prefix stripped, kept when the model supports `generateContent` and is a plain
- * text chat model under its own id, not a `-latest` alias (`isGeminiChatModel`). A model pi-ai's
+ * text chat model under its own id, not a `-latest` alias (`isOfferedGeminiId`). A model pi-ai's
  * catalogue knows keeps its catalogue entry (thinking levels, limits) and rate. A new id gets
  * conservative defaults: text input only, the limits Gemini reports (else small ones), no
  * thinking levels, and its rate from the Gemini rate table, which usually means no rate.
@@ -74,7 +74,7 @@ function geminiModel(entry: unknown, installed: ReadonlyMap<string, ListedModel>
   if (!isRecord(entry) || typeof entry.name !== "string") return undefined;
   const id = entry.name.replace(/^models\//, "");
   const methods = Array.isArray(entry.supportedGenerationMethods) ? entry.supportedGenerationMethods : [];
-  if (!id || !methods.includes("generateContent") || !isGeminiChatModel(id)) return undefined;
+  if (!id || !methods.includes("generateContent") || !isOfferedGeminiId(id)) return undefined;
   const known = installed.get(id);
   if (known !== undefined) return known;
   const rate = googleChatRate(id);
