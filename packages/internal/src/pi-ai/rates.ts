@@ -3,7 +3,8 @@ import type { ModelCost } from "@earendil-works/pi-ai";
 /*
  * Model rates (the glossary's Model rate): a provider's published per-token prices for one chat
  * model, in USD per 1M tokens, as a dated schedule. A model without a schedule has no rate, never
- * a zero rate. A request is priced at the period in force when it was made.
+ * a zero rate. A request is priced at the period in force when it was made, and has no rate
+ * before the schedule's first period.
  */
 
 /**
@@ -28,7 +29,7 @@ export interface LargePromptRates extends TokenRates {
 export interface RatePeriod extends TokenRates {
   /**
    * First UTC day (`YYYY-MM-DD`) on which this period applies. Only the first period may omit it:
-   * it then applies from the beginning.
+   * it then applies from the beginning. Before the first period's day, the model has no rate.
    */
   from?: string | undefined;
   largePrompt?: LargePromptRates | undefined;
@@ -60,9 +61,9 @@ export function singleRate(rates: TokenRates & { largePrompt?: LargePromptRates 
 }
 
 /**
- * The period in force at `at`: the last period whose `from` day has started (UTC). Before the
- * first dated period, the earliest period is the best available answer. Undefined only for a
- * schedule without periods.
+ * The period in force at `at`: the last period whose `from` day has started (UTC). Undefined
+ * before the first period's day, since no rate was in force yet (the glossary's Model rate: a
+ * request is priced at the rate in force when it was made), and for a schedule without periods.
  */
 export function ratePeriodAt(rate: ModelRate, at: Date | number): RatePeriod | undefined {
   const time = typeof at === "number" ? at : at.getTime();
@@ -70,7 +71,7 @@ export function ratePeriodAt(rate: ModelRate, at: Date | number): RatePeriod | u
   for (const period of rate.periods) {
     if (period.from === undefined || startOfDay(period.from) <= time) current = period;
   }
-  return current ?? rate.periods[0];
+  return current;
 }
 
 /** The rates a request pays in a period: its large-prompt tier when the prompt is over the tier's threshold. */
@@ -111,7 +112,8 @@ export const NO_RATE_PLACEHOLDER_COST: ModelCost = { input: 0, output: 0, cacheR
 /**
  * pi-ai `Model.cost` from the period in force at `at`, with unpublished cache rates filled in and
  * its large-prompt tier as a pi-ai cost tier. pi-ai requires the field; the chat kit prices a turn
- * from the schedule itself, at call time. No rate: `NO_RATE_PLACEHOLDER_COST`.
+ * from the schedule itself, at call time. No rate, or none in force yet at `at`: the placeholder
+ * zeros above.
  */
 export function modelCostAt(rate: ModelRate | undefined, at: Date | number): ModelCost {
   const period = rate === undefined ? undefined : ratePeriodAt(rate, at);

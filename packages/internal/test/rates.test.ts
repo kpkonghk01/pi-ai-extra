@@ -75,9 +75,13 @@ describe("rate schedules", () => {
     assert.equal(ratePeriodAt(DOUBLING, new Date("2030-06-01"))?.input, 1.5);
   });
 
-  it("uses the earliest period before the first dated one, and has no period for an empty schedule", () => {
+  it("has no rate before the first period's day: a request is priced at the rate in force when it was made", () => {
     const dated: ModelRate = { periods: [{ from: "2027-01-01", input: 1, output: 2 }] };
-    assert.equal(ratePeriodAt(dated, Date.parse("2026-01-01T00:00:00Z"))?.input, 1);
+    const before = Date.parse("2026-12-31T23:59:59.999Z");
+    assert.equal(ratePeriodAt(dated, before), undefined);
+    assert.equal(ratePeriodAt(dated, Date.parse("2027-01-01T00:00:00Z"))?.input, 1);
+    assert.equal(estimateCostUsd(dated, { input: 1_000, output: 1_000 }, before), undefined, "no estimate before the first period");
+    assert.deepEqual(modelCostAt(dated, before), { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, "pi-ai's placeholder, not a rate");
     assert.equal(ratePeriodAt({ periods: [] }, Date.now()), undefined);
   });
 
