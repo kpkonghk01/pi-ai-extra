@@ -1,5 +1,5 @@
 import type { Provider } from "@earendil-works/pi-ai";
-import { createChatProvider, helperImages, singleRate, type ChatModelDefinition, type ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
+import { createChatProvider, helperImages, roundRate, singleRate, type ChatModelDefinition, type ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
 import {
   KIE_API_BASE_URL,
   KIE_CLAUDE_BASE_URL,
@@ -18,15 +18,19 @@ export type { ChatModelDefinition, ChatProtocol, LargePromptRates, ModelRate, Ra
  * Rates as of 2026-10-16, source: https://kie.ai/pricing, read from
  * `POST https://api.kie.ai/client/v1/model-pricing/page` with
  * `{"pageNum":1,"pageSize":100,"interfaceType":"chat"}`. KIE prices chat in credits per
- * 1M tokens; 1 credit = $0.005 (the same listing's `usdPrice`). KIE publishes no dates, so
- * each schedule is one period. An unpublished cache rate is left out; pricing derives it
- * (`toModelCost`).
+ * 1M tokens (`KIE_USD_PER_CREDIT`). KIE publishes no dates, so each schedule is one period. An
+ * unpublished cache rate is left out; pricing derives it (`toModelCost`).
  */
-const USD_PER_CREDIT = 0.005;
 
-/** KIE credits per 1M tokens to USD per 1M tokens, rounded to 6 decimal places (`170 × 0.005` is `0.85`). */
+/**
+ * USD per KIE credit: $0.005, the `usdPrice` of KIE's pricing listing. It converts KIE's chat
+ * rates (credits per 1M tokens) and a turn's reported `credits_consumed` to USD.
+ */
+export const KIE_USD_PER_CREDIT = 0.005;
+
+/** KIE credits per 1M tokens to USD per 1M tokens (`11.2 × 0.005` is `0.056`). */
 function usd(credits: number): number {
-  return Math.round(credits * USD_PER_CREDIT * 1e6) / 1e6;
+  return roundRate(credits * KIE_USD_PER_CREDIT);
 }
 
 /**

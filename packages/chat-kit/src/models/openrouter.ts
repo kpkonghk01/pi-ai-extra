@@ -1,5 +1,5 @@
 import type { Api, Model, ThinkingLevelMap } from "@earendil-works/pi-ai";
-import { modelCostAt, singleRate, type ModelRate, type TokenRates } from "@hk01/pi-ai-extra-internal/rates";
+import { modelCostAt, roundRate, singleRate, type ModelRate, type TokenRates } from "@hk01/pi-ai-extra-internal/rates";
 import { isRecord } from "../guards.ts";
 import type { ChatModelInput } from "../types.ts";
 import { getModelListJson } from "./http.ts";
@@ -166,7 +166,7 @@ function tokenRates(prices: Record<string, unknown>, base: TokenRates | undefine
 /** One $/token decimal string as $/1M tokens; missing, invalid or negative: not published. */
 function perMillion(value: unknown): number | undefined {
   const perToken = typeof value === "string" ? Number.parseFloat(value) : typeof value === "number" ? value : Number.NaN;
-  return Number.isFinite(perToken) && perToken >= 0 ? Number((perToken * 1_000_000).toFixed(6)) : undefined;
+  return Number.isFinite(perToken) && perToken >= 0 ? roundRate(perToken * 1_000_000) : undefined;
 }
 
 /**

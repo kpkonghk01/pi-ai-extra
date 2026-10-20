@@ -8,18 +8,21 @@ import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.
 
 type ResponsesPart = Record<string, unknown>;
 
-/** A file reference: an `input_file` takes `file_url` or a data URL in `file_data`; an `input_image` takes either as `image_url`. */
-interface ResponsesFile {
-  field: "file_url" | "file_data";
-  link: string;
-}
+/** A file reference: a URL the provider fetches, or the bytes inline as a data URL. */
+type ResponsesFile = { url: string } | { dataUrl: string };
 
 const RESPONSES_PARTS: DocumentEncoder<ResponsesPart, ResponsesFile> = {
   text: (text) => ({ type: "input_text", text }),
-  url: (url) => ({ field: "file_url", link: url }),
-  inline: (data, document) => ({ field: "file_data", link: dataUrl(document.mimeType, data) }),
-  pdf: (file, document) => ({ type: "input_file", filename: document.name, [file.field]: file.link }),
-  image: (file) => ({ type: "input_image", detail: "auto", image_url: file.link }),
+  url: (url) => ({ url }),
+  inline: (data, document) => ({ dataUrl: dataUrl(document.mimeType, data) }),
+  // An `input_file` takes a URL as `file_url` and a data URL as `file_data`.
+  pdf: (file, document) => ({
+    type: "input_file",
+    filename: document.name,
+    ...("url" in file ? { file_url: file.url } : { file_data: file.dataUrl }),
+  }),
+  // An `input_image` takes either as `image_url`.
+  image: (file) => ({ type: "input_image", detail: "auto", image_url: "url" in file ? file.url : file.dataUrl }),
 };
 
 /**

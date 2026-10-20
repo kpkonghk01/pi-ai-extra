@@ -49,11 +49,6 @@ export function modelIdsOf(body: unknown, source: string): string[] {
   return ids;
 }
 
-/** A model id compared across spellings: lower case, `.` read as `-` (`gpt-5.6-sol` is `gpt-5-6-sol`). */
-export function sameModelId(id: string): string {
-  return id.toLowerCase().replaceAll(".", "-");
-}
-
 export function listErrorText(error: unknown): string {
   return error instanceof Error && error.name === "TimeoutError" ? "the model list request timed out" : errorText(error);
 }

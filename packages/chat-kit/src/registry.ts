@@ -11,9 +11,11 @@ import {
 } from "@earendil-works/pi-ai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { createGoogleProvider, googleChatRate } from "@hk01/pi-ai-extra-google/pi-ai";
-import { catalogueRate, type ModelRate } from "@hk01/pi-ai-extra-internal/rates";
-import { createKieProvider, KIE_CHAT_MODELS } from "@hk01/pi-ai-extra-kie/pi-ai";
+import { catalogueRate, roundUsd, type ModelRate } from "@hk01/pi-ai-extra-internal/rates";
+import { createKieProvider, KIE_CHAT_MODELS, KIE_USD_PER_CREDIT } from "@hk01/pi-ai-extra-kie/pi-ai";
 import { createToapisProvider, TOAPIS_CHAT_MODELS } from "@hk01/pi-ai-extra-toapis/pi-ai";
+import { reportedAmount, type CostPolicy } from "./cost.ts";
+import { isRecord } from "./guards.ts";
 import { fetchGeminiModels, isGeminiChatModel } from "./models/gemini.ts";
 import { createModelList, type ListedModel, type ModelList } from "./models/list.ts";
 import { fetchOpenRouterModels, listsInstalledOpenRouterModel } from "./models/openrouter.ts";
@@ -72,6 +74,8 @@ interface ProviderKindSpec {
   rateOf(model: Model<Api>): ModelRate | undefined;
   /** Reads the provider's live model list. */
   fetchLive(context: LiveListContext): Promise<readonly ListedModel[]>;
+  /** How a turn's cost is found: the charge the provider reports, and whether a turn without one is estimated. */
+  readonly cost: CostPolicy;
 }
 
 const OPENROUTER_API_ROOT = "https://openrouter.ai/api";
@@ -88,8 +92,11 @@ function fileWithImage(model: Model<Api>): ChatModelInput[] {
   return model.input.includes("image") ? ["text", "image", "file"] : ["text"];
 }
 
+/** A provider that reports no charge of its own: every turn with a rate and counts is estimated. */
+const ESTIMATED_COST: CostPolicy = { reportedCostUsd: () => undefined, estimatesCost: true };
+
 /** One entry per `ChatProviderKind`; the record type makes a missing kind a type error. */
-const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> = {
+export const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> = {
   google: {
     fileDocuments: true,
     nativeStructuredOutput: false,
@@ -98,6 +105,7 @@ const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> 
     installedInput: fileWithImage,
     rateOf: (model) => googleChatRate(model.id),
     fetchLive: (context) => fetchGeminiModels({ ...context, baseUrl: context.provider.baseUrl ?? context.root ?? "" }),
+    cost: ESTIMATED_COST,
   },
   openrouter: {
     fileDocuments: true,
@@ -107,6 +115,8 @@ const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> 
     installedInput: (model) => (model.input.includes("image") ? ["text", "image"] : ["text"]),
     rateOf: (model) => catalogueRate(model.cost),
     fetchLive: (context) => fetchOpenRouterModels({ ...context, root: context.root ?? OPENROUTER_API_ROOT }),
+    // OpenRouter's own charge, `usage.cost`; a turn without it is estimated from the live price.
+    cost: { reportedCostUsd: (raw) => (isRecord(raw.usage) ? reportedAmount(raw.usage.cost) : undefined), estimatesCost: true },
   },
   kie: {
     fileDocuments: false,
@@ -117,6 +127,15 @@ const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> 
     installedInput: fileWithImage,
     rateOf: definitionRate(KIE_CHAT_MODELS),
     fetchLive: (context) => fetchKieModels({ ...context, host: context.root ?? KIE_HOST }),
+    // KIE's charge, `credits_consumed` × $0.005, and never an estimate: KIE's token counts are
+    // unreliable (hidden prompt tokens, some zero input counts), so a turn without credits has no cost.
+    cost: {
+      reportedCostUsd: (raw) => {
+        const credits = reportedAmount(raw.credits_consumed);
+        return credits === undefined ? undefined : roundUsd(credits * KIE_USD_PER_CREDIT);
+      },
+      estimatesCost: false,
+    },
   },
   toapis: {
     fileDocuments: false,
@@ -126,6 +145,7 @@ const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> 
     installedInput: fileWithImage,
     rateOf: definitionRate(TOAPIS_CHAT_MODELS),
     fetchLive: (context) => fetchToapisModels({ ...context, host: context.root ?? TOAPIS_HOST }),
+    cost: ESTIMATED_COST,
   },
 };
 
@@ -145,7 +165,9 @@ export interface RegisteredProvider {
   readonly fileDocuments: boolean;
   /** See `ProviderKindSpec.nativeStructuredOutput`. */
   readonly nativeStructuredOutput: boolean;
-  /** The provider's model list: live, with the installed catalogue or definitions until one is read. */
+  /** See `ProviderKindSpec.cost`. */
+  readonly cost: CostPolicy;
+  /** The provider's model list: live, or the installed catalogue or definitions while no live list has been read. */
   readonly models: ModelList;
   streamSimple(model: Model<Api>, context: Context, options: ModelsSimpleStreamOptions): AssistantMessageEventStream;
 }
@@ -181,6 +203,7 @@ export function createProviderRegistry(configs: readonly ChatProviderConfig[], o
       grounding: config.grounding === true,
       fileDocuments: spec.fileDocuments,
       nativeStructuredOutput: spec.nativeStructuredOutput,
+      cost: spec.cost,
       models: createModelList({
         installed,
         now,

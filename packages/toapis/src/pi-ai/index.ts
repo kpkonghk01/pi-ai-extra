@@ -1,6 +1,14 @@
 import type { Provider } from "@earendil-works/pi-ai";
 import { withoutTrailingSlash } from "@hk01/pi-ai-extra-internal";
-import { createChatProvider, helperImages, singleRate, type ChatModelDefinition, type ChatProtocol, type ModelRate } from "@hk01/pi-ai-extra-internal/pi-ai";
+import {
+  createChatProvider,
+  helperImages,
+  roundRate,
+  singleRate,
+  type ChatModelDefinition,
+  type ChatProtocol,
+  type ModelRate,
+} from "@hk01/pi-ai-extra-internal/pi-ai";
 import { TOAPIS_BASE_URL, TOAPIS_IMAGES_API, TOAPIS_PROVIDER_ID, TOAPIS_PROVIDER_NAME, toapisResponsesBaseUrl } from "../constants.ts";
 import { generateToapisImage, type ToapisImageRequest, type ToapisImageSettings } from "../generate.ts";
 import { TOAPIS_IMAGE_MODELS } from "../models.ts";
@@ -14,8 +22,7 @@ export type { ChatModelDefinition, ChatProtocol, LargePromptRates, ModelRate, Ra
  * (`toModelCost`).
  */
 function ratioRate(modelRatio: number, completionRatio: number): ModelRate {
-  const round = (usd: number) => Math.round(usd * 1e6) / 1e6;
-  return singleRate({ input: round(2 * modelRatio), output: round(2 * modelRatio * completionRatio) });
+  return singleRate({ input: roundRate(2 * modelRatio), output: roundRate(2 * modelRatio * completionRatio) });
 }
 
 /**

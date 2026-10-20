@@ -3,7 +3,8 @@ import { describe, it } from "node:test";
 import { GEMINI_CHAT_RATES } from "@hk01/pi-ai-extra-google/pi-ai";
 import { createFakeFetch } from "@hk01/pi-ai-extra-internal/testing";
 import { withCost, type TurnPricing } from "../src/cost.ts";
-import { createChatKit, type ChatUsage } from "../src/index.ts";
+import { createChatKit, type ChatProviderKind, type ChatUsage } from "../src/index.ts";
+import { PROVIDER_KIND_SPECS } from "../src/registry.ts";
 import { anthropicEvents, collect, lastEvent, sseResponse, turn } from "./helpers.ts";
 
 const BEFORE_DOUBLING = Date.parse("2026-12-31T23:59:59Z");
@@ -13,8 +14,9 @@ function usage(fields: Omit<ChatUsage, "raw">, raw: Record<string, unknown> = {}
   return { ...fields, raw };
 }
 
-function pricing(kind: TurnPricing["kind"], rate: TurnPricing["rate"], startedAt = BEFORE_DOUBLING): TurnPricing {
-  return { kind, rate, startedAt };
+/** A turn on `kind`, priced by that kind's cost policy. */
+function pricing(kind: ChatProviderKind, rate: TurnPricing["rate"], startedAt = BEFORE_DOUBLING): TurnPricing {
+  return { policy: PROVIDER_KIND_SPECS[kind].cost, rate, startedAt };
 }
 
 const FLASH = GEMINI_CHAT_RATES["gemini-3.8-flash"];

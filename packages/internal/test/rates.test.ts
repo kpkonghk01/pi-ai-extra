@@ -6,9 +6,8 @@ import {
   catalogueRate,
   estimateCostUsd,
   modelCostAt,
-  NO_RATE_PLACEHOLDER_COST,
   ratePeriodAt,
-  ratesForPrompt,
+  roundRate,
   singleRate,
   toModelCost,
   type ModelRate,
@@ -68,6 +67,17 @@ describe("toModelCost", () => {
   });
 });
 
+describe("roundRate", () => {
+  it("rounds a rate to 6 decimal places: KIE credits, ToAPIs ratios and OpenRouter per-token prices", () => {
+    // In binary floating point, 11.2 × 0.005 is 0.055999999999999994 and 0.0000002 × 1M is 0.19999999999999998.
+    assert.notEqual(11.2 * 0.005, 0.056);
+    assert.equal(roundRate(11.2 * 0.005), 0.056);
+    assert.notEqual(0.0000002 * 1_000_000, 0.2);
+    assert.equal(roundRate(0.0000002 * 1_000_000), 0.2);
+    assert.equal(roundRate(0.0000004), 0);
+  });
+});
+
 describe("rate schedules", () => {
   it("switches to the next period at 00:00 UTC on its from day", () => {
     assert.equal(ratePeriodAt(DOUBLING, Date.parse("2026-12-31T23:59:59.999Z"))?.input, 0.75);
@@ -85,13 +95,6 @@ describe("rate schedules", () => {
     assert.equal(ratePeriodAt({ periods: [] }, Date.now()), undefined);
   });
 
-  it("charges the large-prompt tier only for a prompt over the threshold", () => {
-    const period = TIERED.periods[0]!;
-    assert.equal(ratesForPrompt(period, 200_000).input, 2);
-    assert.equal(ratesForPrompt(period, 200_001).input, 4);
-    assert.equal(ratesForPrompt(period, undefined).input, 2);
-  });
-
   it("feeds pi-ai's Model.cost from the period in force, with the large-prompt tier as a pi-ai tier", () => {
     assert.deepEqual(modelCostAt(DOUBLING, Date.parse("2026-10-16T00:00:00Z")), { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0.9375 });
     assert.deepEqual(modelCostAt(DOUBLING, Date.parse("2027-01-01T00:00:00Z")), { input: 1.5, output: 7.5, cacheRead: 0.15, cacheWrite: 1.875 });
@@ -102,7 +105,7 @@ describe("rate schedules", () => {
       cacheWrite: 2.5,
       tiers: [{ inputTokensAbove: 200_000, input: 4, output: 18, cacheRead: 0.4, cacheWrite: 5 }],
     });
-    assert.equal(modelCostAt(undefined, Date.now()), NO_RATE_PLACEHOLDER_COST);
+    assert.deepEqual(modelCostAt(undefined, Date.now()), { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, "pi-ai's placeholder, not a rate");
   });
 
   it("rejects an invalid schedule", () => {
@@ -136,9 +139,11 @@ describe("estimateCostUsd", () => {
     assert.equal(estimateCostUsd(DOUBLING, counts, AFTER), 1.71); // 0.6 × 1.5 + 0.4 × 0.15 + 0.1 × 7.5
   });
 
-  it("prices the whole request at the large-prompt tier when the prompt is over 200k", () => {
+  it("prices the whole request at the large-prompt tier only when the prompt is over 200k", () => {
     assert.equal(estimateCostUsd(TIERED, { input: 200_000, output: 1_000 }, BEFORE), 0.412); // 0.2 × 2 + 0.001 × 12
+    assert.equal(estimateCostUsd(TIERED, { input: 200_001, output: 1_000 }, BEFORE), 0.818004); // 0.200001 × 4 + 0.001 × 18
     assert.equal(estimateCostUsd(TIERED, { input: 250_000, cacheRead: 50_000, output: 1_000 }, BEFORE), 0.838); // 0.2 × 4 + 0.05 × 0.4 + 0.001 × 18
+    assert.equal(estimateCostUsd(TIERED, { output: 1_000_000 }, BEFORE), 12, "no prompt count: the base tier");
   });
 
   it("fills in unpublished cache rates: cache reads at input, cache writes at 1.25 × input", () => {

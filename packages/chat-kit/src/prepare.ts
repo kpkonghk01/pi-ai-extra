@@ -98,7 +98,7 @@ export async function prepareTurn(
     },
     settings,
     schemaAsToolCall,
-    pricing: { kind: provider.kind, rate: listed.rate, startedAt },
+    pricing: { policy: provider.cost, rate: listed.rate, startedAt },
   };
 }
 

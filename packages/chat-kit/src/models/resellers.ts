@@ -1,4 +1,5 @@
-import { getModelListJson, modelIdsOf, sameModelId } from "./http.ts";
+import { sameModelId } from "../model-id.ts";
+import { getModelListJson, modelIdsOf } from "./http.ts";
 import type { ListedModel } from "./list.ts";
 
 /**

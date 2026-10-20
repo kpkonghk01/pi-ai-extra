@@ -41,7 +41,7 @@ export interface ModelRate {
 }
 
 /** The token counts a provider reported for one request, as the chat kit reads them. */
-export interface PricedCounts {
+interface PricedCounts {
   /** Every prompt token: cache reads and writes included. */
   input?: number | undefined;
   /** Every generated token, reasoning included. */
@@ -75,7 +75,7 @@ export function ratePeriodAt(rate: ModelRate, at: Date | number): RatePeriod | u
 }
 
 /** The rates a request pays in a period: its large-prompt tier when the prompt is over the tier's threshold. */
-export function ratesForPrompt(period: RatePeriod, promptTokens: number | undefined): TokenRates {
+function ratesForPrompt(period: RatePeriod, promptTokens: number | undefined): TokenRates {
   const tier = period.largePrompt;
   return tier !== undefined && promptTokens !== undefined && promptTokens > tier.overPromptTokens ? tier : period;
 }
@@ -107,7 +107,7 @@ export function toModelCost(rates: TokenRates): ModelCost {
  * are a placeholder, not a rate: the model has none, the chat kit reports no cost for it, and
  * pi-ai's own `usage.cost` for it is meaningless.
  */
-export const NO_RATE_PLACEHOLDER_COST: ModelCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+const NO_RATE_PLACEHOLDER_COST: ModelCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 /**
  * pi-ai `Model.cost` from the period in force at `at`, with unpublished cache rates filled in and
@@ -208,8 +208,12 @@ function startOfDay(day: string): number {
   return Date.parse(`${day}T00:00:00Z`);
 }
 
-/** `170 × 0.005` is `0.85`, not `0.8500000000000001`. */
-function roundRate(usd: number): number {
+/**
+ * A rate in USD per 1M tokens to 6 decimal places, dropping floating-point noise: `11.2 × 0.005`
+ * is `0.056`, not `0.055999999999999994`. Every rate a package derives from a provider's own unit
+ * (KIE credits, ToAPIs ratios, OpenRouter per-token prices) goes through it.
+ */
+export function roundRate(usd: number): number {
   return Math.round(usd * 1e6) / 1e6;
 }
 
