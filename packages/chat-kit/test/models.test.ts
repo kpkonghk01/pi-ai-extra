@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createFakeFetch, jsonResponse, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
+import { createFakeFetch, hangingResponse, jsonResponse, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import { createChatKit, type ChatModelInfo, type ChatProviderModels } from "../src/index.ts";
 import { TurnFailure } from "../src/errors.ts";
-import { createModelList, FAILED_REFRESH_RETRY_MS, MODEL_LIST_TTL_MS, type ListedModel } from "../src/models/list.ts";
+import { createModelList, FAILED_REFRESH_RETRY_MS, LIST_READ_TIMEOUT_MS, MODEL_LIST_TTL_MS, type ListedModel } from "../src/models/list.ts";
 import { openRouterRate, openRouterThinkingLevelMap } from "../src/models/openrouter.ts";
 import { prepareTurn } from "../src/prepare.ts";
 import { createProviderRegistry } from "../src/registry.ts";
@@ -19,8 +19,8 @@ function listed(id: string): ListedModel {
   return { model: { id } as ListedModel["model"], rate: undefined, input: ["text"] };
 }
 
-/** A model list over a fake clock and a scripted live source. */
-function scriptedList(results: (readonly string[] | Error)[]) {
+/** A model list over a fake clock and a scripted live source; a promise entry answers when the test settles it. */
+function scriptedList(results: (readonly string[] | Error | Promise<readonly string[]>)[]) {
   let clock = 0;
   let calls = 0;
   const list = createModelList({
@@ -30,7 +30,7 @@ function scriptedList(results: (readonly string[] | Error)[]) {
       const result = results[Math.min(calls, results.length - 1)]!;
       calls += 1;
       if (result instanceof Error) throw result;
-      return result.map(listed);
+      return (await result).map(listed);
     },
   });
   return {
@@ -44,86 +44,83 @@ function scriptedList(results: (readonly string[] | Error)[]) {
 
 const ids = (models: readonly { model: { id: string } }[]) => models.map((entry) => entry.model.id);
 
+/** Lets every pending promise callback run (a real macrotask, so it also works under mocked `setTimeout`). */
+const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+/** Whether `promise` has settled once pending callbacks have run. */
+async function settledYet(promise: Promise<unknown>): Promise<boolean> {
+  let settled = false;
+  promise.then(
+    () => (settled = true),
+    () => (settled = true),
+  );
+  await settle();
+  return settled;
+}
+
 describe("model list refresh rules", () => {
-  it("keeps a live list for 30 minutes, then refreshes it", async () => {
-    const { list, calls, advance } = scriptedList([["a"], ["a", "b"]]);
-    assert.deepEqual(ids((await list.read()).models), ["a"]);
-    advance(MODEL_LIST_TTL_MS - 1);
-    assert.deepEqual(ids((await list.read()).models), ["a"]);
+  it("reads the live list before a new list's first lookup, and waits for it", async () => {
+    const live = Promise.withResolvers<readonly string[]>();
+    const { list, calls } = scriptedList([live.promise]);
+    const first = list.find("a");
+    assert.equal(await settledYet(first), false, "a cold lookup waits for the live read");
     assert.equal(calls(), 1);
-    advance(1);
-    const refreshed = await list.read();
-    assert.deepEqual(ids(refreshed.models), ["a", "b"]);
-    assert.equal(refreshed.source, "live");
-    assert.equal(calls(), 2);
-  });
-
-  it("keeps the last good list when a refresh fails, says why, and retries after a minute", async () => {
-    const { list, calls, advance } = scriptedList([["a"], new Error("HTTP 503"), ["b"]]);
-    await list.read();
-    advance(MODEL_LIST_TTL_MS);
-    const failed = await list.read();
-    assert.deepEqual([ids(failed.models), failed.source, failed.refreshError], [["a"], "live", "HTTP 503"]);
-    advance(FAILED_REFRESH_RETRY_MS - 1);
-    assert.equal((await list.read()).refreshError, "HTTP 503");
-    assert.equal(calls(), 2, "no retry within a minute of a failure");
-    advance(1);
-    const recovered = await list.read();
-    assert.deepEqual([ids(recovered.models), recovered.refreshError], [["b"], undefined]);
-  });
-
-  it("uses the installed catalogue or definitions until a live list has been read", async () => {
-    const { list } = scriptedList([new Error("timed out")]);
-    const snapshot = await list.read();
-    assert.deepEqual([ids(snapshot.models), snapshot.source, snapshot.refreshError], [["installed-model"], "installed", "timed out"]);
-  });
-
-  it("reads the live list before a new list's first lookup, and resolves against it", async () => {
-    const { list, calls } = scriptedList([["a"]]);
-    const first = await list.find("installed-model");
-    assert.equal(calls(), 1, "the first lookup read the live list");
-    assert.equal(first.model, undefined, "an id only the installed list has is not found");
-    assert.equal(first.snapshot.source, "live");
-    assert.equal((await list.find("a")).model?.model.id, "a");
+    live.resolve(["a"]);
+    const found = await first;
+    assert.deepEqual([found.model?.model.id, found.snapshot.source], ["a", "live"]);
+    assert.equal((await list.find("installed-model")).model, undefined, "an id only the installed list has is not found");
     assert.equal(calls(), 1, "a fresh list is not read again");
   });
 
-  it("reads a stale list again before a lookup, even for an id it has: a dropped model is gone, an added one found", async () => {
-    const { list, calls, advance } = scriptedList([["a", "b"], ["b", "c"]]);
+  it("serves a stale list at once and refreshes it in the background; the lookup after the refresh sees the new list", async () => {
+    const refreshed = Promise.withResolvers<readonly string[]>();
+    const { list, calls, advance } = scriptedList([["a", "b"], refreshed.promise]);
     assert.equal((await list.find("a")).model?.model.id, "a");
     advance(MODEL_LIST_TTL_MS - 1);
-    assert.equal((await list.find("a")).model?.model.id, "a");
     assert.equal((await list.find("c")).model, undefined, "a fresh list is not read again, even for a miss");
     assert.equal(calls(), 1);
     advance(1);
-    const stale = await list.find("a");
-    assert.equal(calls(), 2, "the stale list was read again before the lookup");
-    assert.equal(stale.model, undefined, "a model the live list dropped is not found");
-    assert.equal((await list.find("c")).model?.model.id, "c");
+    const stale = list.find("a");
+    assert.equal(await settledYet(stale), true, "a stale lookup does not wait for the refresh");
+    assert.deepEqual([(await stale).model?.model.id, calls()], ["a", 2], "served from the stale list while the refresh runs");
+    assert.equal((await list.find("a")).model?.model.id, "a", "a lookup during the refresh shares it and still sees the stale list");
+    assert.equal(calls(), 2);
+    refreshed.resolve(["b", "c"]);
+    await settle();
+    assert.equal((await list.find("a")).model, undefined, "a model the refreshed list dropped is gone");
+    assert.equal((await list.find("c")).model?.model.id, "c", "an added one is found");
+    assert.equal(calls(), 2);
   });
 
-  it("resolves against the last good list when a refresh fails, and reads it again after a minute", async () => {
+  it("keeps the last good list when a background refresh fails, says why, and retries after a minute", async () => {
     const { list, calls, advance } = scriptedList([["a"], new Error("HTTP 503"), ["b"]]);
-    await list.find("a");
+    await list.read();
     advance(MODEL_LIST_TTL_MS);
+    assert.deepEqual(ids((await list.read()).models), ["a"]);
+    await settle();
     const failed = await list.find("a");
     assert.deepEqual([failed.model?.model.id, failed.snapshot.source, failed.snapshot.refreshError], ["a", "live", "HTTP 503"]);
     advance(FAILED_REFRESH_RETRY_MS - 1);
     assert.equal((await list.find("b")).model, undefined);
     assert.equal(calls(), 2, "no retry within a minute of a failure");
     advance(1);
-    assert.equal((await list.find("b")).model?.model.id, "b");
-    assert.equal(calls(), 3);
+    assert.equal((await list.find("b")).model, undefined, "the retry runs in the background too");
+    await settle();
+    const recovered = await list.read();
+    assert.deepEqual([ids(recovered.models), recovered.refreshError, calls()], [["b"], undefined, 3]);
   });
 
-  it("resolves against the installed list when no live list has been read, until one is", async () => {
+  it("resolves against the installed list when no live list has been read, and waits for the next cold read after a minute", async () => {
     const { list, calls, advance } = scriptedList([new Error("timed out"), ["a"]]);
     const found = await list.find("installed-model");
     assert.deepEqual([found.model?.model.id, found.snapshot.source, found.snapshot.refreshError], ["installed-model", "installed", "timed out"]);
     assert.equal(calls(), 1);
-    advance(FAILED_REFRESH_RETRY_MS);
+    advance(FAILED_REFRESH_RETRY_MS - 1);
+    assert.equal((await list.find("installed-model")).model?.model.id, "installed-model");
+    assert.equal(calls(), 1, "no retry within a minute of a failure");
+    advance(1);
     const live = await list.find("installed-model");
-    assert.deepEqual([live.model, live.snapshot.source], [undefined, "live"], "once a live list is read, it decides");
+    assert.deepEqual([live.model, live.snapshot.source], [undefined, "live"], "the cold retry is waited for, and the live list decides");
   });
 
   it("shares one refresh between concurrent lookups and listings", async () => {
@@ -134,6 +131,48 @@ describe("model list refresh rules", () => {
     assert.equal(missing.model, undefined);
     assert.equal(calls(), 1);
   });
+
+  it("refreshes again after a fetchLive that throws synchronously", async () => {
+    let clock = 0;
+    let calls = 0;
+    const list = createModelList({
+      installed: [listed("installed-model")],
+      now: () => clock,
+      fetchLive: () => {
+        calls += 1;
+        if (calls === 1) throw new Error("no fetch configured");
+        return Promise.resolve([listed("a")]);
+      },
+    });
+    const failed = await list.read();
+    assert.deepEqual([failed.source, failed.refreshError], ["installed", "no fetch configured"]);
+    clock += FAILED_REFRESH_RETRY_MS;
+    const recovered = await list.read();
+    assert.deepEqual([ids(recovered.models), recovered.source, calls], [["a"], "live", 2], "the settled refresh was not kept as in flight");
+  });
+
+  it("gives a whole read one 5 s deadline: a cold read that hangs answers from the installed list at 5 s", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    let signal: AbortSignal | undefined;
+    const list = createModelList({
+      installed: [listed("installed-model")],
+      now: () => 0,
+      // Ignores the signal, as a broken fetch would: the deadline still ends the read.
+      fetchLive: (deadline) => {
+        signal = deadline;
+        return new Promise(() => {});
+      },
+    });
+    const lookup = list.find("installed-model");
+    t.mock.timers.tick(LIST_READ_TIMEOUT_MS - 1);
+    assert.equal(await settledYet(lookup), false);
+    t.mock.timers.tick(1);
+    const found = await lookup;
+    assert.deepEqual(
+      [found.model?.model.id, found.snapshot.source, found.snapshot.refreshError, signal?.aborted],
+      ["installed-model", "installed", "the model list was not read within 5 s", true],
+    );
+  });
 });
 
 describe("turns resolve against the live list", () => {
@@ -141,12 +180,13 @@ describe("turns resolve against the live list", () => {
     { method: "GET", url: KIE_CODEX_MODELS_URL, respond: () => jsonResponse({ data: [{ id: "gpt-5-6-sol" }] }) },
     { method: "GET", url: KIE_CLAUDE_MODELS_URL, respond: () => jsonResponse({ data: [{ id: "claude-opus-5-5" }] }) },
   ];
+  const kieTarget = { provider: "kie", model: "claude-haiku-4-5" };
 
   it("reads it before a new kit's first turn: a model the live list dropped fails with UNKNOWN_MODEL, and nothing is sent", async () => {
     const fake = createFakeFetch(KIE_LISTS);
     const chat = createChatKit({ providers: [{ name: "kie", provider: "kie", apiKey: "kie-key" }], fetch: fake.fetch });
     // claude-haiku-4-5 is a package definition, so it is in the installed list.
-    const last = lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "claude-haiku-4-5" }))));
+    const last = lastEvent(await collect(chat.runTurn(turn(kieTarget))));
     assert.equal(last.type === "failed" && last.error.code, "UNKNOWN_MODEL");
     assert.deepEqual(
       fake.calls.map((call) => `${call.method} ${call.url}`),
@@ -154,7 +194,7 @@ describe("turns resolve against the live list", () => {
     );
   });
 
-  it("reads a stale list again before a turn, so a model dropped since the last read fails with UNKNOWN_MODEL", async () => {
+  it("resolves a turn on a stale list at once while it is read again; a model dropped since then fails from the next turn", async () => {
     let clock = Date.parse("2026-10-20T00:00:00Z");
     const fake = createFakeFetch([
       { method: "GET", url: KIE_CODEX_MODELS_URL, respond: () => jsonResponse({ data: [{ id: "gpt-5-6-sol" }] }) },
@@ -165,15 +205,60 @@ describe("turns resolve against the live list", () => {
       },
     ]);
     const registry = createProviderRegistry([{ name: "kie", provider: "kie", apiKey: "kie-key" }], { fetch: fake.fetch, now: () => clock });
-    const prepare = () =>
-      prepareTurn(registry, turn({ provider: "kie", model: "claude-haiku-4-5" }), { provider: "kie", model: "claude-haiku-4-5" }, new AbortController().signal);
+    const prepare = () => prepareTurn(registry, turn(kieTarget), kieTarget, new AbortController().signal);
     assert.equal((await prepare()).model.id, "claude-haiku-4-5");
     clock += MODEL_LIST_TTL_MS - 1;
     assert.equal((await prepare()).model.id, "claude-haiku-4-5", "a fresh list is not read again");
     assert.equal(fake.calls.length, 2);
     clock += 1;
+    // The documented trade-off: the stale list still has the model, so this turn would be sent.
+    assert.equal((await prepare()).model.id, "claude-haiku-4-5", "the stale list answers the turn");
+    assert.equal(fake.calls.length, 4, "and the list is read again in the background");
+    await settle();
     await assert.rejects(prepare(), (error: unknown) => error instanceof TurnFailure && error.code === "UNKNOWN_MODEL");
-    assert.equal(fake.calls.length, 4, "the stale list was read again before the turn");
+    assert.equal(fake.calls.length, 4);
+  });
+
+  it("a cold start whose list endpoint hangs resolves the turn against the installed list after 5 s", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const fake = createFakeFetch([
+      { method: "GET", url: KIE_CODEX_MODELS_URL, respond: hangingResponse },
+      { method: "GET", url: KIE_CLAUDE_MODELS_URL, respond: hangingResponse },
+    ]);
+    const registry = createProviderRegistry([{ name: "kie", provider: "kie", apiKey: "kie-key" }], { fetch: fake.fetch });
+    const prepared = prepareTurn(registry, turn(kieTarget), kieTarget, new AbortController().signal);
+    assert.equal(await settledYet(prepared), false, "the cold turn waits for the list");
+    t.mock.timers.tick(LIST_READ_TIMEOUT_MS - 1);
+    assert.equal(await settledYet(prepared), false);
+    t.mock.timers.tick(1);
+    assert.equal((await prepared).model.id, "claude-haiku-4-5", "from the installed definitions");
+    const snapshot = await registry.get("kie")!.models.read();
+    assert.deepEqual([snapshot.source, snapshot.refreshError], ["installed", "the model list was not read within 5 s"]);
+  });
+
+  it("a stale list whose endpoint hangs adds no latency: the turn resolves at once, and the refresh times out in the background", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    let clock = Date.parse("2026-10-20T00:00:00Z");
+    const fake = createFakeFetch([
+      { method: "GET", url: KIE_CODEX_MODELS_URL, respond: [() => jsonResponse({ data: [{ id: "gpt-5-6-sol" }] }), hangingResponse] },
+      { method: "GET", url: KIE_CLAUDE_MODELS_URL, respond: [() => jsonResponse({ data: [{ id: "claude-haiku-4-5" }] }), hangingResponse] },
+    ]);
+    const registry = createProviderRegistry([{ name: "kie", provider: "kie", apiKey: "kie-key" }], { fetch: fake.fetch, now: () => clock });
+    const prepare = () => prepareTurn(registry, turn(kieTarget), kieTarget, new AbortController().signal);
+    assert.equal((await prepare()).model.id, "claude-haiku-4-5");
+    clock += MODEL_LIST_TTL_MS;
+    const stale = prepare();
+    assert.equal(await settledYet(stale), true, "no timer had to fire: the turn did not wait for the hanging read");
+    assert.equal((await stale).model.id, "claude-haiku-4-5");
+    assert.equal(fake.calls.length, 4, "the background refresh is under way");
+    t.mock.timers.tick(LIST_READ_TIMEOUT_MS);
+    await settle();
+    const snapshot = await registry.get("kie")!.models.read();
+    assert.deepEqual(
+      [snapshot.source, snapshot.refreshError, ids(snapshot.models)],
+      ["live", "the model list was not read within 5 s", ["gpt-5-6-sol", "claude-haiku-4-5"]],
+      "the last good list stays in use",
+    );
   });
 });
 
@@ -498,6 +583,39 @@ describe("Gemini live list", () => {
       maxOutputTokens: 131_072,
       reasoning: true,
     });
+  });
+});
+
+describe("Gemini paging under one deadline", () => {
+  it("fails the whole read at 5 s, though no single page took that long", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    /** A page that answers after 3 s, unless the read's signal aborts first. */
+    const slowPage =
+      (body: unknown) =>
+      (_request: unknown, signal: AbortSignal | undefined): Promise<Response> =>
+        new Promise((resolve, reject) => {
+          const timer = setTimeout(() => resolve(jsonResponse(body)), 3_000);
+          signal?.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              reject(signal.reason);
+            },
+            { once: true },
+          );
+        });
+    const page = (id: string, next?: string) => ({ models: [{ name: `models/${id}`, supportedGenerationMethods: ["generateContent"] }], ...(next ? { nextPageToken: next } : {}) });
+    const fake = createFakeFetch([{ method: "GET", url: GEMINI_MODELS_URL, respond: [slowPage(page("gemini-3.8-flash", "page-2")), slowPage(page("gemini-3.6-flash"))] }]);
+    const chat = createChatKit({ providers: [{ name: "gemini", provider: "google", apiKey: "gemini-key" }], fetch: fake.fetch });
+    const listing = chat.listModels();
+    await settle();
+    t.mock.timers.tick(3_000);
+    await settle();
+    assert.equal(fake.calls.length, 2, "page 1 answered after 3 s, and page 2 was asked for");
+    t.mock.timers.tick(LIST_READ_TIMEOUT_MS - 3_000);
+    const [entry] = await listing;
+    assert.ok(entry && "models" in entry);
+    assert.deepEqual([entry.source, entry.refreshError], ["installed", "the model list was not read within 5 s"]);
   });
 });
 

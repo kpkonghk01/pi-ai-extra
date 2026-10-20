@@ -1,12 +1,9 @@
-import { errorText } from "../errors.ts";
 import { isRecord } from "../guards.ts";
 
-/** A model list request that takes longer than this fails; the last good list stays in use. */
-const LIST_REQUEST_TIMEOUT_MS = 15_000;
-
 /**
- * GETs a provider's model list as JSON. A non-2xx status, a body that is not JSON, or KIE's
- * HTTP-200 error envelope (`{ code, msg }`) throws, with the provider's own message when it gave one.
+ * GETs a provider's model list as JSON, under the list read's `signal` (its one deadline). A
+ * non-2xx status, a body that is not JSON, or KIE's HTTP-200 error envelope (`{ code, msg }`)
+ * throws, with the provider's own message when it gave one.
  */
 export async function getModelListJson(
   fetch: typeof globalThis.fetch,
@@ -17,7 +14,7 @@ export async function getModelListJson(
   const response = await fetch(url, {
     method: "GET",
     headers: { accept: "application/json", ...headers },
-    signal: AbortSignal.any([signal, AbortSignal.timeout(LIST_REQUEST_TIMEOUT_MS)]),
+    signal,
   });
   const text = await response.text();
   let body: unknown;
@@ -47,10 +44,6 @@ export function modelIdsOf(body: unknown, source: string): string[] {
   });
   if (ids.length === 0) throw new Error(`the model list from ${source} lists no model ids`);
   return ids;
-}
-
-export function listErrorText(error: unknown): string {
-  return error instanceof Error && error.name === "TimeoutError" ? "the model list request timed out" : errorText(error);
 }
 
 function detail(body: unknown): string {

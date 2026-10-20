@@ -1,7 +1,8 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ModelRate } from "@hk01/pi-ai-extra-internal/rates";
+import { untilAborted } from "../abort.ts";
+import { errorText } from "../errors.ts";
 import type { ChatModelInput } from "../types.ts";
-import { listErrorText } from "./http.ts";
 
 /** A chat model a provider offers: the pi-ai model the turn runs on, its rate and what it reads. */
 export interface ListedModel {
@@ -12,11 +13,14 @@ export interface ListedModel {
   readonly input: readonly ChatModelInput[];
 }
 
-/** A live list is fresh for 30 minutes; after that the next lookup or listing reads it again first. */
+/** A live list is fresh for 30 minutes; after that the next lookup or listing starts a refresh. */
 export const MODEL_LIST_TTL_MS: number = 30 * 60_000;
 
 /** After a failed refresh, the next attempt waits a minute, so a provider whose list is down is not asked on every turn. */
 export const FAILED_REFRESH_RETRY_MS = 60_000;
+
+/** One deadline for a whole list read: every request and page of it (KIE's two lists, Gemini's pages). */
+export const LIST_READ_TIMEOUT_MS = 5_000;
 
 /** The list a provider's turns resolve against, and where it came from. */
 export interface ModelListSnapshot {
@@ -30,29 +34,37 @@ export interface ModelListSnapshot {
 }
 
 export interface ModelList {
-  /**
-   * The list, refreshed first when it is due: when no live list has been read yet, or the live
-   * list is 30 minutes old, unless a refresh failed less than a minute ago.
-   */
+  /** The list, by the refresh rules of `createModelList`. */
   read(): Promise<ModelListSnapshot>;
-  /** The model with this id in the list `read()` returns: a turn resolves against the same, refreshed list. */
+  /** The model with this id in the list `read()` returns: a turn resolves against the same list. */
   find(id: string): Promise<{ model: ListedModel | undefined; snapshot: ModelListSnapshot }>;
 }
 
 export interface ModelListSource {
   /** The installed catalogue or package definitions: the list until a live one has been read. */
   installed: readonly ListedModel[];
-  /** Reads the provider's live list. It throws when the list cannot be read or lists no model. */
+  /**
+   * Reads the provider's live list. It throws when the list cannot be read or lists no model.
+   * `signal` aborts at the read's deadline (`LIST_READ_TIMEOUT_MS`).
+   */
   fetchLive(signal: AbortSignal): Promise<readonly ListedModel[]>;
   now(): number;
 }
 
 /**
- * The refresh rules: the first lookup or listing reads the live list, and a live list is fresh for
- * 30 minutes, after which the next lookup or listing reads it again before it answers. A failed
- * refresh keeps the last good list, or the installed one when no live list was ever read, and is
- * retried after a minute. Concurrent callers share one refresh. A refresh never takes a caller's
- * signal: a caller that stops waiting does not cancel it for the others.
+ * The refresh rules:
+ *
+ * - **Cold** (no live list has been read yet): a lookup or listing reads the live list and waits
+ *   for it, up to `LIST_READ_TIMEOUT_MS` (5 s). If the read fails, it answers from the installed
+ *   catalogue or definitions.
+ * - **Stale** (the last good live list is 30 minutes old): a lookup or listing answers from that
+ *   list at once and starts a refresh in the background; the lookups after it see the new list.
+ *   No turn waits for it. So a model the provider has dropped can still be resolved, and sent,
+ *   until that refresh lands; the provider then answers with its own error.
+ * - A failed refresh keeps the last good list, or the installed one when no live list was ever
+ *   read, and the next attempt waits a minute (`FAILED_REFRESH_RETRY_MS`).
+ * - Concurrent callers share one refresh. It has its own deadline and never takes a caller's
+ *   signal, so a caller that stops waiting does not cancel it for the others.
  */
 export function createModelList(source: ModelListSource): ModelList {
   let live: { models: readonly ListedModel[]; fetchedAt: number } | undefined;
@@ -70,23 +82,39 @@ export function createModelList(source: ModelListSource): ModelList {
     return live === undefined || now - live.fetchedAt >= MODEL_LIST_TTL_MS;
   };
 
+  /** One live read under one deadline. It never rejects: a failure is recorded instead. */
+  const readLive = async (): Promise<void> => {
+    const deadline = new AbortController();
+    const timer = setTimeout(
+      () => deadline.abort(new DOMException(`the model list was not read within ${LIST_READ_TIMEOUT_MS / 1000} s`, "TimeoutError")),
+      LIST_READ_TIMEOUT_MS,
+    );
+    try {
+      // The race also ends a read whose fetch ignores the signal.
+      const models = await untilAborted(source.fetchLive(deadline.signal), deadline.signal, () => deadline.signal.reason);
+      live = { models, fetchedAt: source.now() };
+      failure = undefined;
+    } catch (error) {
+      failure = { error: errorText(error), at: source.now() };
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
   const refresh = (): Promise<void> => {
-    inFlight ??= (async () => {
-      try {
-        const models = await source.fetchLive(new AbortController().signal);
-        live = { models, fetchedAt: source.now() };
-        failure = undefined;
-      } catch (error) {
-        failure = { error: listErrorText(error), at: source.now() };
-      } finally {
-        inFlight = undefined;
-      }
-    })();
+    // `finally` runs as a later microtask, so `inFlight` is cleared only after it is assigned, even
+    // when `fetchLive` throws synchronously and `readLive()` has already settled.
+    inFlight ??= readLive().finally(() => {
+      inFlight = undefined;
+    });
     return inFlight;
   };
 
   const read = async (): Promise<ModelListSnapshot> => {
-    if (due()) await refresh();
+    if (due()) {
+      const refreshing = refresh();
+      if (live === undefined) await refreshing;
+    }
     return snapshot();
   };
 

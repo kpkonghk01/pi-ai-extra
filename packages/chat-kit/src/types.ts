@@ -50,17 +50,19 @@ export interface ChatKit {
   /**
    * Runs one chat turn on exactly the provider and model in `input`. It never throws and never
    * falls back to another provider or model: every failure arrives as a `failed` event, which is
-   * always the last event. The model is resolved against the same list `listModels` returns,
-   * read first when it is due (a new kit's first turn, or a list 30 minutes old), so a model only
-   * the live list has works too, and one the live list no longer has fails with `UNKNOWN_MODEL`.
+   * always the last event. The model is resolved against the same list `listModels` returns, so
+   * a model only the live list has works too, and one the live list no longer has fails with
+   * `UNKNOWN_MODEL`. A new kit's first turn waits for the live list (up to 5 s); a turn on a list
+   * 30 minutes old resolves against it at once while it is read again in the background.
    */
   runTurn(input: ChatTurnInput, options?: ChatTurnOptions): AsyncIterable<ChatTurnEvent>;
   /**
    * The models of every configured provider, in configuration order. Each provider's list is
    * read live (OpenRouter `/models`, Gemini `models.list`, the KIE and ToAPIs model lists
-   * intersected with the package definitions) and kept for 30 minutes. A failed refresh keeps
-   * the last good list, or uses the installed catalogue or definitions when no live list has
-   * been read, and says why in `refreshError`; one failing provider never hides the others.
+   * intersected with the package definitions) and is fresh for 30 minutes; after that it is
+   * returned at once and read again in the background. A failed refresh keeps the last good list,
+   * or uses the installed catalogue or definitions when no live list has been read, and says why
+   * in `refreshError`; one failing provider never hides the others.
    */
   listModels(options?: ChatListModelsOptions): Promise<ChatProviderModels[]>;
 }
