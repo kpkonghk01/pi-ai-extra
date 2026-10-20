@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-16
-- Related: data-gen-ai-portal ADR 0010 (provider layer on pi-ai and Chat kit)
+- Related: data-gen-ai-portal ADR 0010 (provider layer on pi-ai and Chat kit), [DATA-4568](https://hk01-digital.atlassian.net/browse/DATA-4568)
 
 ## Context
 
@@ -67,6 +67,8 @@ Add `@hk01/pi-ai-extra-chat-kit`. It is the chat counterpart of the image kit: s
 
 - Upgrade pi-ai from 0.87.1 to 1.2.x across the packages.
 - Correct the KIE and ToAPIs chat definitions to the providers' current endpoints and model ids.
+
+Amended 2026-10-16 ([DATA-4568](https://hk01-digital.atlassian.net/browse/DATA-4568)): until the dated model rates ship, the Model rates point "chat model cost no longer defaults to `0`" holds for the package default lists only. A consumer-supplied definition without `cost` still gets zero rates, an interim recorded in [ADR 0005](0005-provider-reported-usage.md)'s DATA-4566 and DATA-4568 amendments.
 
 ## Considered options
 

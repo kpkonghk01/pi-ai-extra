@@ -43,13 +43,13 @@ function provider(generate: (request: Record<string, unknown>) => Promise<unknow
   collection.setProvider(createProvider({ id: "test", name: "Test", auth: explicitApiKeyAuth("Test", "factory-key"), models, images }));
   const model = collection.getModelOfType("image", "test", "img-1");
   assert.ok(model);
-  return { images: collection, model };
+  return { models: collection, model };
 }
 
 describe("helperImages", () => {
   it("exposes catalogue limits and converts helper results to pi-ai image content", async () => {
     let seen: Record<string, unknown> | undefined;
-    const { images, model } = provider(async (request) => {
+    const { models, model } = provider(async (request) => {
       seen = request;
       return {
         provider: "test",
@@ -61,7 +61,7 @@ describe("helperImages", () => {
     });
     assert.equal(model.inputLimits?.images?.maxPerRequest, 3);
 
-    const result = await images.generateImages(
+    const result = await models.generateImages(
       model,
       { input: [{ type: "text", text: "a cat" }, { type: "image", mimeType: "image/png", data: "AAAA" }] },
       { metadata: { aspectRatio: "1:1" } },
@@ -78,17 +78,17 @@ describe("helperImages", () => {
   });
 
   it("returns errors as stopReason error with provider/model context instead of throwing", async () => {
-    const { images, model } = provider(async () => {
+    const { models, model } = provider(async () => {
       throw new PiAiExtraError("quota exceeded", { provider: "test", model: "img-1", code: "insufficient_credits" });
     });
-    const result = await images.generateImages(model, { input: [{ type: "text", text: "x" }] });
+    const result = await models.generateImages(model, { input: [{ type: "text", text: "x" }] });
     assert.equal(result.stopReason, "error");
     assert.match(result.errorMessage ?? "", /\[test\/img-1\] quota exceeded/);
   });
 
   it("rejects metadata that tries to override request fields", async () => {
-    const { images, model } = provider(async () => assert.fail("must not run"));
-    const result = await images.generateImages(model, { input: [{ type: "text", text: "x" }] }, { metadata: { apiKey: "other" } });
+    const { models, model } = provider(async () => assert.fail("must not run"));
+    const result = await models.generateImages(model, { input: [{ type: "text", text: "x" }] }, { metadata: { apiKey: "other" } });
     assert.equal(result.stopReason, "error");
     assert.match(result.errorMessage ?? "", /must not set apiKey/);
   });
@@ -134,11 +134,11 @@ describe("helperImages", () => {
 
   it("reports cancellation as stopReason aborted", async () => {
     const controller = new AbortController();
-    const { images, model } = provider(async () => {
+    const { models, model } = provider(async () => {
       controller.abort();
       throw new PiAiExtraError("cancelled", { provider: "test", model: "img-1", code: "aborted" });
     });
-    const result = await images.generateImages(model, { input: [{ type: "text", text: "x" }] }, { signal: controller.signal });
+    const result = await models.generateImages(model, { input: [{ type: "text", text: "x" }] }, { signal: controller.signal });
     assert.equal(result.stopReason, "aborted");
   });
 });

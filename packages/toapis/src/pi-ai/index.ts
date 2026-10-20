@@ -1,6 +1,6 @@
 import type { ModelCost, Provider } from "@earendil-works/pi-ai";
 import { withoutTrailingSlash } from "@hk01/pi-ai-extra-internal";
-import { createChatProvider, helperImages, publishedCost, type ChatModelDefinition, type ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
+import { createChatProvider, helperImages, toModelCost, type ChatModelDefinition, type ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { TOAPIS_BASE_URL, TOAPIS_IMAGES_API, TOAPIS_PROVIDER_ID, TOAPIS_PROVIDER_NAME, toapisResponsesBaseUrl } from "../constants.ts";
 import { generateToapisImage, type ToapisImageRequest, type ToapisImageSettings } from "../generate.ts";
 import { TOAPIS_IMAGE_MODELS } from "../models.ts";
@@ -10,11 +10,10 @@ export type { ChatModelDefinition, ChatProtocol } from "@hk01/pi-ai-extra-intern
 /**
  * USD per 1M tokens from a ToAPIs pricing entry: input = 2 × `model_ratio`, output =
  * 2 × `model_ratio` × `completion_ratio` (every group ratio is 1). ToAPIs publishes no cache
- * rates, so `publishedCost` fills them in: cache reads at the input rate (an upper bound) and
- * cache writes at 1.25 × input (Anthropic's 5-minute write).
+ * rates; `toModelCost` derives them.
  */
 function ratioCost(modelRatio: number, completionRatio: number): ModelCost {
-  return publishedCost({ input: 2 * modelRatio, output: 2 * modelRatio * completionRatio });
+  return toModelCost({ input: 2 * modelRatio, output: 2 * modelRatio * completionRatio });
 }
 
 /**

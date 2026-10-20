@@ -1,9 +1,9 @@
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
-import { assertMarkerReplaced, assertNoMarker, renderTextDocument, spliceMarker, type PreparedDocument } from "../documents.ts";
 import { TurnFailure } from "../errors.ts";
 import { isRecord } from "../guards.ts";
 import type { ChatUsage } from "../types.ts";
-import { billingFields, tokenCount, toChatUsage } from "../usage.ts";
+import { createUsageCapture, tokenCount, toChatUsage } from "../usage.ts";
+import { encodeDocument, placeByUrl, replaceDocumentMarker, textOfType, type DocumentEncoder } from "./document-parts.ts";
 import { withFileParser } from "./openrouter.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
@@ -12,14 +12,14 @@ type AnthropicBlock = Record<string, unknown>;
 /** `refusal` is Claude declining; `sensitive` is a safety-filter stop that pi-ai also passes through. */
 const BLOCKED_STOP_REASONS = new Set(["refusal", "sensitive"]);
 
-function anthropicBlock(document: PreparedDocument): AnthropicBlock {
-  if (document.kind === "text") return { type: "text", text: renderTextDocument(document) };
-  const source =
-    document.source.type === "url"
-      ? { type: "url", url: document.source.url }
-      : { type: "base64", media_type: document.mimeType, data: document.source.data };
-  return document.kind === "pdf" ? { type: "document", source, title: document.name } : { type: "image", source };
-}
+/** `document` for PDFs, `image` for images; both take a URL or a base64 source. */
+const ANTHROPIC_BLOCKS: DocumentEncoder<AnthropicBlock, AnthropicBlock> = {
+  text: (text) => ({ type: "text", text }),
+  url: (url) => ({ type: "url", url }),
+  inline: (data, document) => ({ type: "base64", media_type: document.mimeType, data }),
+  pdf: (source, document) => ({ type: "document", source, title: document.name }),
+  image: (source) => ({ type: "image", source }),
+};
 
 /**
  * pi-ai's own prompt-cache breakpoint, if it set one: with `cacheRetention` other than `"none"` it
@@ -59,29 +59,11 @@ export function transformAnthropicPayload(payload: unknown, plan: PayloadPlan): 
   if (!isRecord(payload)) return payload;
   const next: Record<string, unknown> = { ...payload, ...(plan.targetsOpenRouter ? { plugins: withFileParser(payload.plugins) } : {}) };
   if (plan.marker !== undefined) {
-    const marker = plan.marker;
-    const replacement = plan.documents.map(anthropicBlock);
+    const replacement = plan.documents.map((document) => encodeDocument(document, ANTHROPIC_BLOCKS));
     const cacheControl = findCacheControl(payload);
     const last = replacement.length - 1;
     if (cacheControl !== undefined && last >= 0) replacement[last] = { ...replacement[last], cache_control: cacheControl };
-    const counter = { found: 0 };
-    const messages = Array.isArray(payload.messages) ? (payload.messages as Record<string, unknown>[]) : [];
-    next.messages = messages.map((message) => {
-      if (typeof message.content === "string") {
-        assertNoMarker(message.content, marker);
-        return message;
-      }
-      if (!Array.isArray(message.content)) return message;
-      const content = spliceMarker(
-        message.content as AnthropicBlock[],
-        marker,
-        (block) => (block.type === "text" && typeof block.text === "string" ? block.text : undefined),
-        replacement,
-        counter,
-      );
-      return { ...message, content };
-    });
-    assertMarkerReplaced(counter);
+    next.messages = replaceDocumentMarker(payload.messages, plan.marker, replacement, { partsKey: "content", textOf: textOfType("text") });
   }
   if (plan.responseSchema) {
     // Anthropic rejects a forced tool call while thinking is on; `unsupported()` catches the
@@ -171,14 +153,10 @@ function anthropicUsage(usage: Record<string, unknown>, raw: Record<string, unkn
  * (KIE reports `credits_consumed`).
  */
 export function createAnthropicObserver(): StreamObserver {
-  let usage: Record<string, unknown> | undefined;
-  let billing: Record<string, unknown> = {};
-  const merge = (next: unknown, container: Record<string, unknown>) => {
-    if (isRecord(next)) {
-      const reported = Object.fromEntries(Object.entries(next).filter(([, value]) => value !== null && value !== undefined));
-      usage = { ...usage, ...reported };
-    }
-    billing = { ...billing, ...billingFields(container) };
+  const capture = createUsageCapture();
+  const merge = (usage: unknown, container: Record<string, unknown>) => {
+    if (isRecord(usage)) capture.overlay(usage);
+    capture.addBilling(container);
   };
   return {
     observe(event) {
@@ -186,7 +164,7 @@ export function createAnthropicObserver(): StreamObserver {
       if (event.type === "message_start" && isRecord(event.message)) merge(event.message.usage, event.message);
       else if (event.type === "message_delta") merge(event.usage, event);
     },
-    usage: () => anthropicUsage(usage ?? {}, usage === undefined ? billing : { usage, ...billing }),
+    usage: () => capture.read(anthropicUsage),
     blocked(message: AssistantMessage): BlockedTurn | undefined {
       const reason = message.rawStopReason;
       if (reason === undefined || !BLOCKED_STOP_REASONS.has(reason)) return undefined;
@@ -200,7 +178,7 @@ export const ANTHROPIC_MESSAGES_WIRE_API: WireApi = {
   api: "anthropic-messages",
   acceptsFetch: true,
   schemaAsToolCall: true,
-  placeDocument: (document) => (document.url === undefined ? "inline" : "url"),
+  placeDocument: placeByUrl,
   unsupported: anthropicSchemaUnsupported,
   transform: transformAnthropicPayload,
   createObserver: createAnthropicObserver,

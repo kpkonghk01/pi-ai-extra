@@ -432,4 +432,51 @@ describe("OpenAI Responses payload transform", () => {
       /was not found/,
     );
   });
+
+  it("checks every entry for the marker, as the other wires do, not only user entries with parts", () => {
+    const [, user] = payload().input;
+    // A plain-string entry that holds the marker fails: parts cannot replace part of a string.
+    expectMarkerFailure(
+      () => transformOpenAIResponsesPayload({ input: [{ role: "user", content: `${MARKER} Q1` }] }, plan()),
+      /plain-text message/,
+    );
+    expectMarkerFailure(
+      () => transformOpenAIResponsesPayload({ input: [{ role: "developer", content: `Be brief. ${MARKER}` }, user] }, plan()),
+      /plain-text message/,
+    );
+    // A marker in another role's parts counts: next to the user's marker it is a repeat, and alone it is replaced.
+    const developerMarker = { role: "developer", content: [{ type: "input_text", text: MARKER }] };
+    expectMarkerFailure(() => transformOpenAIResponsesPayload({ input: [developerMarker, user] }, plan()), /appeared 2 times/);
+    const next = transformOpenAIResponsesPayload({ input: [developerMarker] }, plan({ documents: [TEXT_DOC] })) as { input: unknown[] };
+    assert.deepEqual(next.input, [{ role: "developer", content: [{ type: "input_text", text: TEXT_PART }] }]);
+  });
+
+  it("leaves every entry without the marker as it was: plain-string turns, assistant output and tool items", () => {
+    const input = [
+      { role: "developer", content: "Be brief." },
+      {
+        role: "user",
+        content: [
+          { type: "input_text", text: MARKER },
+          { type: "input_text", text: "Q1" },
+        ],
+      },
+      { type: "message", role: "assistant", content: [{ type: "output_text", text: "A1" }] },
+      { type: "function_call", call_id: "call_1", name: "lookup", arguments: "{}" },
+      { type: "function_call_output", call_id: "call_1", output: "found" },
+      { role: "user", content: "Q2" },
+    ];
+    const next = transformOpenAIResponsesPayload({ input }, plan({ documents: [TEXT_DOC] })) as { input: unknown[] };
+    assert.deepEqual(next.input, [
+      input[0],
+      {
+        role: "user",
+        content: [
+          { type: "input_text", text: TEXT_PART },
+          { type: "input_text", text: "Q1" },
+        ],
+      },
+      ...input.slice(2),
+    ]);
+  });
 });

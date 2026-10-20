@@ -9,7 +9,7 @@ describe("kieEnvelopeFetch", () => {
   it("turns KIE's HTTP-200 error envelope into an HTTP error with KIE's code and message", async () => {
     const msg = "Unauthorized – Authentication failed.";
     const fetch = kieEnvelopeFetch(respond(JSON.stringify({ code: 401, msg }), "application/json;charset=utf-8"));
-    const response = await fetch("https://api.kie.ai/api/v1/responses");
+    const response = await fetch("https://api.kie.ai/openai/v1/responses");
     assert.equal(response.status, 401);
     assert.deepEqual(await response.json(), { type: "error", error: { type: "kie_error", code: 401, message: `KIE code 401: ${msg}` } });
   });

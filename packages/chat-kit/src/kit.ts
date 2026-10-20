@@ -1,28 +1,10 @@
-import type { Api, AssistantMessage, Context, Message, Model, ModelsSimpleStreamOptions, Usage } from "@earendil-works/pi-ai";
-import {
-  createDocumentMarker,
-  documentKind,
-  prepareDocument,
-  SUPPORTED_DOCUMENT_TYPES,
-  type DocumentKind,
-  type PreparedDocument,
-} from "./documents.ts";
-import { statusFromMessage, TurnFailure } from "./errors.ts";
-import { parseKitOptions, parseTurnInput } from "./input.ts";
+import type { ModelsSimpleStreamOptions } from "@earendil-works/pi-ai";
+import { errorText, TurnFailure } from "./errors.ts";
+import { parseKitOptions } from "./input.ts";
+import { classifyOutcome, failed, failedFrom, type TurnRun, type TurnState } from "./outcome.ts";
+import { prepareTurn, type PreparedTurn, type TurnTarget } from "./prepare.ts";
 import { createProviderRegistry, type RegisteredProvider } from "./registry.ts";
-import type {
-  ChatDocument,
-  ChatKit,
-  ChatKitOptions,
-  ChatTurnError,
-  ChatTurnErrorCode,
-  ChatTurnEvent,
-  ChatTurnInput,
-  ChatTurnSettings,
-  ChatUsage,
-} from "./types.ts";
-import { wireApiFor, type PayloadPlan, type StreamObserver, type WireApi } from "./wire/index.ts";
-import { targetsOpenRouter } from "./wire/openrouter.ts";
+import type { ChatKit, ChatKitOptions, ChatTurnEvent, ChatTurnInput } from "./types.ts";
 
 /**
  * pi-ai retries only the initial request, before the response stream starts (408, 409, 429, 5xx
@@ -30,16 +12,6 @@ import { targetsOpenRouter } from "./wire/openrouter.ts";
  * token, and never to another provider or model.
  */
 const MAX_REQUEST_RETRIES = 2;
-
-/** pi-ai requires usage on every assistant message, including the history the kit replays. */
-const ZERO_USAGE: Usage = {
-  input: 0,
-  output: 0,
-  cacheRead: 0,
-  cacheWrite: 0,
-  totalTokens: 0,
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
 
 /**
  * Creates the chat kit. Each provider is registered with its explicit key under the consumer's
@@ -52,24 +24,6 @@ export function createChatKit(options: ChatKitOptions): ChatKit {
   return {
     runTurn: (input, turnOptions) => runTurn(registry, fetch, input, turnOptions?.signal),
   };
-}
-
-/** Where a turn runs, as its input names it: the consumer's provider name and the model id. */
-interface TurnTarget {
-  provider: string;
-  model: string;
-}
-
-interface PreparedTurn {
-  target: TurnTarget;
-  provider: RegisteredProvider;
-  model: Model<Api>;
-  wire: WireApi;
-  context: Context;
-  plan: PayloadPlan;
-  settings: ChatTurnSettings;
-  /** The answer is the arguments of a forced tool call (a response schema on Anthropic Messages). */
-  schemaAsToolCall: boolean;
 }
 
 async function* runTurn(
@@ -106,128 +60,13 @@ async function* runTurn(
   }
 }
 
-/** Everything checked before any document is loaded or any request is sent. */
-async function prepareTurn(
-  registry: ReadonlyMap<string, RegisteredProvider>,
-  input: ChatTurnInput,
-  target: TurnTarget,
-  signal: AbortSignal,
-): Promise<PreparedTurn> {
-  const validation = parseTurnInput(input);
-  if (!validation.ok) throw new TurnFailure("INVALID_REQUEST", `Invalid turn input: ${validation.message}`);
-  const provider = registry.get(input.provider);
-  if (!provider) throw new TurnFailure("UNKNOWN_MODEL", `No provider named ${JSON.stringify(input.provider)} is configured.`);
-  const model = provider.findModel(input.model);
-  if (!model) {
-    throw new TurnFailure("UNKNOWN_MODEL", `Model ${JSON.stringify(input.model)} is not in the ${provider.kind} chat catalogue.`);
-  }
-  const wire = wireApiFor(model.api);
-  if (!wire) throw new TurnFailure("UNSUPPORTED", `chat-kit does not support the ${JSON.stringify(model.api)} API of this model.`);
-  const settings = input.settings ?? {};
-  const kinds = input.documents.map((document) => checkDocument(document, provider, model));
-  const unsupported = wire.unsupported(model, { responseSchema: input.responseSchema, settings });
-  if (unsupported) throw new TurnFailure("UNSUPPORTED", `This model cannot take this request: ${unsupported}`);
-
-  const documents = await untilAborted(
-    Promise.all(input.documents.map((document, index) => loadDocument(document, kinds[index]!, wire, model))),
-    signal,
-  );
-  const marker = documents.length > 0 ? createDocumentMarker() : undefined;
-  return {
-    target,
-    provider,
-    model,
-    wire,
-    context: buildContext(input, model, marker),
-    plan: {
-      marker,
-      documents,
-      responseSchema: input.responseSchema,
-      grounding: provider.grounding,
-      targetsOpenRouter: targetsOpenRouter(model),
-    },
-    settings,
-    schemaAsToolCall: wire.schemaAsToolCall && input.responseSchema !== undefined,
-  };
-}
-
-function checkDocument(document: ChatDocument, provider: RegisteredProvider, model: Model<Api>): DocumentKind {
-  const kind = documentKind(document.mimeType);
-  if (kind === undefined) {
-    throw new TurnFailure(
-      "UNSUPPORTED",
-      `Document ${JSON.stringify(document.name)} has type ${JSON.stringify(document.mimeType)}; supported types are ${SUPPORTED_DOCUMENT_TYPES.join(", ")}.`,
-    );
-  }
-  if (kind === "text") return kind;
-  if (!provider.fileDocuments) {
-    throw new TurnFailure(
-      "UNSUPPORTED",
-      `Provider ${provider.kind} does not take PDF or image documents yet (its file input is undocumented), so ${JSON.stringify(document.name)} cannot be sent.`,
-    );
-  }
-  if (!model.input.includes("image")) {
-    throw new TurnFailure("UNSUPPORTED", `Model ${model.id} takes text only, so it cannot read ${JSON.stringify(document.name)}.`);
-  }
-  return kind;
-}
-
-async function loadDocument(document: ChatDocument, kind: DocumentKind, wire: WireApi, model: Model<Api>): Promise<PreparedDocument> {
-  try {
-    return await prepareDocument(document, kind, wire.placeDocument(document, model));
-  } catch (error) {
-    throw new TurnFailure("INVALID_REQUEST", `Document ${JSON.stringify(document.name)} could not be loaded: ${errorText(error)}`, {
-      cause: error,
-    });
-  }
-}
-
-/**
- * The transcript: system prompt, history, then the new message. The documents' marker opens the
- * first user turn (the first user message of the history, otherwise the new message), so the
- * prompt is identical across turns, and across sessions of the same documents, up to the end of
- * the documents, which lets provider prompt caching reuse it.
- */
-function buildContext(input: ChatTurnInput, model: Model<Api>, marker: string | undefined): Context {
-  const firstUser = input.history.findIndex((entry) => entry.role === "user");
-  const timestamp = Date.now();
-  const user = (text: string, withMarker: boolean): Message => ({
-    role: "user",
-    content:
-      withMarker && marker !== undefined
-        ? [
-            { type: "text", text: marker },
-            { type: "text", text },
-          ]
-        : text,
-    timestamp,
-  });
-  const messages: Message[] = input.history.map((entry, index) =>
-    entry.role === "user"
-      ? user(entry.text, index === firstUser)
-      : {
-          role: "assistant",
-          content: [{ type: "text", text: entry.text }],
-          api: model.api,
-          provider: model.provider,
-          model: model.id,
-          usage: ZERO_USAGE,
-          stopReason: "stop",
-          timestamp,
-        },
-  );
-  messages.push(user(input.message, firstUser === -1));
-  return { ...(input.systemPrompt ? { systemPrompt: input.systemPrompt } : {}), messages };
-}
-
 async function* streamTurn(
   turn: PreparedTurn,
   kitFetch: typeof globalThis.fetch | undefined,
   signal: AbortSignal,
 ): AsyncGenerator<ChatTurnEvent, void, undefined> {
-  const observer = turn.wire.createObserver();
+  const run: TurnRun = { turn, observer: turn.wire.createObserver(), state: { transformFailure: undefined, httpStatus: undefined }, signal };
   const { schemaAsToolCall } = turn;
-  const state: TurnState = { transformFailure: undefined, httpStatus: undefined };
   const { temperature, maxOutputTokens, reasoning } = turn.settings;
   const options: ModelsSimpleStreamOptions = {
     signal,
@@ -240,15 +79,15 @@ async function* streamTurn(
       try {
         return turn.wire.transform(payload, turn.plan);
       } catch (error) {
-        state.transformFailure =
+        run.state.transformFailure =
           error instanceof TurnFailure
             ? error
             : new TurnFailure("UNSUPPORTED", `chat-kit could not build the request: ${errorText(error)}`);
-        throw state.transformFailure;
+        throw run.state.transformFailure;
       }
     },
-    onProviderStreamEvent: (event) => observer.observe(event),
-    ...(turn.wire.acceptsFetch ? { fetch: statusRecordingFetch(kitFetch, state) } : {}),
+    onProviderStreamEvent: (event) => run.observer.observe(event),
+    ...(turn.wire.acceptsFetch ? { fetch: statusRecordingFetch(kitFetch, run.state) } : {}),
   };
 
   for await (const event of turn.provider.streamSimple(turn.model, turn.context, options)) {
@@ -262,10 +101,8 @@ async function* streamTurn(
         if (schemaAsToolCall && event.delta) yield { type: "text", delta: event.delta };
         break;
       case "done":
-        yield finish(turn, event.message, false, observer, state, signal);
-        return;
       case "error":
-        yield finish(turn, event.error, true, observer, state, signal);
+        yield classifyOutcome(run, event);
         return;
       default:
         // Thinking is never streamed as text.
@@ -273,90 +110,6 @@ async function* streamTurn(
     }
   }
   yield failed(turn.target, "PROVIDER_ERROR", "The provider stream ended without a result.");
-}
-
-interface TurnState {
-  transformFailure: TurnFailure | undefined;
-  httpStatus: number | undefined;
-}
-
-/** Classifies the final pi-ai message: done, or failed with the most specific code. */
-function finish(
-  turn: PreparedTurn,
-  message: AssistantMessage,
-  errored: boolean,
-  observer: StreamObserver,
-  state: TurnState,
-  signal: AbortSignal,
-): ChatTurnEvent {
-  // Read from the provider's raw usage, not pi-ai's `message.usage`, which reports an unreported
-  // count (or no usage at all) as zero. Usage goes on any final event only when it was reported.
-  const usage = observer.usage();
-  if (state.transformFailure) return failed(turn.target, state.transformFailure.code, state.transformFailure.message);
-  if (errored && (message.stopReason === "aborted" || signal.aborted)) {
-    return failed(turn.target, "ABORTED", "The turn was aborted.", { usage });
-  }
-  const blocked = observer.blocked(message);
-  if (blocked) return failed(turn.target, "CONTENT_BLOCKED", blocked.message, { reason: blocked.reason, usage });
-  const rawReason = message.rawStopReason;
-  if (!errored) {
-    const answered = turn.schemaAsToolCall
-      ? message.stopReason === "toolUse" && message.content.some((block) => block.type === "toolCall")
-      : message.stopReason === "stop";
-    if (answered) return done(usage);
-    const reason = rawReason ?? message.stopReason;
-    if (message.stopReason === "length") {
-      // A free-form answer cut off at the output-token limit is still an answer: the text already
-      // streamed stands, marked `truncated`. A cut-off response-schema answer (JSON text, or a forced
-      // tool call's arguments on Anthropic Messages) cannot be parsed, so that turn fails.
-      if (turn.plan.responseSchema === undefined) return done(usage, true);
-      return failed(turn.target, "PROVIDER_ERROR", "The answer hit the output-token limit, so its response-schema JSON is incomplete.", {
-        reason,
-        usage,
-      });
-    }
-    const text = turn.schemaAsToolCall
-      ? "The model answered without the response-schema tool call."
-      : `The provider stopped with ${message.stopReason}.`;
-    return failed(turn.target, "PROVIDER_ERROR", text, { reason, usage });
-  }
-  const errorMessage = message.errorMessage ?? "The provider request failed.";
-  return failed(turn.target, "PROVIDER_ERROR", errorMessage, {
-    reason: rawReason,
-    status: state.httpStatus ?? statusFromMessage(errorMessage),
-    usage,
-  });
-}
-
-function done(usage: ChatUsage | undefined, truncated?: true): ChatTurnEvent {
-  return {
-    type: "done",
-    ...(usage === undefined ? {} : { usage }),
-    ...(truncated === undefined ? {} : { truncated }),
-  };
-}
-
-function failed(
-  target: TurnTarget,
-  code: ChatTurnErrorCode,
-  message: string,
-  extra: { reason?: string | undefined; status?: number | undefined; usage?: ChatUsage | undefined } = {},
-): ChatTurnEvent {
-  const error: ChatTurnError = {
-    code,
-    provider: target.provider,
-    model: target.model,
-    message: `[${target.provider}/${target.model}] ${message}`,
-    ...(extra.reason === undefined ? {} : { reason: extra.reason }),
-    ...(extra.status === undefined ? {} : { status: extra.status }),
-  };
-  return extra.usage === undefined ? { type: "failed", error } : { type: "failed", error, usage: extra.usage };
-}
-
-function failedFrom(target: TurnTarget, error: unknown, signal: AbortSignal): ChatTurnEvent {
-  if (error instanceof TurnFailure) return failed(target, error.code, error.message);
-  if (signal.aborted) return failed(target, "ABORTED", "The turn was aborted.");
-  return failed(target, "PROVIDER_ERROR", errorText(error));
 }
 
 /** Records the status of the latest provider response, when it was an error (for `ChatTurnError.status`). */
@@ -369,32 +122,9 @@ function statusRecordingFetch(base: typeof globalThis.fetch | undefined, state: 
   };
 }
 
-function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  const aborted = () => new TurnFailure("ABORTED", "The turn was aborted.");
-  if (signal.aborted) return Promise.reject(aborted());
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(aborted());
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-      },
-    );
-  });
-}
-
 /** `?` stands in for a provider or model the input does not name (malformed input only). */
 function targetOf(input: ChatTurnInput): TurnTarget {
   const record = (typeof input === "object" && input !== null ? input : {}) as Partial<Record<"provider" | "model", unknown>>;
   const part = (value: unknown) => (typeof value === "string" && value ? value : "?");
   return { provider: part(record.provider), model: part(record.model) };
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
