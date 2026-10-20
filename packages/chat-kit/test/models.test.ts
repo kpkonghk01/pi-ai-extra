@@ -152,7 +152,7 @@ describe("model list refresh rules", () => {
     assert.deepEqual([ids(recovered.models), recovered.source, calls], [["a"], "live", 2], "the settled refresh was not kept as in flight");
   });
 
-  it("gives a whole read one 5 s deadline: a cold read that hangs answers from the installed list at 5 s", async (t) => {
+  it("gives a cold read one 5 s deadline: a cold read that hangs answers from the installed list at 5 s", async (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     let signal: AbortSignal | undefined;
     const list = createModelList({
@@ -165,7 +165,7 @@ describe("model list refresh rules", () => {
       },
     });
     const lookup = list.find("installed-model");
-    t.mock.timers.tick(LIST_READ_TIMEOUT_MS - 1);
+    t.mock.timers.tick(LIST_READ_TIMEOUT_MS.cold - 1);
     assert.equal(await settledYet(lookup), false);
     t.mock.timers.tick(1);
     const found = await lookup;
@@ -229,7 +229,7 @@ describe("turns resolve against the live list", () => {
     const registry = createProviderRegistry([{ name: "kie", provider: "kie", apiKey: "kie-key" }], { fetch: fake.fetch });
     const prepared = prepareTurn(registry, turn(kieTarget), kieTarget, new AbortController().signal);
     assert.equal(await settledYet(prepared), false, "the cold turn waits for the list");
-    t.mock.timers.tick(LIST_READ_TIMEOUT_MS - 1);
+    t.mock.timers.tick(LIST_READ_TIMEOUT_MS.cold - 1);
     assert.equal(await settledYet(prepared), false);
     t.mock.timers.tick(1);
     assert.equal((await prepared).model.id, "claude-haiku-4-5", "from the installed definitions");
@@ -237,7 +237,7 @@ describe("turns resolve against the live list", () => {
     assert.deepEqual([snapshot.source, snapshot.refreshError], ["installed", "the model list was not read within 5 s"]);
   });
 
-  it("a stale list whose endpoint hangs adds no latency: the turn resolves at once, and the refresh times out in the background", async (t) => {
+  it("a stale list whose endpoint hangs adds no latency: the turn resolves at once, and the refresh times out in the background at 15 s", async (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     let clock = Date.parse("2026-10-20T00:00:00Z");
     const fake = createFakeFetch([
@@ -252,14 +252,58 @@ describe("turns resolve against the live list", () => {
     assert.equal(await settledYet(stale), true, "no timer had to fire: the turn did not wait for the hanging read");
     assert.equal((await stale).model.id, "claude-haiku-4-5");
     assert.equal(fake.calls.length, 4, "the background refresh is under way");
-    t.mock.timers.tick(LIST_READ_TIMEOUT_MS);
+    t.mock.timers.tick(LIST_READ_TIMEOUT_MS.background - 1);
+    await settle();
+    assert.equal((await registry.get("kie")!.models.read()).refreshError, undefined, "still running at 14,999 ms");
+    t.mock.timers.tick(1);
     await settle();
     const snapshot = await registry.get("kie")!.models.read();
     assert.deepEqual(
       [snapshot.source, snapshot.refreshError, ids(snapshot.models)],
-      ["live", "the model list was not read within 5 s", ["gpt-5-6-sol", "claude-haiku-4-5"]],
+      ["live", "the model list was not read within 15 s", ["gpt-5-6-sol", "claude-haiku-4-5"]],
       "the last good list stays in use",
     );
+  });
+
+  it("a background refresh outlives a slow endpoint a cold read would give up on, and replaces the stale list", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    let clock = Date.parse("2026-10-20T00:00:00Z");
+    /** A list that answers after `ms`, unless the read's signal aborts first. */
+    const slowList =
+      (ms: number, ids: readonly string[]) =>
+      (_request: unknown, signal: AbortSignal | undefined): Promise<Response> =>
+        new Promise((resolve, reject) => {
+          const timer = setTimeout(() => resolve(jsonResponse({ data: ids.map((id) => ({ id })) })), ms);
+          signal?.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              reject(signal.reason);
+            },
+            { once: true },
+          );
+        });
+    const fake = createFakeFetch([
+      { method: "GET", url: KIE_CODEX_MODELS_URL, respond: [() => jsonResponse({ data: [{ id: "gpt-5-6-sol" }] }), slowList(10_000, ["gpt-5-6-sol"])] },
+      {
+        method: "GET",
+        url: KIE_CLAUDE_MODELS_URL,
+        respond: [() => jsonResponse({ data: [{ id: "claude-haiku-4-5" }] }), slowList(10_000, ["claude-opus-5-5"])],
+      },
+    ]);
+    const registry = createProviderRegistry([{ name: "kie", provider: "kie", apiKey: "kie-key" }], { fetch: fake.fetch, now: () => clock });
+    const prepare = () => prepareTurn(registry, turn(kieTarget), kieTarget, new AbortController().signal);
+    assert.equal((await prepare()).model.id, "claude-haiku-4-5");
+    clock += MODEL_LIST_TTL_MS;
+    assert.equal((await prepare()).model.id, "claude-haiku-4-5", "the stale list answers while the slow refresh runs");
+    t.mock.timers.tick(LIST_READ_TIMEOUT_MS.cold);
+    await settle();
+    assert.equal((await registry.get("kie")!.models.read()).refreshError, undefined, "past the cold deadline, still running");
+    t.mock.timers.tick(10_000 - LIST_READ_TIMEOUT_MS.cold);
+    await settle();
+    const snapshot = await registry.get("kie")!.models.read();
+    assert.deepEqual([snapshot.refreshError, ids(snapshot.models)], [undefined, ["gpt-5-6-sol", "claude-opus-5-5"]], "the 10 s answer replaced the list");
+    await assert.rejects(prepare(), (error: unknown) => error instanceof TurnFailure && error.code === "UNKNOWN_MODEL");
   });
 });
 
@@ -635,7 +679,7 @@ describe("Gemini paging under one deadline", () => {
     t.mock.timers.tick(3_000);
     await settle();
     assert.equal(fake.calls.length, 2, "page 1 answered after 3 s, and page 2 was asked for");
-    t.mock.timers.tick(LIST_READ_TIMEOUT_MS - 3_000);
+    t.mock.timers.tick(LIST_READ_TIMEOUT_MS.cold - 3_000);
     const [entry] = await listing;
     assert.ok(entry && "models" in entry);
     assert.deepEqual([entry.source, entry.refreshError], ["installed", "the model list was not read within 5 s"]);

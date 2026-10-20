@@ -32,7 +32,7 @@ export function isOfferedGeminiId(id: string): boolean {
   return !NOT_PLAIN_CHAT.test(id) && !MOVING_ALIAS.test(id);
 }
 
-/** `models.list` pages; a key sees well under this many models. All of them share the list read's one deadline. */
+/** `models.list` pages; a key sees well under this many models. They share the list read's deadline (`LIST_READ_TIMEOUT_MS`). */
 const MAX_PAGES = 10;
 
 /** A new Gemini model, unknown to pi-ai's catalogue: limits it does not report are kept small. */

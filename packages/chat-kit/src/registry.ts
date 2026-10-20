@@ -32,7 +32,7 @@ interface LiveListContext {
   provider: Provider;
   fetch: typeof globalThis.fetch;
   installed: readonly ListedModel[];
-  /** Aborts at the list read's deadline (`LIST_READ_TIMEOUT_MS`), shared by all its requests. */
+  /** Aborts at the list read's deadline (`LIST_READ_TIMEOUT_MS`). */
   signal: AbortSignal;
   now: number;
 }

@@ -19,8 +19,15 @@ export const MODEL_LIST_TTL_MS: number = 30 * 60_000;
 /** After a failed refresh, the next attempt waits a minute, so a provider whose list is down is not asked on every turn. */
 export const FAILED_REFRESH_RETRY_MS = 60_000;
 
-/** One deadline for a whole list read: every request and page of it (KIE's two lists, Gemini's pages). */
-export const LIST_READ_TIMEOUT_MS = 5_000;
+/**
+ * The deadline of one list read. A read has one deadline for all its requests and pages (KIE's two
+ * lists, every Gemini page), never one per request: `fetchLive` gets it as its signal, and the read
+ * ends at it even when a fetch ignores that signal.
+ *
+ * - `cold`: no live list has been read yet, so turns wait for this read: 5 s.
+ * - `background`: the refresh of a stale list, which no turn waits for: 15 s.
+ */
+export const LIST_READ_TIMEOUT_MS: { readonly cold: number; readonly background: number } = { cold: 5_000, background: 15_000 };
 
 /** The list a provider's turns resolve against, and where it came from. */
 export interface ModelListSnapshot {
@@ -45,7 +52,7 @@ export interface ModelListSource {
   installed: readonly ListedModel[];
   /**
    * Reads the provider's live list. It throws when the list cannot be read or lists no model.
-   * `signal` aborts at the read's deadline (`LIST_READ_TIMEOUT_MS`).
+   * `signal` aborts at the read's one deadline (`LIST_READ_TIMEOUT_MS`).
    */
   fetchLive(signal: AbortSignal): Promise<readonly ListedModel[]>;
   now(): number;
@@ -55,16 +62,17 @@ export interface ModelListSource {
  * The refresh rules:
  *
  * - **Cold** (no live list has been read yet): a lookup or listing reads the live list and waits
- *   for it, up to `LIST_READ_TIMEOUT_MS` (5 s). If the read fails, it answers from the installed
- *   catalogue or definitions.
+ *   for it, up to its deadline (`LIST_READ_TIMEOUT_MS.cold`). If the read fails, it answers from
+ *   the installed catalogue or definitions.
  * - **Stale** (the last good live list is 30 minutes old): a lookup or listing answers from that
- *   list at once and starts a refresh in the background; the lookups after it see the new list.
- *   No turn waits for it. So a model the provider has dropped can still be resolved, and sent,
- *   until that refresh lands; the provider then answers with its own error.
+ *   list at once and starts a refresh in the background (deadline `LIST_READ_TIMEOUT_MS.background`);
+ *   the lookups after it see the new list. No turn waits for it. So a model the provider has
+ *   dropped can still be resolved, and sent, until that refresh lands; the provider then answers
+ *   with its own error.
  * - A failed refresh keeps the last good list, or the installed one when no live list was ever
  *   read, and the next attempt waits a minute (`FAILED_REFRESH_RETRY_MS`).
- * - Concurrent callers share one refresh. It has its own deadline and never takes a caller's
- *   signal, so a caller that stops waiting does not cancel it for the others.
+ * - Concurrent callers share one refresh. It never takes a caller's signal, so a caller that stops
+ *   waiting does not cancel it for the others.
  */
 export function createModelList(source: ModelListSource): ModelList {
   let live: { models: readonly ListedModel[]; fetchedAt: number } | undefined;
@@ -82,13 +90,15 @@ export function createModelList(source: ModelListSource): ModelList {
     return live === undefined || now - live.fetchedAt >= MODEL_LIST_TTL_MS;
   };
 
-  /** One live read under one deadline. It never rejects: a failure is recorded instead. */
-  const readLive = async (): Promise<void> => {
+  /** One live read under its deadline (`LIST_READ_TIMEOUT_MS`). It never rejects: a failure is recorded instead. */
+  const readLive = async (timeoutMs: number): Promise<void> => {
     const deadline = new AbortController();
     const timer = setTimeout(
-      () => deadline.abort(new DOMException(`the model list was not read within ${LIST_READ_TIMEOUT_MS / 1000} s`, "TimeoutError")),
-      LIST_READ_TIMEOUT_MS,
+      () => deadline.abort(new DOMException(`the model list was not read within ${timeoutMs / 1000} s`, "TimeoutError")),
+      timeoutMs,
     );
+    // A pending deadline never keeps the process alive.
+    timer.unref?.();
     try {
       // The race also ends a read whose fetch ignores the signal.
       const models = await untilAborted(source.fetchLive(deadline.signal), deadline.signal, () => deadline.signal.reason);
@@ -104,7 +114,7 @@ export function createModelList(source: ModelListSource): ModelList {
   const refresh = (): Promise<void> => {
     // `finally` runs as a later microtask, so `inFlight` is cleared only after it is assigned, even
     // when `fetchLive` throws synchronously and `readLive()` has already settled.
-    inFlight ??= readLive().finally(() => {
+    inFlight ??= readLive(live === undefined ? LIST_READ_TIMEOUT_MS.cold : LIST_READ_TIMEOUT_MS.background).finally(() => {
       inFlight = undefined;
     });
     return inFlight;

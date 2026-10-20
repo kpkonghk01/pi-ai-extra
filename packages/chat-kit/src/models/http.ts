@@ -1,7 +1,7 @@
 import { isRecord } from "../guards.ts";
 
 /**
- * GETs a provider's model list as JSON, under the list read's `signal` (its one deadline). A
+ * GETs a provider's model list as JSON, under the list read's `signal` (`LIST_READ_TIMEOUT_MS`). A
  * non-2xx status, a body that is not JSON, or KIE's HTTP-200 error envelope (`{ code, msg }`)
  * throws, with the provider's own message when it gave one.
  */
