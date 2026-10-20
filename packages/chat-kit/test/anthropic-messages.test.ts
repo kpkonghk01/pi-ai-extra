@@ -4,7 +4,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { createFakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import { createChatKit } from "../src/index.ts";
 import { anthropicSchemaUnsupported } from "../src/wire/anthropic-messages.ts";
-import { anthropicEvents, collect, jsonBody, lastEvent, sseResponse, testDocument, textOf, turn } from "./helpers.ts";
+import { anthropicEvents, collect, jsonBody, lastEvent, sseResponse, testDocument, textOf, turn, wireFetch } from "./helpers.ts";
 
 // The Anthropic SDK posts to the beta Messages endpoint (`/v1/messages?beta=true`).
 const OPENROUTER_MESSAGES_URL = /^https:\/\/openrouter\.ai\/api\/v1\/messages\b/;
@@ -19,7 +19,7 @@ function kit(routes: FakeRoute[]) {
       { name: "kie", provider: "kie", apiKey: "kie-key" },
       { name: "toapis", provider: "toapis", apiKey: "toapis-key" },
     ],
-    fetch: fake.fetch,
+    fetch: wireFetch(fake),
   });
   return { chat, fake };
 }

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { createFakeFetch, type FakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import { createChatKit } from "../src/index.ts";
-import { brokenSseResponse, collect, jsonBody, lastEvent, sseResponse, testDocument, textOf, turn } from "./helpers.ts";
+import { brokenSseResponse, collect, jsonBody, lastEvent, sseResponse, testDocument, textOf, turn, wireFetch } from "./helpers.ts";
 
 const STREAM_URL = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-3\.5-flash:streamGenerateContent\b/;
 const SCHEMA = { type: "object", properties: { tags: { type: "array", items: { type: "string" }, maxItems: 3 } } };
@@ -28,7 +28,8 @@ describe("runTurn on Gemini", () => {
   function kit(routes: FakeRoute[], grounding = false): { chat: ReturnType<typeof createChatKit>; fake: FakeFetch } {
     const fake = createFakeFetch(routes);
     globalThis.fetch = fake.fetch as typeof globalThis.fetch;
-    return { chat: createChatKit({ providers: [{ name: "gemini", provider: "google", apiKey: "gemini-key", grounding }] }), fake };
+    // The kit's own fetch serves only the model list here; the turn goes through the global fetch.
+    return { chat: createChatKit({ providers: [{ name: "gemini", provider: "google", apiKey: "gemini-key", grounding }], fetch: wireFetch(fake) }), fake };
   }
 
   it("streams text with grounding, a sanitized response schema and documents by URL or inline", async () => {

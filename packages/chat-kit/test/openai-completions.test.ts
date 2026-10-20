@@ -13,6 +13,7 @@ import {
   testDocument,
   textOf,
   turn,
+  wireFetch,
 } from "./helpers.ts";
 
 const COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -20,7 +21,7 @@ const SCHEMA = { type: "object", properties: { title: { type: "string" } }, requ
 
 function kit(routes: FakeRoute[]) {
   const fake = createFakeFetch(routes);
-  const chat = createChatKit({ providers: [{ name: "router", provider: "openrouter", apiKey: "explicit-or-key" }], fetch: fake.fetch });
+  const chat = createChatKit({ providers: [{ name: "router", provider: "openrouter", apiKey: "explicit-or-key" }], fetch: wireFetch(fake) });
   return { chat, fake };
 }
 
@@ -226,7 +227,7 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
     ]);
     const chat = createChatKit({
       providers: [{ name: "router", provider: "openrouter", apiKey: "k", baseUrl: "https://proxy.example.com/openrouter/" }],
-      fetch: fake.fetch,
+      fetch: wireFetch(fake),
     });
     assert.equal(lastEvent(await collect(chat.runTurn(turn()))).type, "done");
     await collect(chat.runTurn(turn({ model: "anthropic/claude-sonnet-4.6" })));

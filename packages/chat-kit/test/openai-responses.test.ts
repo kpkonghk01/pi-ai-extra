@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createFakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import { createChatKit } from "../src/index.ts";
-import { collect, jsonBody, lastEvent, sseResponse, textOf, turn } from "./helpers.ts";
+import { collect, jsonBody, lastEvent, sseResponse, textOf, turn, wireFetch } from "./helpers.ts";
 
 const KIE_RESPONSES_URL = "https://api.kie.ai/openai/v1/responses";
 const SCHEMA = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false };
@@ -40,7 +40,7 @@ function responsesStream(text: string[], terminal: Record<string, unknown>): Res
 
 function kit(routes: FakeRoute[]) {
   const fake = createFakeFetch(routes);
-  return { chat: createChatKit({ providers: [{ name: "kie", provider: "kie", apiKey: "kie-key" }], fetch: fake.fetch }), fake };
+  return { chat: createChatKit({ providers: [{ name: "kie", provider: "kie", apiKey: "kie-key" }], fetch: wireFetch(fake) }), fake };
 }
 
 describe("runTurn on OpenAI Responses (KIE Codex)", () => {

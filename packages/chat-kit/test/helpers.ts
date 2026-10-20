@@ -1,4 +1,55 @@
+import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
+import { jsonResponse, type FakeFetch } from "@hk01/pi-ai-extra-internal/testing";
 import type { ChatDocument, ChatTurnEvent, ChatTurnInput } from "../src/index.ts";
+
+/** A $/1M-token rate as OpenRouter's per-token decimal string. */
+const perToken = (perMillion: number) => String(perMillion / 1_000_000);
+
+/**
+ * OpenRouter's live `/models` body for the models pi-ai's catalogue has (`:batch` and `:free`
+ * ones included, for the kit to drop), as the catalogue describes them, except that a model that
+ * reads images also reads files, as OpenRouter lists Claude, GPT and Gemini.
+ */
+export function openRouterLiveList(): { data: Record<string, unknown>[] } {
+  return {
+    data: openrouterProvider()
+      .getModels()
+      .map((model) => ({
+        id: model.id,
+        name: model.name,
+        context_length: model.contextWindow,
+        top_provider: { context_length: model.contextWindow, max_completion_tokens: model.maxTokens },
+        architecture: { input_modalities: model.input.includes("image") ? ["text", "image", "file"] : ["text"], output_modalities: ["text"] },
+        ...(model.cost.input === 0 && model.cost.output === 0
+          ? {}
+          : {
+              pricing: {
+                prompt: perToken(model.cost.input),
+                completion: perToken(model.cost.output),
+                ...(model.cost.cacheRead > 0 ? { input_cache_read: perToken(model.cost.cacheRead) } : {}),
+                ...(model.cost.cacheWrite > 0 ? { input_cache_write: perToken(model.cost.cacheWrite) } : {}),
+              },
+            }),
+        supported_parameters: model.reasoning ? ["reasoning"] : [],
+      })),
+  };
+}
+
+/**
+ * A kit fetch for wire tests. Every provider's model-list request (a GET of a `/models` path) is
+ * answered here and not recorded, so `fake.calls` holds only the turn's own requests: OpenRouter's
+ * default list (`openrouter.ai`) with `openRouterLiveList()`, any other with a 503, so the
+ * installed catalogue or definitions are used. Everything else goes to `fake`.
+ */
+export function wireFetch(fake: FakeFetch): typeof globalThis.fetch {
+  return async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if ((init?.method ?? "GET") !== "GET" || !url.pathname.endsWith("/models")) return fake.fetch(input, init);
+    return url.hostname === "openrouter.ai"
+      ? jsonResponse(openRouterLiveList())
+      : jsonResponse({ error: { message: "no model list in wire tests" } }, 503);
+  };
+}
 
 /** A server-sent-event response; each entry is one event (`data:` lines, optionally `event:`). */
 export function sseResponse(events: readonly (string | { event: string; data: unknown })[], status = 200): Response {

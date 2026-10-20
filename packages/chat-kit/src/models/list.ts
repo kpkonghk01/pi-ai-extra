@@ -12,10 +12,10 @@ export interface ListedModel {
   readonly input: readonly ChatModelInput[];
 }
 
-/** A live list is fresh for 30 minutes; after that the next lookup or listing refreshes it. */
+/** A live list is fresh for 30 minutes; after that the next lookup or listing reads it again first. */
 export const MODEL_LIST_TTL_MS: number = 30 * 60_000;
 
-/** After a failed refresh, the next attempt waits a minute, so an unknown model id cannot flood the provider. */
+/** After a failed refresh, the next attempt waits a minute, so a provider whose list is down is not asked on every turn. */
 export const FAILED_REFRESH_RETRY_MS = 60_000;
 
 /** The list a provider's turns resolve against, and where it came from. */
@@ -30,14 +30,12 @@ export interface ModelListSnapshot {
 }
 
 export interface ModelList {
-  /** The list as it is now, without refreshing it. */
-  current(): ModelListSnapshot;
-  /** The list, refreshed first when it is stale (unless a refresh failed less than a minute ago). */
-  read(): Promise<ModelListSnapshot>;
   /**
-   * The model with this id in the current list. A miss refreshes a stale list first, so a model
-   * the provider added since the last refresh is found.
+   * The list, refreshed first when it is due: when no live list has been read yet, or the live
+   * list is 30 minutes old, unless a refresh failed less than a minute ago.
    */
+  read(): Promise<ModelListSnapshot>;
+  /** The model with this id in the list `read()` returns: a turn resolves against the same, refreshed list. */
   find(id: string): Promise<{ model: ListedModel | undefined; snapshot: ModelListSnapshot }>;
 }
 
@@ -50,17 +48,18 @@ export interface ModelListSource {
 }
 
 /**
- * The refresh rules: a live list is fresh for 30 minutes; a failed refresh keeps the last good
- * list, or the installed one when no live list was ever read, and is retried after a minute.
- * Concurrent callers share one refresh. A refresh never takes a caller's signal: a caller that
- * stops waiting does not cancel it for the others.
+ * The refresh rules: the first lookup or listing reads the live list, and a live list is fresh for
+ * 30 minutes, after which the next lookup or listing reads it again before it answers. A failed
+ * refresh keeps the last good list, or the installed one when no live list was ever read, and is
+ * retried after a minute. Concurrent callers share one refresh. A refresh never takes a caller's
+ * signal: a caller that stops waiting does not cancel it for the others.
  */
 export function createModelList(source: ModelListSource): ModelList {
   let live: { models: readonly ListedModel[]; fetchedAt: number } | undefined;
   let failure: { error: string; at: number } | undefined;
   let inFlight: Promise<void> | undefined;
 
-  const current = (): ModelListSnapshot =>
+  const snapshot = (): ModelListSnapshot =>
     live === undefined
       ? { models: source.installed, source: "installed", ...(failure ? { refreshError: failure.error } : {}) }
       : { models: live.models, source: "live", fetchedAt: live.fetchedAt, ...(failure ? { refreshError: failure.error } : {}) };
@@ -86,21 +85,16 @@ export function createModelList(source: ModelListSource): ModelList {
     return inFlight;
   };
 
-  const lookup = (id: string) => current().models.find((listed) => listed.model.id === id);
+  const read = async (): Promise<ModelListSnapshot> => {
+    if (due()) await refresh();
+    return snapshot();
+  };
 
   return {
-    current,
-    async read() {
-      if (due()) await refresh();
-      return current();
-    },
+    read,
     async find(id) {
-      let model = lookup(id);
-      if (model === undefined && due()) {
-        await refresh();
-        model = lookup(id);
-      }
-      return { model, snapshot: current() };
+      const list = await read();
+      return { model: list.models.find((listed) => listed.model.id === id), snapshot: list };
     },
   };
 }
