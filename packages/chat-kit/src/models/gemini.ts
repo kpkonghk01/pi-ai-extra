@@ -9,10 +9,13 @@ import type { ListedModel } from "./list.ts";
  * Ids of Gemini models that are not plain text chat models, though many list `generateContent`
  * and pi-ai's catalogue has some: embedding, Imagen, Veo and TTS models; Live API models
  * (`gemini-3.1-flash-live-preview`); computer use (`gemini-2.5-computer-use-preview-10-2025`);
- * image-output models (`gemini-3.1-flash-lite-image`, `*-image-preview`); and the Deep Research
- * agents (`deep-research-preview-04-2026`).
+ * image-output models, by `-image` (`gemini-3.1-flash-lite-image`, `gemini-3-pro-image-preview`)
+ * or by their Nano Banana name (`nano-banana-pro-preview`, `gemini-nano-banana-2.1`); and the
+ * Deep Research agents (`deep-research-preview-04-2026`). pi-ai 1.2's catalogues name no other
+ * Gemini image-output id: its Google chat catalogue has `gemini-3.1-flash-lite-image`, and its
+ * OpenRouter image catalogue the `google/*` ones above.
  */
-const NOT_PLAIN_CHAT = /embedding|imagen|veo|tts|(?:^|-)live(?:-|$)|computer-use|(?:^|-)image(?:-|$)|deep-research/i;
+const NOT_PLAIN_CHAT = /embedding|imagen|veo|tts|(?:^|-)live(?:-|$)|computer-use|(?:^|-)image(?:-|$)|nano-banana|deep-research/i;
 
 /**
  * Moving aliases (`gemini-flash-latest`, `gemini-flash-lite-latest`, `gemini-pro-latest`): Google

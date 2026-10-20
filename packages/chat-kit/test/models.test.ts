@@ -4,6 +4,7 @@ import { createFakeFetch, hangingResponse, jsonResponse, type FakeRoute } from "
 import { createChatKit, type ChatModelInfo, type ChatProviderModels } from "../src/index.ts";
 import { TurnFailure } from "../src/errors.ts";
 import { createModelList, FAILED_REFRESH_RETRY_MS, LIST_READ_TIMEOUT_MS, MODEL_LIST_TTL_MS, type ListedModel } from "../src/models/list.ts";
+import { isOfferedGeminiId } from "../src/models/gemini.ts";
 import { openRouterRate, openRouterThinkingLevelMap } from "../src/models/openrouter.ts";
 import { prepareTurn } from "../src/prepare.ts";
 import { createProviderRegistry } from "../src/registry.ts";
@@ -320,8 +321,29 @@ const OPENROUTER_LIST = {
       architecture: { input_modalities: ["text"], output_modalities: ["image"] },
       pricing: { prompt: "0.000001", completion: "0.00004" },
     },
+    {
+      id: "openrouter/free",
+      name: "Free Models Router",
+      architecture: { input_modalities: ["text", "image"], output_modalities: ["text"] },
+      pricing: { prompt: "0", completion: "0" },
+    },
+    {
+      id: "~google/gemini-flash-latest",
+      name: "Google: Gemini Flash Latest",
+      architecture: { input_modalities: ["text", "image", "file"], output_modalities: ["text"] },
+      pricing: { prompt: "0.00000075", completion: "0.00000375" },
+    },
+    {
+      id: "~unbiased/pareto-latest",
+      name: "Unbiased: Pareto Latest",
+      architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+      pricing: { prompt: "0.000001", completion: "0.000002" },
+    },
   ],
 };
+
+/** OpenRouter ids the kit never offers, live or installed. */
+const EXCLUDED_OPENROUTER_IDS = ["anthropic/claude-sonnet-4.6:batch", "google/gemma-4-31b-it:free", "openrouter/free", "~google/gemini-flash-latest", "~unbiased/pareto-latest"];
 
 function byId(entry: ChatProviderModels | undefined): Map<string, ChatModelInfo> {
   assert.ok(entry && "models" in entry, JSON.stringify(entry));
@@ -334,7 +356,7 @@ describe("OpenRouter live list", () => {
     return { chat: createChatKit({ providers: [{ name: "router", provider: "openrouter", apiKey: "or-key" }], fetch: fake.fetch }), fake };
   }
 
-  it("lists text-answering models, :batch, :free and image-output models left out, models without tools kept", async () => {
+  it("lists text-answering models, models without tools kept; :batch, :free, openrouter/free, ~*-latest and image-output models left out", async () => {
     const { chat, fake } = kit();
     const [entry] = await chat.listModels();
     assert.ok(entry && "models" in entry);
@@ -345,7 +367,7 @@ describe("OpenRouter live list", () => {
       ["anthropic/claude-sonnet-4.6", "anthropic/claude-nova-6", "acme/text-only", "openrouter/auto"],
     );
     assert.equal(fake.calls[0]?.headers.authorization, undefined, "the public list is read without the key");
-    for (const model of ["anthropic/claude-sonnet-4.6:batch", "google/gemma-4-31b-it:free"]) {
+    for (const model of EXCLUDED_OPENROUTER_IDS) {
       const last = lastEvent(await collect(chat.runTurn(turn({ model }))));
       assert.equal(last.type === "failed" && last.error.code, "UNKNOWN_MODEL", model);
     }
@@ -472,17 +494,18 @@ describe("OpenRouter live list", () => {
       return { chat: createChatKit({ providers: [{ name: "router", provider: "openrouter", apiKey: "k" }], fetch: fake.fetch }), fake };
     }
 
-    it("is filtered like the live list: no :batch or :free model is listed or run", async () => {
+    it("is filtered like the live list: no :batch, :free, openrouter/free or ~*-latest model is listed or run", async () => {
       const { chat, fake } = installedKit();
       const [entry] = await chat.listModels();
       assert.ok(entry && "models" in entry && entry.source === "installed");
       const listedIds = entry.models.map((model) => model.id);
       assert.ok(listedIds.includes("anthropic/claude-sonnet-4.6"));
       assert.deepEqual(
-        listedIds.filter((id) => id.endsWith(":batch") || id.endsWith(":free")),
+        listedIds.filter((id) => id.endsWith(":batch") || id.endsWith(":free") || id === "openrouter/free" || id.startsWith("~")),
         [],
       );
-      for (const model of ["anthropic/claude-haiku-4.5:batch", "google/gemma-4-31b-it:free"]) {
+      // All in pi-ai 1.2's OpenRouter catalogue.
+      for (const model of ["anthropic/claude-haiku-4.5:batch", "google/gemma-4-31b-it:free", "openrouter/free", "~google/gemini-flash-latest", "~anthropic/claude-opus-latest"]) {
         const last = lastEvent(await collect(chat.runTurn(turn({ model }))));
         assert.equal(last.type === "failed" && last.error.code, "UNKNOWN_MODEL", model);
       }
@@ -631,7 +654,7 @@ describe("Gemini chat-only filter", () => {
   /** pi-ai's Gemini catalogue's moving aliases, which Google can point at another model. */
   const ALIASES = ["gemini-flash-latest", "gemini-flash-lite-latest"];
 
-  it("leaves Live, computer use, image-output and Deep Research models and -latest aliases out of the live list", async () => {
+  it("leaves Live, computer use, image-output (Nano Banana too) and Deep Research models and -latest aliases out of the live list", async () => {
     const generate = ["generateContent"];
     const fake = createFakeFetch([
       {
@@ -644,6 +667,9 @@ describe("Gemini chat-only filter", () => {
               { name: "models/gemini-live-2.5-flash-preview", supportedGenerationMethods: generate },
               { name: "models/gemini-3-pro-image-preview", supportedGenerationMethods: generate },
               { name: "models/gemini-2.0-flash-preview-image-generation", supportedGenerationMethods: generate },
+              // Image-output models the live list serves without `-image` in the id.
+              { name: "models/nano-banana-pro-preview", supportedGenerationMethods: generate },
+              { name: "models/gemini-nano-banana-2.1", supportedGenerationMethods: generate },
               { name: "models/gemini-3.8-flash", supportedGenerationMethods: generate },
               { name: "models/gemini-3.1-pro-preview-customtools", supportedGenerationMethods: generate },
               { name: "models/gemma-4-31b-it", supportedGenerationMethods: generate },
@@ -672,6 +698,10 @@ describe("Gemini chat-only filter", () => {
     const listedIds = entry.models.map((model) => model.id);
     assert.ok(listedIds.includes("gemini-3.8-flash"));
     for (const id of [...NOT_CHAT, ...ALIASES]) assert.ok(!listedIds.includes(id), id);
+    // pi-ai's Google catalogue has no Nano Banana id; the installed list applies the same rule.
+    for (const id of ["nano-banana-pro-preview", "gemini-nano-banana-2.1", "gemini-3.1-flash-image", "gemini-3-pro-image"]) {
+      assert.equal(isOfferedGeminiId(id), false, id);
+    }
     for (const model of ["gemini-3.1-flash-live-preview", "gemini-flash-latest"]) {
       const turnResult = lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model }))));
       assert.equal(turnResult.type === "failed" && turnResult.error.code, "UNKNOWN_MODEL", `${model}: turns resolve against the filtered list`);

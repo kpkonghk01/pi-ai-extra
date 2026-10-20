@@ -29,8 +29,8 @@ interface OpenRouterListEntry {
  *   thinking fixes), updated with the live limits and price, as pi-ai's
  *   `personalizeOpenRouterCatalog` does;
  * - models without tool support are kept: the kit never sends tools;
- * - `:batch` and `:free` models are left out (`isOfferedOpenRouterId`), and so is any model that
- *   does not answer in text;
+ * - `:batch`, `:free` and `~*-latest` models and `openrouter/free` are left out
+ *   (`isOfferedOpenRouterId`), and so is any model that does not answer in text;
  * - a new `anthropic/*` id goes through OpenAI Completions, not Anthropic Messages, so a new
  *   Claude family is never sent pi-ai's budget-thinking parameters, which it may reject;
  * - text, image and file input come from `architecture.input_modalities`.
@@ -56,17 +56,24 @@ export async function fetchOpenRouterModels(input: {
 }
 
 /**
+ * OpenRouter's moving aliases, such as `~google/gemini-flash-latest` and `~unbiased/pareto-latest`:
+ * OpenRouter can point one at another model at any time, which silently changes both its
+ * behaviour and its price, so none is offered.
+ */
+const MOVING_ALIAS = /^~.*-latest$/;
+
+/**
  * Whether an OpenRouter model id is offered at all, on the live list and the installed catalogue
  * alike. Left out:
  *
  * - `:batch` variants: the gateway sends no batch requests, and they get no document cache
  *   breakpoint;
- * - `:free` variants: they are heavily rate-limited, and their providers may train on the prompts,
- *   which does not suit a newsroom gateway. Leaving them out also leaves out their zero price,
- *   which the live list publishes as a rate and pi-ai's catalogue as no rate.
+ * - `:free` variants, and `openrouter/free`, which routes to them: they are heavily rate-limited,
+ *   and their providers may train on the prompts, which does not suit a newsroom gateway;
+ * - `~*-latest` aliases (`MOVING_ALIAS`).
  */
 export function isOfferedOpenRouterId(id: string): boolean {
-  return !id.endsWith(":batch") && !id.endsWith(":free");
+  return !id.endsWith(":batch") && !id.endsWith(":free") && id !== "openrouter/free" && !MOVING_ALIAS.test(id);
 }
 
 /**
@@ -134,7 +141,10 @@ function inputModalities(architecture: Record<string, unknown>): ChatModelInput[
  * as pi-ai's `openRouterCost` converts them, except that a missing, invalid or negative input or
  * output price (OpenRouter reports -1 for routers such as `openrouter/auto`) is no rate rather
  * than 0, and a missing cache price is unpublished. The first prompt-length override
- * (`min_prompt_tokens`, without a time-of-day condition) becomes the large-prompt tier.
+ * (`min_prompt_tokens`, without a time-of-day condition) becomes the large-prompt tier. A
+ * published zero price is a zero rate, while pi-ai's catalogue zero reads as no rate
+ * (`catalogueRate`), so a model OpenRouter prices at zero has a zero rate on the live list and
+ * none on the installed one.
  */
 export function openRouterRate(pricing: unknown): ModelRate | undefined {
   if (!isRecord(pricing)) return undefined;
