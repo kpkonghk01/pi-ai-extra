@@ -196,6 +196,12 @@ const OPENROUTER_LIST = {
       pricing: { prompt: "0.0000015", completion: "0.0000075" },
     },
     {
+      id: "google/gemma-4-31b-it:free",
+      name: "Google: Gemma 4 31B (free)",
+      architecture: { input_modalities: ["text", "image"], output_modalities: ["text"] },
+      pricing: { prompt: "0", completion: "0" },
+    },
+    {
       id: "anthropic/claude-nova-6",
       name: "Anthropic: Claude Nova 6",
       context_length: 1_000_000,
@@ -243,7 +249,7 @@ describe("OpenRouter live list", () => {
     return { chat: createChatKit({ providers: [{ name: "router", provider: "openrouter", apiKey: "or-key" }], fetch: fake.fetch }), fake };
   }
 
-  it("lists text-answering models, batch and image-output models left out, models without tools kept", async () => {
+  it("lists text-answering models, :batch, :free and image-output models left out, models without tools kept", async () => {
     const { chat, fake } = kit();
     const [entry] = await chat.listModels();
     assert.ok(entry && "models" in entry);
@@ -254,6 +260,11 @@ describe("OpenRouter live list", () => {
       ["anthropic/claude-sonnet-4.6", "anthropic/claude-nova-6", "acme/text-only", "openrouter/auto"],
     );
     assert.equal(fake.calls[0]?.headers.authorization, undefined, "the public list is read without the key");
+    for (const model of ["anthropic/claude-sonnet-4.6:batch", "google/gemma-4-31b-it:free"]) {
+      const last = lastEvent(await collect(chat.runTurn(turn({ model }))));
+      assert.equal(last.type === "failed" && last.error.code, "UNKNOWN_MODEL", model);
+    }
+    assert.equal(fake.calls.length, 1, "no turn was sent");
   });
 
   it("reports input, documents, schema support, limits, reasoning and the live rate per model", async () => {
@@ -360,7 +371,7 @@ describe("OpenRouter live list", () => {
     assert.match(fake.calls.at(-1)?.url ?? "", /\/api\/v1\/messages/, "still on Anthropic Messages");
   });
 
-  it("falls back to pi-ai's catalogue when the list cannot be read, and says why", async () => {
+  it("uses pi-ai's catalogue when the list cannot be read, and says why", async () => {
     const fake = createFakeFetch([{ method: "GET", url: OPENROUTER_MODELS_URL, respond: () => jsonResponse({ error: { message: "down" } }, 503) }]);
     const chat = createChatKit({ providers: [{ name: "router", provider: "openrouter", apiKey: "k" }], fetch: fake.fetch });
     const [entry] = await chat.listModels();
@@ -368,6 +379,30 @@ describe("OpenRouter live list", () => {
     assert.equal(entry.source, "installed");
     assert.equal(entry.refreshError, "HTTP 503 from https://openrouter.ai/api/v1/models: down");
     assert.ok(entry.models.some((model) => model.id === "openai/gpt-4o-mini"));
+  });
+
+  describe("pi-ai's catalogue, while the list cannot be read", () => {
+    function installedKit() {
+      const fake = createFakeFetch([{ method: "GET", url: OPENROUTER_MODELS_URL, respond: () => jsonResponse({ error: { message: "down" } }, 503) }]);
+      return { chat: createChatKit({ providers: [{ name: "router", provider: "openrouter", apiKey: "k" }], fetch: fake.fetch }), fake };
+    }
+
+    it("is filtered like the live list: no :batch or :free model is listed or run", async () => {
+      const { chat, fake } = installedKit();
+      const [entry] = await chat.listModels();
+      assert.ok(entry && "models" in entry && entry.source === "installed");
+      const listedIds = entry.models.map((model) => model.id);
+      assert.ok(listedIds.includes("anthropic/claude-sonnet-4.6"));
+      assert.deepEqual(
+        listedIds.filter((id) => id.endsWith(":batch") || id.endsWith(":free")),
+        [],
+      );
+      for (const model of ["anthropic/claude-haiku-4.5:batch", "google/gemma-4-31b-it:free"]) {
+        const last = lastEvent(await collect(chat.runTurn(turn({ model }))));
+        assert.equal(last.type === "failed" && last.error.code, "UNKNOWN_MODEL", model);
+      }
+      assert.equal(fake.calls.filter((call) => call.method === "POST").length, 0, "no turn was sent");
+    });
   });
 
   it("reads the list from a base URL override", async () => {
@@ -462,8 +497,10 @@ describe("Gemini chat-only filter", () => {
     "gemini-3.1-flash-lite-image",
     "gemini-3.1-flash-live-preview",
   ];
+  /** pi-ai's Gemini catalogue's moving aliases, which Google can point at another model. */
+  const ALIASES = ["gemini-flash-latest", "gemini-flash-lite-latest"];
 
-  it("leaves Live, computer use, image-output and Deep Research models out of the live list", async () => {
+  it("leaves Live, computer use, image-output and Deep Research models and -latest aliases out of the live list", async () => {
     const generate = ["generateContent"];
     const fake = createFakeFetch([
       {
@@ -472,7 +509,7 @@ describe("Gemini chat-only filter", () => {
         respond: () =>
           jsonResponse({
             models: [
-              ...NOT_CHAT.map((id) => ({ name: `models/${id}`, supportedGenerationMethods: generate })),
+              ...[...NOT_CHAT, ...ALIASES, "gemini-pro-latest"].map((id) => ({ name: `models/${id}`, supportedGenerationMethods: generate })),
               { name: "models/gemini-live-2.5-flash-preview", supportedGenerationMethods: generate },
               { name: "models/gemini-3-pro-image-preview", supportedGenerationMethods: generate },
               { name: "models/gemini-2.0-flash-preview-image-generation", supportedGenerationMethods: generate },
@@ -503,9 +540,11 @@ describe("Gemini chat-only filter", () => {
     assert.match(entry.refreshError ?? "", /HTTP 400 .*User location is not supported/);
     const listedIds = entry.models.map((model) => model.id);
     assert.ok(listedIds.includes("gemini-3.8-flash"));
-    for (const id of NOT_CHAT) assert.ok(!listedIds.includes(id), id);
-    const turnResult = lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.1-flash-live-preview" }))));
-    assert.equal(turnResult.type === "failed" && turnResult.error.code, "UNKNOWN_MODEL", "turns resolve against the filtered list");
+    for (const id of [...NOT_CHAT, ...ALIASES]) assert.ok(!listedIds.includes(id), id);
+    for (const model of ["gemini-3.1-flash-live-preview", "gemini-flash-latest"]) {
+      const turnResult = lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model }))));
+      assert.equal(turnResult.type === "failed" && turnResult.error.code, "UNKNOWN_MODEL", `${model}: turns resolve against the filtered list`);
+    }
   });
 });
 

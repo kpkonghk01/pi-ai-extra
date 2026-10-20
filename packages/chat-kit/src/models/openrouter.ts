@@ -29,8 +29,8 @@ interface OpenRouterListEntry {
  *   thinking fixes), updated with the live limits and price, as pi-ai's
  *   `personalizeOpenRouterCatalog` does;
  * - models without tool support are kept: the kit never sends tools;
- * - `:batch` models are left out (the gateway offers none, and they get no document cache
- *   breakpoint), and so is any model that does not answer in text;
+ * - `:batch` and `:free` models are left out (`isOfferedOpenRouterId`), and so is any model that
+ *   does not answer in text;
  * - a new `anthropic/*` id goes through OpenAI Completions, not Anthropic Messages, so a new
  *   Claude family is never sent pi-ai's budget-thinking parameters, which it may reject;
  * - text, image and file input come from `architecture.input_modalities`.
@@ -55,8 +55,32 @@ export async function fetchOpenRouterModels(input: {
   return models;
 }
 
+/**
+ * Whether an OpenRouter model id is offered at all, on the live list and the installed catalogue
+ * alike. Left out:
+ *
+ * - `:batch` variants: the gateway sends no batch requests, and they get no document cache
+ *   breakpoint;
+ * - `:free` variants: they are heavily rate-limited, and their providers may train on the prompts,
+ *   which does not suit a newsroom gateway. Leaving them out also leaves out their zero price,
+ *   which the live list publishes as a rate and pi-ai's catalogue as no rate.
+ */
+export function isOfferedOpenRouterId(id: string): boolean {
+  return !id.endsWith(":batch") && !id.endsWith(":free");
+}
+
+/**
+ * Whether an installed OpenRouter model is listed, by the live list's rules. pi-ai's chat
+ * catalogue is built from OpenRouter's default listing, which has no image-only models, and
+ * `getModels()` serves its chat models only, so a chat model there answers in text; the id rules
+ * (`isOfferedOpenRouterId`) apply as on the live list.
+ */
+export function listsInstalledOpenRouterModel(model: Model<Api>): boolean {
+  return (model.type ?? "chat") === "chat" && isOfferedOpenRouterId(model.id);
+}
+
 function openRouterModel(entry: OpenRouterListEntry, known: Model<Api> | undefined, root: string, now: number): ListedModel | undefined {
-  if (entry.id.endsWith(":batch")) return undefined;
+  if (!isOfferedOpenRouterId(entry.id)) return undefined;
   const architecture = isRecord(entry.architecture) ? entry.architecture : {};
   if (!answersInText(architecture)) return undefined;
   const input = inputModalities(architecture);

@@ -16,7 +16,7 @@ import { createKieProvider, KIE_CHAT_MODELS } from "@hk01/pi-ai-extra-kie/pi-ai"
 import { createToapisProvider, TOAPIS_CHAT_MODELS } from "@hk01/pi-ai-extra-toapis/pi-ai";
 import { fetchGeminiModels, isGeminiChatModel } from "./models/gemini.ts";
 import { createModelList, type ListedModel, type ModelList } from "./models/list.ts";
-import { fetchOpenRouterModels } from "./models/openrouter.ts";
+import { fetchOpenRouterModels, listsInstalledOpenRouterModel } from "./models/openrouter.ts";
 import { fetchKieModels, fetchToapisModels } from "./models/resellers.ts";
 import type { ChatModelInput, ChatProviderConfig, ChatProviderKind } from "./types.ts";
 
@@ -54,7 +54,11 @@ interface ProviderKindSpec {
   readonly nativeStructuredOutput: boolean;
   /** The pi-ai provider for an explicit key; `root` (no trailing slash) replaces its default API root. */
   create(apiKey: string, root: string | undefined): Provider;
-  /** Which installed models are listed and run until a live list is read. Gemini keeps the plain chat models its live list keeps. */
+  /**
+   * Which installed models are listed and run while no live list has been read: the models the
+   * live list would keep. Gemini keeps plain chat models under their own ids; OpenRouter drops
+   * `:batch` and `:free` models.
+   */
   listsInstalled(model: Model<Api>): boolean;
   /** The rate schedule of an installed model: the package definitions' rates, Gemini's rate table, or OpenRouter's catalogue price. */
   rateOf(model: Model<Api>): ModelRate | undefined;
@@ -85,7 +89,7 @@ const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> 
     fileDocuments: true,
     nativeStructuredOutput: true,
     create: explicitOpenRouterProvider,
-    listsInstalled: () => true,
+    listsInstalled: listsInstalledOpenRouterModel,
     rateOf: (model) => catalogueRate(model.cost),
     fetchLive: (context) => fetchOpenRouterModels({ ...context, root: context.root ?? OPENROUTER_API_ROOT }),
   },
