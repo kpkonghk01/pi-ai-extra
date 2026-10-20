@@ -32,6 +32,8 @@ interface OpenRouterListEntry {
  * - models without tool support are kept: the kit never sends tools;
  * - ids `isOfferedOpenRouterId` leaves out are not listed, and neither is a model that does not
  *   answer in text or that answers with images (`architecture.output_modalities`);
+ * - nor is a model OpenRouter tags as a router (`architecture.tokenizer` is `Router`), so a router
+ *   OpenRouter adds later is left out without a kit release;
  * - a new `anthropic/*` id goes through OpenAI Completions, not Anthropic Messages, so a new
  *   Claude family is never sent pi-ai's budget-thinking parameters, which it may reject;
  * - text, image and file input come from `architecture.input_modalities`.
@@ -66,9 +68,13 @@ const MOVING_ALIAS = /-latest$/;
 /**
  * Third-party routers, which pick the model for each request themselves, named one by one as
  * OpenRouter listed them on 2026-10-20; a description is never matched. OpenRouter's own routers
- * are every `openrouter/*` id.
+ * are every `openrouter/*` id. The live list also leaves out every model OpenRouter tags as a
+ * router (`ROUTER_TOKENIZER`); this list is for pi-ai's catalogue, which has no such tag.
  */
 const THIRD_PARTY_ROUTERS: ReadonlySet<string> = new Set(["typesafe/jev-router", "nvidia/switchyard"]);
+
+/** The `architecture.tokenizer` OpenRouter gives its routers, third-party routers and `~` aliases. */
+const ROUTER_TOKENIZER = "Router";
 
 /**
  * Whether an OpenRouter model id is offered at all, on the live list and the installed catalogue
@@ -120,6 +126,7 @@ function catalogueImageModelIds(): ReadonlySet<string> {
 function openRouterModel(entry: OpenRouterListEntry, known: Model<Api> | undefined, root: string, now: number): ListedModel | undefined {
   if (!isOfferedOpenRouterId(entry.id)) return undefined;
   const architecture = isRecord(entry.architecture) ? entry.architecture : {};
+  if (architecture.tokenizer === ROUTER_TOKENIZER) return undefined;
   const output = outputModalities(architecture);
   if (!output.includes("text") || output.includes("image")) return undefined;
   const input = inputModalities(architecture);

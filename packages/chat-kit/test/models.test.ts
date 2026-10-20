@@ -414,6 +414,12 @@ const OPENROUTER_LIST = {
       pricing: { prompt: "-1", completion: "-1" },
     },
     {
+      id: "acme/new-router",
+      name: "Acme: New Router",
+      architecture: { input_modalities: ["text"], output_modalities: ["text"], tokenizer: "Router" },
+      pricing: { prompt: "0.000001", completion: "0.000002" },
+    },
+    {
       id: "google/gemini-nano-banana-2.1",
       name: "Google: Nano Banana 2.1",
       architecture: { input_modalities: ["text", "image"], output_modalities: ["image", "text"] },
@@ -432,6 +438,7 @@ const EXCLUDED_OPENROUTER_IDS = [
   "openrouter/fusion",
   "typesafe/jev-router",
   "nvidia/switchyard",
+  "acme/new-router", // tagged as a router by OpenRouter, not named anywhere in the kit
   "~google/gemini-flash-latest",
   "~unbiased/pareto-latest",
   "openai/gpt-chat-latest",
