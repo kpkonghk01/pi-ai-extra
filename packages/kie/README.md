@@ -5,7 +5,7 @@ Server-only extension to `@earendil-works/pi-ai`: Grok Imagine Image 2.0 (`grok-
 - Main entry (CommonJS and ESM): `generateKieImage()`, `getKieTask()`, `KIE_IMAGE_MODELS`, `PiAiExtraError` / `isPiAiExtraError`.
 - `/pi-ai` subpath (ESM only, needs `@earendil-works/pi-ai@1.2.0`): `createKieProvider()`, one pi-ai `Provider` serving the chat models and `KIE_IMAGE_MODELS` (image settings in `imageSettings`).
 
-Chat: Codex (`gpt-6-astra`, `gpt-5-6-sol`, `gpt-5-6-terra`, `gpt-5-6-luna`) on OpenAI Responses (`https://api.kie.ai/openai/v1`) and Claude on Anthropic Messages (`https://api.kie.ai/anthropic`, Bearer auth). Usage: `creditsConsumed` and `costTime` (ms).
+Chat: Codex (`gpt-6-1-sol`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5-6-sol`, `gpt-5-6-terra`, `gpt-5-6-luna`) on OpenAI Responses (`https://api.kie.ai/openai/v1`) and Claude (5.5, 5 and 4.x) on Anthropic Messages (`https://api.kie.ai/anthropic`, Bearer auth). Each chat model carries KIE's published `rate` (USD per 1M tokens). Usage: `creditsConsumed` and `costTime` (ms).
 
 ```ts
 import { generateKieImage } from "@hk01/pi-ai-extra-kie";

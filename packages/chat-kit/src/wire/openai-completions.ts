@@ -65,7 +65,7 @@ export function createOpenAICompletionsObserver(): StreamObserver {
 export const OPENAI_COMPLETIONS_WIRE_API: WireApi = {
   api: "openai-completions",
   acceptsFetch: true,
-  schemaAsToolCall: false,
+  schemaAsToolCall: () => false,
   placeDocument: placeByUrl,
   unsupported: () => undefined,
   transform: transformOpenAICompletionsPayload,

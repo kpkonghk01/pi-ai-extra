@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { createFakeFetch, type FakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import { createChatKit } from "../src/index.ts";
-import { brokenSseResponse, collect, jsonBody, lastEvent, sseResponse, testDocument, textOf, turn } from "./helpers.ts";
+import { brokenSseResponse, collect, jsonBody, lastEvent, sseResponse, testDocument, textOf, turn, wireFetch } from "./helpers.ts";
 
 const STREAM_URL = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-3\.5-flash:streamGenerateContent\b/;
 const SCHEMA = { type: "object", properties: { tags: { type: "array", items: { type: "string" }, maxItems: 3 } } };
@@ -28,7 +28,8 @@ describe("runTurn on Gemini", () => {
   function kit(routes: FakeRoute[], grounding = false): { chat: ReturnType<typeof createChatKit>; fake: FakeFetch } {
     const fake = createFakeFetch(routes);
     globalThis.fetch = fake.fetch as typeof globalThis.fetch;
-    return { chat: createChatKit({ providers: [{ name: "gemini", provider: "google", apiKey: "gemini-key", grounding }] }), fake };
+    // The kit's own fetch serves only the model list here; the turn goes through the global fetch.
+    return { chat: createChatKit({ providers: [{ name: "gemini", provider: "google", apiKey: "gemini-key", grounding }], fetch: wireFetch(fake) }), fake };
   }
 
   it("streams text with grounding, a sanitized response schema and documents by URL or inline", async () => {
@@ -64,6 +65,10 @@ describe("runTurn on Gemini", () => {
         outputTokens: 6,
         cachedInputTokens: 40,
         totalTokens: 56,
+        // gemini-3.5-flash has no entry in the Gemini rate table: pi-ai's list price (1.5 in, 9 out,
+        // 0.15 cached per 1M): 10 × 1.5 + 40 × 0.15 + 6 × 9 = 75 per 1M tokens.
+        costUsd: 0.000075,
+        costSource: "estimated",
         raw: { usageMetadata: { promptTokenCount: 50, candidatesTokenCount: 6, cachedContentTokenCount: 40, totalTokenCount: 56 } },
       },
     });
@@ -111,6 +116,8 @@ describe("runTurn on Gemini", () => {
     assert.deepEqual(last.usage, {
       inputTokens: 12,
       totalTokens: 12,
+      costUsd: 0.000018,
+      costSource: "estimated",
       raw: { usageMetadata: { promptTokenCount: 12, totalTokenCount: 12 } },
     });
   });
@@ -131,7 +138,7 @@ describe("runTurn on Gemini", () => {
     assert.equal(last.type, "failed");
     if (last.type !== "failed") return;
     assert.equal(last.error.code, "PROVIDER_ERROR");
-    assert.deepEqual(last.usage, { inputTokens: 5, totalTokens: 5, raw: { usageMetadata } });
+    assert.deepEqual(last.usage, { inputTokens: 5, totalTokens: 5, costUsd: 0.0000075, costSource: "estimated", raw: { usageMetadata } });
   });
 
   it("counts a grounded turn's tool-use prompt tokens in inputTokens", async () => {
@@ -160,7 +167,15 @@ describe("runTurn on Gemini", () => {
     );
     assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash" })))), {
       type: "done",
-      usage: { inputTokens: 340, outputTokens: 20, reasoningTokens: 8, totalTokens: 360, raw: { usageMetadata } },
+      usage: {
+        inputTokens: 340,
+        outputTokens: 20,
+        reasoningTokens: 8,
+        totalTokens: 360,
+        costUsd: 0.00069,
+        costSource: "estimated",
+        raw: { usageMetadata },
+      },
     });
   });
 
@@ -173,7 +188,7 @@ describe("runTurn on Gemini", () => {
     const { chat } = kit([{ method: "POST", url: STREAM_URL, respond: [answer({ usageMetadata }), answer({})] }]);
     assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash" })))), {
       type: "done",
-      usage: { inputTokens: 8, outputTokens: 2, totalTokens: 10, raw: { usageMetadata } },
+      usage: { inputTokens: 8, outputTokens: 2, totalTokens: 10, costUsd: 0.00003, costSource: "estimated", raw: { usageMetadata } },
     });
     assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash" })))), { type: "done" });
   });

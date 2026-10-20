@@ -2,14 +2,17 @@ import type { Api, Context, Message, Model, Usage } from "@earendil-works/pi-ai"
 import {
   createDocumentMarker,
   documentKind,
+  NATIVE_INPUT_FOR,
   prepareDocument,
   SUPPORTED_DOCUMENT_TYPES,
   type DocumentKind,
   type PreparedDocument,
 } from "./documents.ts";
+import { untilAborted } from "./abort.ts";
+import type { TurnPricing } from "./cost.ts";
 import { errorText, TurnFailure } from "./errors.ts";
 import { parseTurnInput } from "./input.ts";
-import type { RegisteredProvider } from "./registry.ts";
+import type { ListedModel, RegisteredProvider } from "./registry.ts";
 import type { ChatDocument, ChatTurnInput, ChatTurnSettings } from "./types.ts";
 import { wireApiFor, type PayloadPlan, type WireApi } from "./wire/index.ts";
 import { targetsOpenRouter } from "./wire/openrouter.ts";
@@ -31,6 +34,7 @@ export interface PreparedTurn {
   settings: ChatTurnSettings;
   /** The answer is the arguments of a forced tool call (a response schema on Anthropic Messages). */
   schemaAsToolCall: boolean;
+  pricing: TurnPricing;
 }
 
 /** pi-ai requires usage on every assistant message, including the history the kit replays. */
@@ -54,22 +58,30 @@ export async function prepareTurn(
   if (!validation.ok) throw new TurnFailure("INVALID_REQUEST", `Invalid turn input: ${validation.message}`);
   const provider = registry.get(input.provider);
   if (!provider) throw new TurnFailure("UNKNOWN_MODEL", `No provider named ${JSON.stringify(input.provider)} is configured.`);
-  const model = provider.findModel(input.model);
-  if (!model) {
-    throw new TurnFailure("UNKNOWN_MODEL", `Model ${JSON.stringify(input.model)} is not in the ${provider.kind} chat catalogue.`);
+  const startedAt = Date.now();
+  const { model: listed, snapshot } = await untilAborted(provider.models.find(input.model), signal, turnAborted);
+  const unread = snapshot.refreshError === undefined ? "" : ` (its live model list could not be read: ${snapshot.refreshError})`;
+  if (!listed) {
+    throw new TurnFailure("UNKNOWN_MODEL", `Model ${JSON.stringify(input.model)} is not in the ${provider.kind} model list${unread}.`);
   }
+  const { model } = listed;
   const wire = wireApiFor(model.api);
   if (!wire) throw new TurnFailure("UNSUPPORTED", `chat-kit does not support the ${JSON.stringify(model.api)} API of this model.`);
   const settings = input.settings ?? {};
-  const kinds = input.documents.map((document) => checkDocument(document, provider, model));
-  const unsupported = wire.unsupported(model, { responseSchema: input.responseSchema, settings });
+  // From the installed list, a model reads only what the installed catalogue says it reads.
+  const installedNote = snapshot.source === "installed" ? unread : "";
+  const kinds = input.documents.map((document) => checkDocument(document, provider, listed, installedNote));
+  const schemaRequest = { responseSchema: input.responseSchema, settings, nativeStructuredOutput: provider.nativeStructuredOutput };
+  const unsupported = wire.unsupported(model, schemaRequest);
   if (unsupported) throw new TurnFailure("UNSUPPORTED", `This model cannot take this request: ${unsupported}`);
 
   const documents = await untilAborted(
     Promise.all(input.documents.map((document, index) => loadDocument(document, kinds[index]!, wire, model))),
     signal,
+    turnAborted,
   );
   const marker = documents.length > 0 ? createDocumentMarker() : undefined;
+  const schemaAsToolCall = input.responseSchema !== undefined && wire.schemaAsToolCall(model, schemaRequest);
   return {
     target,
     provider,
@@ -82,13 +94,15 @@ export async function prepareTurn(
       responseSchema: input.responseSchema,
       grounding: provider.grounding,
       targetsOpenRouter: targetsOpenRouter(model),
+      nativeStructuredOutput: input.responseSchema !== undefined && !schemaAsToolCall && provider.nativeStructuredOutput,
     },
     settings,
-    schemaAsToolCall: wire.schemaAsToolCall && input.responseSchema !== undefined,
+    schemaAsToolCall,
+    pricing: { policy: provider.cost, rate: listed.rate, startedAt },
   };
 }
 
-function checkDocument(document: ChatDocument, provider: RegisteredProvider, model: Model<Api>): DocumentKind {
+function checkDocument(document: ChatDocument, provider: RegisteredProvider, listed: ListedModel, installedNote: string): DocumentKind {
   const kind = documentKind(document.mimeType);
   if (kind === undefined) {
     throw new TurnFailure(
@@ -103,8 +117,10 @@ function checkDocument(document: ChatDocument, provider: RegisteredProvider, mod
       `Provider ${provider.kind} does not take PDF or image documents yet (its file input is undocumented), so ${JSON.stringify(document.name)} cannot be sent.`,
     );
   }
-  if (!model.input.includes("image")) {
-    throw new TurnFailure("UNSUPPORTED", `Model ${model.id} takes text only, so it cannot read ${JSON.stringify(document.name)}.`);
+  const reads = NATIVE_INPUT_FOR[kind];
+  if (!listed.input.includes(reads)) {
+    const takes = listed.input.length === 1 ? "takes text only" : `does not read ${kind === "pdf" ? "PDF files natively" : "images"}`;
+    throw new TurnFailure("UNSUPPORTED", `Model ${listed.model.id} ${takes}${installedNote}, so it cannot read ${JSON.stringify(document.name)}.`);
   }
   return kind;
 }
@@ -157,21 +173,6 @@ function buildContext(input: ChatTurnInput, model: Model<Api>, marker: string | 
   return { ...(input.systemPrompt ? { systemPrompt: input.systemPrompt } : {}), messages };
 }
 
-function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  const aborted = () => new TurnFailure("ABORTED", "The turn was aborted.");
-  if (signal.aborted) return Promise.reject(aborted());
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(aborted());
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-      },
-    );
-  });
+function turnAborted(): TurnFailure {
+  return new TurnFailure("ABORTED", "The turn was aborted.");
 }

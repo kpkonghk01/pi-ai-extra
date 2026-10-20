@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createFakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import { createChatKit } from "../src/index.ts";
-import { collect, jsonBody, lastEvent, sseResponse, textOf, turn } from "./helpers.ts";
+import { collect, jsonBody, lastEvent, sseResponse, textOf, turn, wireFetch } from "./helpers.ts";
 
 const KIE_RESPONSES_URL = "https://api.kie.ai/openai/v1/responses";
 const SCHEMA = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false };
@@ -40,7 +40,7 @@ function responsesStream(text: string[], terminal: Record<string, unknown>): Res
 
 function kit(routes: FakeRoute[]) {
   const fake = createFakeFetch(routes);
-  return { chat: createChatKit({ providers: [{ name: "kie", provider: "kie", apiKey: "kie-key" }], fetch: fake.fetch }), fake };
+  return { chat: createChatKit({ providers: [{ name: "kie", provider: "kie", apiKey: "kie-key" }], fetch: wireFetch(fake) }), fake };
 }
 
 describe("runTurn on OpenAI Responses (KIE Codex)", () => {
@@ -75,6 +75,8 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
         cachedInputTokens: 10,
         reasoningTokens: 0,
         totalTokens: 34,
+        costUsd: 0.0024,
+        costSource: "provider",
         raw: { usage, credits_consumed: 0.48 },
       },
     });
@@ -124,8 +126,28 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
     ]);
     assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol" })))), {
       type: "done",
-      usage: { inputTokens: 30, raw: { usage: { input_tokens: 30 }, credits_consumed: 0.48 } },
+      usage: { inputTokens: 30, costUsd: 0.0024, costSource: "provider", raw: { usage: { input_tokens: 30 }, credits_consumed: 0.48 } },
     });
+  });
+
+  it("prices a KIE Codex turn from credits_consumed wherever the terminal event carries it, never from its zero prompt count", async () => {
+    // A live gpt-6-sol turn on 2026-10-16 reported input_tokens 0 and credits only in the raw stream events.
+    const usage = { input_tokens: 0, output_tokens: 5, total_tokens: 5 };
+    const response = { id: "resp_1", status: "completed", output: [] };
+    const placements: Record<string, Record<string, unknown>> = {
+      "next to type": { type: "response.completed", response: { ...response, usage }, credits_consumed: 0.01 },
+      "on the response": { type: "response.completed", response: { ...response, usage, credits_consumed: 0.01 } },
+      "inside the response's usage": { type: "response.completed", response: { ...response, usage: { ...usage, credits_consumed: 0.01 } } },
+      "inside a usage object next to type": { type: "response.completed", response: { ...response, usage }, usage: { credits_consumed: 0.01 } },
+    };
+    for (const [where, terminal] of Object.entries(placements)) {
+      const { chat } = kit([{ method: "POST", url: KIE_RESPONSES_URL, respond: () => responsesStream(["OK"], terminal) }]);
+      const last = lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-6-sol" }))));
+      assert.equal(last.type, "done", where);
+      const reported = last.type === "done" ? last.usage : undefined;
+      assert.deepEqual([reported?.inputTokens, reported?.outputTokens], [0, 5], where);
+      assert.deepEqual([reported?.costUsd, reported?.costSource], [0.00005, "provider"], where);
+    }
   });
 
   it("reports an incomplete content_filter response as CONTENT_BLOCKED", async () => {

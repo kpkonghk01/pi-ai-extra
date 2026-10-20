@@ -10,10 +10,32 @@ import {
   type ProviderAuth,
 } from "@earendil-works/pi-ai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
-import { createGoogleProvider } from "@hk01/pi-ai-extra-google/pi-ai";
-import { createKieProvider } from "@hk01/pi-ai-extra-kie/pi-ai";
-import { createToapisProvider } from "@hk01/pi-ai-extra-toapis/pi-ai";
-import type { ChatProviderConfig, ChatProviderKind } from "./types.ts";
+import { createGoogleProvider, googleChatRate } from "@hk01/pi-ai-extra-google/pi-ai";
+import { catalogueRate, roundUsd, type ModelRate } from "@hk01/pi-ai-extra-internal/rates";
+import { createKieProvider, KIE_CHAT_MODELS, KIE_USD_PER_CREDIT } from "@hk01/pi-ai-extra-kie/pi-ai";
+import { createToapisProvider, TOAPIS_CHAT_MODELS } from "@hk01/pi-ai-extra-toapis/pi-ai";
+import { reportedAmount, type CostPolicy } from "./cost.ts";
+import { isRecord } from "./guards.ts";
+import { fetchGeminiModels, isOfferedGeminiId } from "./models/gemini.ts";
+import { createModelList, type ListedModel, type ModelList } from "./models/list.ts";
+import { fetchOpenRouterModels, isOfferedInstalledOpenRouterModel } from "./models/openrouter.ts";
+import { fetchKieModels, fetchToapisModels } from "./models/resellers.ts";
+import type { ChatModelInput, ChatProviderConfig, ChatProviderKind } from "./types.ts";
+
+export type { ListedModel } from "./models/list.ts";
+
+/** What a live list read gets: the key, the configured API root and the installed models to match. */
+interface LiveListContext {
+  apiKey: string;
+  /** The configured API root (no trailing slash), or undefined for the provider's default. */
+  root: string | undefined;
+  provider: Provider;
+  fetch: typeof globalThis.fetch;
+  installed: readonly ListedModel[];
+  /** Aborts at the list read's deadline (`LIST_READ_TIMEOUT_MS`). */
+  signal: AbortSignal;
+  now: number;
+}
 
 /** What differs between provider kinds. */
 interface ProviderKindSpec {
@@ -23,25 +45,107 @@ interface ProviderKindSpec {
    * do not document their file input, so it stays off until a live smoke test enables it.
    */
   readonly fileDocuments: boolean;
+  /**
+   * Whether the provider takes Anthropic's native structured output (`output_config.format`) on
+   * its Anthropic Messages route, so a response schema works on a model that thinks. On for
+   * OpenRouter, whose Messages reference documents `output_config.format`
+   * (https://openrouter.ai/docs/api/api-reference/anthropic-messages/create-a-message), though a
+   * live check is still pending. On for KIE, which does not document it but answered valid JSON
+   * under it, while thinking, in a live check on 2026-10-16 (`claude-opus-5-5`). Off for ToAPIs
+   * until a live smoke test verifies it.
+   */
+  readonly nativeStructuredOutput: boolean;
   /** The pi-ai provider for an explicit key; `root` (no trailing slash) replaces its default API root. */
   create(apiKey: string, root: string | undefined): Provider;
+  /**
+   * Which installed models are offered (listed and run) while no live list has been read: the
+   * models the live list would keep (`isOfferedGeminiId`, `isOfferedInstalledOpenRouterModel`).
+   */
+  offersInstalled(model: Model<Api>): boolean;
+  /**
+   * What an installed model reads. pi-ai's catalogues list text and image input only. The Gemini,
+   * Claude and GPT models that read images read PDFs too, so `file` follows `image` there.
+   * OpenRouter's catalogue spans many vendors, some of whose models read images but not files
+   * (`moondream/moondream3-preview`), so an installed OpenRouter model reads no files: a PDF turn
+   * on it fails with `UNSUPPORTED` until its live list says it reads files.
+   */
+  installedInput(model: Model<Api>): ChatModelInput[];
+  /** The rate schedule of an installed model: the package definitions' rates, Gemini's rate table, or OpenRouter's catalogue price. */
+  rateOf(model: Model<Api>): ModelRate | undefined;
+  /** Reads the provider's live model list. */
+  fetchLive(context: LiveListContext): Promise<readonly ListedModel[]>;
+  /** How a turn's cost is found: the charge the provider reports, and whether a turn without one is estimated. */
+  readonly cost: CostPolicy;
 }
 
+const OPENROUTER_API_ROOT = "https://openrouter.ai/api";
+const KIE_HOST = "https://api.kie.ai";
+const TOAPIS_HOST = "https://toapis.com";
+
+/** The rate of a package definition, by id. */
+function definitionRate(definitions: readonly { id: string; rate?: ModelRate | undefined }[]): (model: Model<Api>) => ModelRate | undefined {
+  return (model) => definitions.find((definition) => definition.id === model.id)?.rate;
+}
+
+/** `file` follows `image`: the model reads PDFs when it reads images. */
+function fileWithImage(model: Model<Api>): ChatModelInput[] {
+  return model.input.includes("image") ? ["text", "image", "file"] : ["text"];
+}
+
+/** A provider that reports no charge of its own: every turn with a rate and counts is estimated. */
+const ESTIMATED_COST: CostPolicy = { reportedCostUsd: () => undefined, estimatesCost: true };
+
 /** One entry per `ChatProviderKind`; the record type makes a missing kind a type error. */
-const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> = {
+export const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> = {
   google: {
     fileDocuments: true,
+    nativeStructuredOutput: false,
     create: (apiKey, root) => createGoogleProvider({ apiKey, ...(root ? { baseUrl: root } : {}) }),
+    offersInstalled: (model) => isOfferedGeminiId(model.id),
+    installedInput: fileWithImage,
+    rateOf: (model) => googleChatRate(model.id),
+    fetchLive: (context) => fetchGeminiModels({ ...context, baseUrl: context.provider.baseUrl ?? context.root ?? "" }),
+    cost: ESTIMATED_COST,
   },
-  openrouter: { fileDocuments: true, create: explicitOpenRouterProvider },
+  openrouter: {
+    fileDocuments: true,
+    nativeStructuredOutput: true,
+    create: explicitOpenRouterProvider,
+    offersInstalled: isOfferedInstalledOpenRouterModel,
+    installedInput: (model) => (model.input.includes("image") ? ["text", "image"] : ["text"]),
+    rateOf: (model) => catalogueRate(model.cost),
+    fetchLive: (context) => fetchOpenRouterModels({ ...context, root: context.root ?? OPENROUTER_API_ROOT }),
+    // OpenRouter's own charge, `usage.cost`; a turn without it is estimated from the live price.
+    cost: { reportedCostUsd: (raw) => (isRecord(raw.usage) ? reportedAmount(raw.usage.cost) : undefined), estimatesCost: true },
+  },
   kie: {
     fileDocuments: false,
+    nativeStructuredOutput: true,
     create: (apiKey, root) =>
       createKieProvider({ apiKey, ...(root ? { responsesBaseUrl: `${root}/openai/v1`, claudeBaseUrl: `${root}/anthropic` } : {}) }),
+    offersInstalled: () => true,
+    installedInput: fileWithImage,
+    rateOf: definitionRate(KIE_CHAT_MODELS),
+    fetchLive: (context) => fetchKieModels({ ...context, host: context.root ?? KIE_HOST }),
+    // KIE's charge, `credits_consumed` × $0.005, and never an estimate: KIE's token counts are
+    // unreliable (hidden prompt tokens, some zero input counts), so a turn without credits has no cost.
+    cost: {
+      reportedCostUsd: (raw) => {
+        const credits = reportedAmount(raw.credits_consumed);
+        return credits === undefined ? undefined : roundUsd(credits * KIE_USD_PER_CREDIT);
+      },
+      estimatesCost: false,
+    },
   },
   toapis: {
     fileDocuments: false,
+    nativeStructuredOutput: false,
     create: (apiKey, root) => createToapisProvider({ apiKey, ...(root ? { baseUrl: root } : {}) }),
+    offersInstalled: () => true,
+    installedInput: fileWithImage,
+    rateOf: definitionRate(TOAPIS_CHAT_MODELS),
+    fetchLive: (context) => fetchToapisModels({ ...context, host: context.root ?? TOAPIS_HOST }),
+    cost: ESTIMATED_COST,
   },
 };
 
@@ -51,41 +155,70 @@ const NO_AMBIENT_AUTH: AuthContext = {
   fileExists: async () => false,
 };
 
-const OPENROUTER_API_ROOT = "https://openrouter.ai/api";
-
 /** One configured provider, under the consumer's name, in its own pi-ai `Models` collection. */
 export interface RegisteredProvider {
+  /** The consumer's provider name. */
+  readonly name: string;
   readonly kind: ChatProviderKind;
   readonly grounding: boolean;
   /** See `ProviderKindSpec.fileDocuments`. */
   readonly fileDocuments: boolean;
-  /**
-   * The chat model with this id, or undefined. Today this is the provider's pi-ai catalogue
-   * (static, frozen at release). DATA-4568 resolves it against the live model list here
-   * (`listModels()`), so `runTurn` keeps one lookup.
-   */
-  findModel(id: string): Model<Api> | undefined;
+  /** See `ProviderKindSpec.nativeStructuredOutput`. */
+  readonly nativeStructuredOutput: boolean;
+  /** See `ProviderKindSpec.cost`. */
+  readonly cost: CostPolicy;
+  /** The provider's model list: live, or the installed catalogue or definitions while no live list has been read. */
+  readonly models: ModelList;
   streamSimple(model: Model<Api>, context: Context, options: ModelsSimpleStreamOptions): AssistantMessageEventStream;
+}
+
+export interface RegistryOptions {
+  fetch: typeof globalThis.fetch | undefined;
+  /** The clock for list freshness; tests replace it. */
+  now?: (() => number) | undefined;
 }
 
 /**
  * Registers each provider with its explicit key. Every provider gets its own `Models` collection,
  * created with an empty auth context: pi-ai never reads `process.env`, and two names may share a
- * provider kind (for example two Gemini keys) without one replacing the other.
+ * provider kind (for example two Gemini keys) without one replacing the other. Each also gets its
+ * own model list, read with the same key.
  */
-export function createProviderRegistry(configs: readonly ChatProviderConfig[]): ReadonlyMap<string, RegisteredProvider> {
+export function createProviderRegistry(configs: readonly ChatProviderConfig[], options: RegistryOptions): ReadonlyMap<string, RegisteredProvider> {
+  const now = options.now ?? Date.now;
   const registry = new Map<string, RegisteredProvider>();
   for (const config of configs) {
     const spec = PROVIDER_KIND_SPECS[config.provider];
-    const provider = spec.create(config.apiKey, config.baseUrl?.replace(/\/+$/, ""));
+    const root = config.baseUrl?.replace(/\/+$/, "");
+    const provider = spec.create(config.apiKey, root);
     const models = createModels({ authContext: NO_AMBIENT_AUTH });
     models.setProvider(provider);
+    const installed = provider
+      .getModels()
+      .filter((model) => spec.offersInstalled(model))
+      .map((model): ListedModel => ({ model, rate: spec.rateOf(model), input: spec.installedInput(model) }));
     registry.set(config.name, {
+      name: config.name,
       kind: config.provider,
       grounding: config.grounding === true,
       fileDocuments: spec.fileDocuments,
-      findModel: (id) => models.getModel(provider.id, id),
-      streamSimple: (model, context, options) => models.streamSimple(model, context, options),
+      nativeStructuredOutput: spec.nativeStructuredOutput,
+      cost: spec.cost,
+      models: createModelList({
+        installed,
+        now,
+        fetchLive: (signal) =>
+          spec.fetchLive({
+            apiKey: config.apiKey,
+            root,
+            provider,
+            fetch: options.fetch ?? ((input, init) => globalThis.fetch(input, init)),
+            installed,
+            signal,
+            now: now(),
+          }),
+      }),
+      streamSimple: (model, context, streamOptions) => models.streamSimple(model, context, streamOptions),
     });
   }
   return registry;

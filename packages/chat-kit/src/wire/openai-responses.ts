@@ -8,18 +8,21 @@ import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.
 
 type ResponsesPart = Record<string, unknown>;
 
-/** A file reference: an `input_file` takes `file_url` or a data URL in `file_data`; an `input_image` takes either as `image_url`. */
-interface ResponsesFile {
-  field: "file_url" | "file_data";
-  link: string;
-}
+/** A file reference: a URL the provider fetches, or the bytes inline as a data URL. */
+type ResponsesFile = { url: string } | { dataUrl: string };
 
 const RESPONSES_PARTS: DocumentEncoder<ResponsesPart, ResponsesFile> = {
   text: (text) => ({ type: "input_text", text }),
-  url: (url) => ({ field: "file_url", link: url }),
-  inline: (data, document) => ({ field: "file_data", link: dataUrl(document.mimeType, data) }),
-  pdf: (file, document) => ({ type: "input_file", filename: document.name, [file.field]: file.link }),
-  image: (file) => ({ type: "input_image", detail: "auto", image_url: file.link }),
+  url: (url) => ({ url }),
+  inline: (data, document) => ({ dataUrl: dataUrl(document.mimeType, data) }),
+  // An `input_file` takes a URL as `file_url` and a data URL as `file_data`.
+  pdf: (file, document) => ({
+    type: "input_file",
+    filename: document.name,
+    ...("url" in file ? { file_url: file.url } : { file_data: file.dataUrl }),
+  }),
+  // An `input_image` takes either as `image_url`.
+  image: (file) => ({ type: "input_image", detail: "auto", image_url: "url" in file ? file.url : file.dataUrl }),
 };
 
 /**
@@ -46,7 +49,13 @@ export function transformOpenAIResponsesPayload(payload: unknown, plan: PayloadP
 /**
  * A content filter shows as an `incomplete` response with reason `content_filter`; a refusal
  * streams as `response.refusal.delta` on a response that otherwise completes. Usage is on the
- * terminal response, where KIE also reports `credits_consumed`, kept even without a usage object.
+ * terminal response.
+ *
+ * KIE also reports `credits_consumed`, outside OpenAI's shape: its docs put it on the
+ * `response.completed` event next to `type` when streaming, and on the response object without
+ * streaming (https://docs.kie.ai/market/kimi/kimi-k3.md; the Codex pages show only the second).
+ * So every cost or credit field is read from the event, its `response`, and the `usage` object of
+ * either, and kept at the top of raw usage, even without a usage object.
  */
 export function createOpenAIResponsesObserver(): StreamObserver {
   const capture = createUsageCapture();
@@ -55,10 +64,11 @@ export function createOpenAIResponsesObserver(): StreamObserver {
     observe(event) {
       if (!isRecord(event)) return;
       if (event.type === "response.refusal.delta") refused = true;
-      const response = event.response;
-      if (!isRecord(response)) return;
-      if (isRecord(response.usage)) capture.replace(response.usage);
-      capture.addBilling(response);
+      const response = isRecord(event.response) ? event.response : undefined;
+      if (response !== undefined && isRecord(response.usage)) capture.replace(response.usage);
+      for (const container of [response?.usage, event.usage, response, event]) {
+        if (isRecord(container)) capture.addBilling(container);
+      }
     },
     usage: () => capture.read((usage, raw) => openAIUsage(usage, raw, RESPONSES_USAGE_FIELDS)),
     blocked(message: AssistantMessage): BlockedTurn | undefined {
@@ -72,7 +82,7 @@ export function createOpenAIResponsesObserver(): StreamObserver {
 export const OPENAI_RESPONSES_WIRE_API: WireApi = {
   api: "openai-responses",
   acceptsFetch: true,
-  schemaAsToolCall: false,
+  schemaAsToolCall: () => false,
   placeDocument: placeByUrl,
   unsupported: () => undefined,
   transform: transformOpenAIResponsesPayload,

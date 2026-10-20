@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ChatDocument } from "./types.ts";
+import type { ChatDocument, ChatModelInput } from "./types.ts";
 
 /** How a document reaches the model: decoded into a text block, or as a native file/image part. */
 export type DocumentKind = "text" | "pdf" | "image";
@@ -26,6 +26,13 @@ export function normalizeMimeType(mimeType: string): string {
 export function documentKind(mimeType: string): DocumentKind | undefined {
   return DOCUMENT_KINDS[normalizeMimeType(mimeType)];
 }
+
+/**
+ * The model input a PDF or image document needs. Each goes as the API's native part, never
+ * through a parser: a PDF as a file part (OpenRouter's `file-parser` is pinned to `native`, never
+ * paid OCR), an image as an image part. A plain-text document goes as text, which every model reads.
+ */
+export const NATIVE_INPUT_FOR: Readonly<Record<Exclude<DocumentKind, "text">, ChatModelInput>> = { pdf: "file", image: "image" };
 
 /** A document ready for a payload transform: its text, a URL the provider fetches, or inline bytes. */
 export type PreparedDocument =

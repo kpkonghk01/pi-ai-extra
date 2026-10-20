@@ -118,7 +118,7 @@ export function createGoogleObserver(): StreamObserver {
 export const GOOGLE_WIRE_API: WireApi = {
   api: "google-generative-ai",
   acceptsFetch: false,
-  schemaAsToolCall: false,
+  schemaAsToolCall: () => false,
   placeDocument: placeGoogleDocument,
   unsupported: () => undefined,
   transform: transformGooglePayload,

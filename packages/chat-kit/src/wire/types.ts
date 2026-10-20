@@ -15,6 +15,22 @@ export interface PayloadPlan {
    * parser to `native` too. OpenAI Completions, which only OpenRouter speaks here, always does.
    */
   targetsOpenRouter: boolean;
+  /**
+   * Anthropic Messages only: send the response schema as native structured output
+   * (`output_config.format`) instead of a forced tool call.
+   */
+  nativeStructuredOutput: boolean;
+}
+
+/** What decides how, and whether, a model takes a response schema. */
+export interface SchemaRequest {
+  responseSchema: ChatResponseSchema | undefined;
+  settings: ChatTurnSettings;
+  /**
+   * Whether the provider accepts native structured output on this API: Anthropic Messages
+   * `output_config.format`, which works while the model thinks.
+   */
+  nativeStructuredOutput: boolean;
 }
 
 /** A safety block found in a finished or failed turn. */
@@ -45,15 +61,12 @@ export interface WireApi {
   readonly api: Api;
   /** Whether pi-ai's adapter for this API accepts a custom fetch (its Gemini adapter rejects one). */
   readonly acceptsFetch: boolean;
-  /** The response schema is delivered as a forced tool call: its argument deltas are the answer text. */
-  readonly schemaAsToolCall: boolean;
+  /** Whether the response schema goes as a forced tool call: its argument deltas are then the answer text. */
+  schemaAsToolCall(model: Model<Api>, request: SchemaRequest): boolean;
   /** Whether a PDF or image is fetched by the provider from its URL or sent inline. */
   placeDocument(document: ChatDocument, model: Model<Api>): DocumentPlacement;
   /** Why this request cannot run on this model, checked before any document is loaded. */
-  unsupported(
-    model: Model<Api>,
-    request: { responseSchema: ChatResponseSchema | undefined; settings: ChatTurnSettings },
-  ): string | undefined;
+  unsupported(model: Model<Api>, request: SchemaRequest): string | undefined;
   /** Pure transform of the payload pi-ai built; it must not mutate its input. */
   transform(payload: unknown, plan: PayloadPlan): unknown;
   createObserver(): StreamObserver;

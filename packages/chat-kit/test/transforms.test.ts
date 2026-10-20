@@ -4,6 +4,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { TurnFailure } from "../src/errors.ts";
 import type { PreparedDocument } from "../src/documents.ts";
 import { isAlwaysThinkingClaude, transformAnthropicPayload } from "../src/wire/anthropic-messages.ts";
+import { sanitizeSchemaForAnthropic } from "../src/wire/anthropic-schema.ts";
 import { sanitizeSchemaForGemini } from "../src/wire/gemini-schema.ts";
 import { placeGoogleDocument, transformGooglePayload } from "../src/wire/google.ts";
 import { transformOpenAICompletionsPayload } from "../src/wire/openai-completions.ts";
@@ -48,6 +49,7 @@ function plan(overrides: Partial<PayloadPlan> = {}): PayloadPlan {
     responseSchema: undefined,
     grounding: false,
     targetsOpenRouter: false,
+    nativeStructuredOutput: false,
     ...overrides,
   };
 }
@@ -311,6 +313,20 @@ describe("Anthropic Messages payload transform", () => {
     assert.ok(!("plugins" in kie), "KIE and ToAPIs never get OpenRouter's plugins");
   });
 
+  it("sends native structured output beside pi-ai's output_config, with thinking on and no forced tool call", () => {
+    const next = transformAnthropicPayload(
+      { ...payload(), thinking: { type: "adaptive" }, output_config: { effort: "high" } },
+      plan({ marker: undefined, documents: [], responseSchema: { name: "answer", schema: SCHEMA }, nativeStructuredOutput: true }),
+    ) as Record<string, unknown>;
+    assert.deepEqual(next.output_config, {
+      effort: "high",
+      format: { type: "json_schema", schema: { ...SCHEMA, additionalProperties: false } },
+    });
+    assert.equal(next.tools, undefined);
+    assert.equal(next.tool_choice, undefined);
+    assert.deepEqual(next.thinking, { type: "adaptive" });
+  });
+
   it("refuses a forced tool call while thinking is on", () => {
     assert.throws(
       () =>
@@ -336,6 +352,39 @@ describe("Anthropic Messages payload transform", () => {
         ),
       /appeared 2 times/,
     );
+  });
+});
+
+describe("sanitizeSchemaForAnthropic", () => {
+  it("strips the keywords native structured output rejects and closes every object, keeping property names", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        maxLength: { type: "string", minLength: 1, maxLength: 9, format: "email" },
+        tags: { type: "array", items: { type: "string", format: "color" }, minItems: 2, maxItems: 5 },
+        score: { type: "number", minimum: 0, maximum: 1 },
+        meta: { type: "object", additionalProperties: true, properties: { note: { type: "string" } } },
+      },
+      required: ["maxLength"],
+    };
+    assert.deepEqual(sanitizeSchemaForAnthropic(schema), {
+      type: "object",
+      properties: {
+        maxLength: { type: "string", format: "email" },
+        tags: { type: "array", items: { type: "string" } },
+        score: { type: "number" },
+        meta: { type: "object", properties: { note: { type: "string" } }, additionalProperties: false },
+      },
+      required: ["maxLength"],
+      additionalProperties: false,
+    });
+    assert.deepEqual(sanitizeSchemaForAnthropic({ type: "array", items: { type: "string" }, minItems: 1 }), {
+      type: "array",
+      items: { type: "string" },
+      minItems: 1,
+    });
+    assert.equal(sanitizeSchemaForAnthropic(schema), sanitizeSchemaForAnthropic(schema), "cached by identity");
+    assert.equal(schema.properties.score.minimum, 0, "the input is not mutated");
   });
 });
 

@@ -2,10 +2,11 @@ import { createProvider, type Model, type Provider } from "@earendil-works/pi-ai
 import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generative-ai.lazy";
 import { GOOGLE_MODELS } from "@earendil-works/pi-ai/providers/google.models";
 import { withoutTrailingSlash } from "@hk01/pi-ai-extra-internal";
-import { explicitApiKeyAuth, helperImages } from "@hk01/pi-ai-extra-internal/pi-ai";
+import { explicitApiKeyAuth, helperImages, modelCostAt } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { GOOGLE_BASE_URL, GOOGLE_IMAGES_API, GOOGLE_PROVIDER_ID, GOOGLE_PROVIDER_NAME } from "../constants.ts";
 import { generateGoogleImage, type GoogleImageRequest, type GoogleImageSettings } from "../generate.ts";
 import { GOOGLE_IMAGE_MODELS } from "../models.ts";
+import { tableRate } from "./rates.ts";
 
 type GoogleChatModel = Model<"google-generative-ai">;
 
@@ -33,8 +34,10 @@ export interface GoogleProviderOptions {
 
 /**
  * pi-ai provider for Gemini chat: pi-ai's own Gemini adapter and model catalogue
- * (capabilities and Google list prices unchanged), authenticated only with the
- * explicit `apiKey` — unlike pi-ai's `googleProvider()`, it never reads `GEMINI_API_KEY`.
+ * (capabilities unchanged), authenticated only with the explicit `apiKey` — unlike pi-ai's
+ * `googleProvider()`, it never reads `GEMINI_API_KEY`. A model in `GEMINI_CHAT_RATES` gets its
+ * `cost` from the period in force when the provider is created; every other model keeps pi-ai's
+ * list price.
  *
  * It also serves `GOOGLE_IMAGE_MODELS` (`models.getModelOfType("image", "google", id)`),
  * generated through `generateGoogleImage`. Image options go in `ImagesOptions.metadata`
@@ -43,6 +46,7 @@ export interface GoogleProviderOptions {
  */
 export function createGoogleProvider(options: GoogleProviderOptions): Provider<"google-generative-ai"> {
   const baseUrl = options.baseUrl === undefined ? undefined : withoutTrailingSlash(options.baseUrl);
+  const now = Date.now();
   const images = helperImages({
     provider: GOOGLE_PROVIDER_ID,
     api: GOOGLE_IMAGES_API,
@@ -57,7 +61,7 @@ export function createGoogleProvider(options: GoogleProviderOptions): Provider<"
     name: GOOGLE_PROVIDER_NAME,
     baseUrl: baseUrl ?? GOOGLE_BASE_URL,
     auth: explicitApiKeyAuth(GOOGLE_PROVIDER_NAME, options.apiKey),
-    models: [...selectModels(options.modelIds).map((model) => (baseUrl ? { ...model, baseUrl } : model)), ...images.models],
+    models: [...selectModels(options.modelIds).map((model) => withTableCost(baseUrl ? { ...model, baseUrl } : model, now)), ...images.models],
     api: googleGenerativeAIApi(),
     images: images.images,
   });
@@ -70,4 +74,10 @@ function selectModels(modelIds: readonly string[] | undefined): readonly GoogleC
     throw new TypeError(`${GOOGLE_PROVIDER_NAME}: unknown chat model id(s) ${unknown.join(", ")}. Known: ${GOOGLE_CHAT_MODEL_IDS.join(", ")}.`);
   }
   return CATALOGUE.filter((model) => modelIds.includes(model.id));
+}
+
+/** The catalogue entry with `cost` from the Gemini rate table, when the table lists it. */
+function withTableCost(model: GoogleChatModel, at: number): GoogleChatModel {
+  const rate = tableRate(model.id);
+  return rate === undefined ? model : { ...model, cost: modelCostAt(rate, at) };
 }
