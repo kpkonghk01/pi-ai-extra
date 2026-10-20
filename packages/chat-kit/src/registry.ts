@@ -60,6 +60,14 @@ interface ProviderKindSpec {
    * `:batch` and `:free` models.
    */
   listsInstalled(model: Model<Api>): boolean;
+  /**
+   * What an installed model reads. pi-ai's catalogues list text and image input only. The Gemini,
+   * Claude and GPT models that read images read PDFs too, so `file` follows `image` there.
+   * OpenRouter's catalogue spans many vendors, some of whose models read images but not files
+   * (`moondream/moondream3-preview`), so an installed OpenRouter model reads no files: a PDF turn
+   * on it fails with `UNSUPPORTED` until its live list says it reads files.
+   */
+  installedInput(model: Model<Api>): ChatModelInput[];
   /** The rate schedule of an installed model: the package definitions' rates, Gemini's rate table, or OpenRouter's catalogue price. */
   rateOf(model: Model<Api>): ModelRate | undefined;
   /** Reads the provider's live model list. */
@@ -75,6 +83,11 @@ function definitionRate(definitions: readonly { id: string; rate?: ModelRate | u
   return (model) => definitions.find((definition) => definition.id === model.id)?.rate;
 }
 
+/** `file` follows `image`: the model reads PDFs when it reads images. */
+function fileWithImage(model: Model<Api>): ChatModelInput[] {
+  return model.input.includes("image") ? ["text", "image", "file"] : ["text"];
+}
+
 /** One entry per `ChatProviderKind`; the record type makes a missing kind a type error. */
 const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> = {
   google: {
@@ -82,6 +95,7 @@ const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> 
     nativeStructuredOutput: false,
     create: (apiKey, root) => createGoogleProvider({ apiKey, ...(root ? { baseUrl: root } : {}) }),
     listsInstalled: (model) => isGeminiChatModel(model.id),
+    installedInput: fileWithImage,
     rateOf: (model) => googleChatRate(model.id),
     fetchLive: (context) => fetchGeminiModels({ ...context, baseUrl: context.provider.baseUrl ?? context.root ?? "" }),
   },
@@ -90,6 +104,7 @@ const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> 
     nativeStructuredOutput: true,
     create: explicitOpenRouterProvider,
     listsInstalled: listsInstalledOpenRouterModel,
+    installedInput: (model) => (model.input.includes("image") ? ["text", "image"] : ["text"]),
     rateOf: (model) => catalogueRate(model.cost),
     fetchLive: (context) => fetchOpenRouterModels({ ...context, root: context.root ?? OPENROUTER_API_ROOT }),
   },
@@ -99,6 +114,7 @@ const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> 
     create: (apiKey, root) =>
       createKieProvider({ apiKey, ...(root ? { responsesBaseUrl: `${root}/openai/v1`, claudeBaseUrl: `${root}/anthropic` } : {}) }),
     listsInstalled: () => true,
+    installedInput: fileWithImage,
     rateOf: definitionRate(KIE_CHAT_MODELS),
     fetchLive: (context) => fetchKieModels({ ...context, host: context.root ?? KIE_HOST }),
   },
@@ -107,6 +123,7 @@ const PROVIDER_KIND_SPECS: Readonly<Record<ChatProviderKind, ProviderKindSpec>> 
     nativeStructuredOutput: false,
     create: (apiKey, root) => createToapisProvider({ apiKey, ...(root ? { baseUrl: root } : {}) }),
     listsInstalled: () => true,
+    installedInput: fileWithImage,
     rateOf: definitionRate(TOAPIS_CHAT_MODELS),
     fetchLive: (context) => fetchToapisModels({ ...context, host: context.root ?? TOAPIS_HOST }),
   },
@@ -157,7 +174,7 @@ export function createProviderRegistry(configs: readonly ChatProviderConfig[], o
     const installed = provider
       .getModels()
       .filter((model) => spec.listsInstalled(model))
-      .map((model): ListedModel => ({ model, rate: spec.rateOf(model), input: inputOf(model) }));
+      .map((model): ListedModel => ({ model, rate: spec.rateOf(model), input: spec.installedInput(model) }));
     registry.set(config.name, {
       name: config.name,
       kind: config.provider,
@@ -182,14 +199,6 @@ export function createProviderRegistry(configs: readonly ChatProviderConfig[], o
     });
   }
   return registry;
-}
-
-/**
- * What an installed model reads. pi-ai's catalogues list text and image input only; the Gemini,
- * Claude and GPT models that read images read PDFs too, so `file` follows `image`.
- */
-function inputOf(model: Model<Api>): ChatModelInput[] {
-  return model.input.includes("image") ? ["text", "image", "file"] : ["text"];
 }
 
 /**

@@ -60,15 +60,17 @@ export async function prepareTurn(
   if (!provider) throw new TurnFailure("UNKNOWN_MODEL", `No provider named ${JSON.stringify(input.provider)} is configured.`);
   const startedAt = Date.now();
   const { model: listed, snapshot } = await untilAborted(provider.models.find(input.model), signal, turnAborted);
+  const unread = snapshot.refreshError === undefined ? "" : ` (its live model list could not be read: ${snapshot.refreshError})`;
   if (!listed) {
-    const why = snapshot.refreshError === undefined ? "" : ` (its live model list could not be read: ${snapshot.refreshError})`;
-    throw new TurnFailure("UNKNOWN_MODEL", `Model ${JSON.stringify(input.model)} is not in the ${provider.kind} model list${why}.`);
+    throw new TurnFailure("UNKNOWN_MODEL", `Model ${JSON.stringify(input.model)} is not in the ${provider.kind} model list${unread}.`);
   }
   const { model } = listed;
   const wire = wireApiFor(model.api);
   if (!wire) throw new TurnFailure("UNSUPPORTED", `chat-kit does not support the ${JSON.stringify(model.api)} API of this model.`);
   const settings = input.settings ?? {};
-  const kinds = input.documents.map((document) => checkDocument(document, provider, listed));
+  // From the installed list, a model reads only what the installed catalogue says it reads.
+  const installedNote = snapshot.source === "installed" ? unread : "";
+  const kinds = input.documents.map((document) => checkDocument(document, provider, listed, installedNote));
   const schemaRequest = { responseSchema: input.responseSchema, settings, nativeStructuredOutput: provider.nativeStructuredOutput };
   const unsupported = wire.unsupported(model, schemaRequest);
   if (unsupported) throw new TurnFailure("UNSUPPORTED", `This model cannot take this request: ${unsupported}`);
@@ -100,7 +102,7 @@ export async function prepareTurn(
   };
 }
 
-function checkDocument(document: ChatDocument, provider: RegisteredProvider, listed: ListedModel): DocumentKind {
+function checkDocument(document: ChatDocument, provider: RegisteredProvider, listed: ListedModel, installedNote: string): DocumentKind {
   const kind = documentKind(document.mimeType);
   if (kind === undefined) {
     throw new TurnFailure(
@@ -118,7 +120,7 @@ function checkDocument(document: ChatDocument, provider: RegisteredProvider, lis
   const reads = NATIVE_INPUT_FOR[kind];
   if (!listed.input.includes(reads)) {
     const takes = listed.input.length === 1 ? "takes text only" : `does not read ${kind === "pdf" ? "PDF files natively" : "images"}`;
-    throw new TurnFailure("UNSUPPORTED", `Model ${listed.model.id} ${takes}, so it cannot read ${JSON.stringify(document.name)}.`);
+    throw new TurnFailure("UNSUPPORTED", `Model ${listed.model.id} ${takes}${installedNote}, so it cannot read ${JSON.stringify(document.name)}.`);
   }
   return kind;
 }

@@ -403,6 +403,19 @@ describe("OpenRouter live list", () => {
       }
       assert.equal(fake.calls.filter((call) => call.method === "POST").length, 0, "no turn was sent");
     });
+
+    it("reports fileDocuments false, and a PDF turn fails with UNSUPPORTED before anything is sent", async () => {
+      const { chat, fake } = installedKit();
+      const sonnet = byId((await chat.listModels())[0]).get("anthropic/claude-sonnet-4.6");
+      // The live list says this model reads files ("reports input, documents, ..." above); pi-ai's catalogue cannot.
+      assert.deepEqual([sonnet?.input, sonnet?.fileDocuments], [["text", "image"], false]);
+      const pdf = testDocument("brief.pdf", "application/pdf", "%PDF-1.7");
+      const last = lastEvent(await collect(chat.runTurn(turn({ model: "anthropic/claude-sonnet-4.6", documents: [pdf] }))));
+      assert.equal(last.type === "failed" && last.error.code, "UNSUPPORTED");
+      assert.match(last.type === "failed" ? last.error.message : "", /does not read PDF files natively \(its live model list could not be read: HTTP 503/);
+      assert.equal(pdf.loads, 0);
+      assert.equal(fake.calls.filter((call) => call.method === "POST").length, 0);
+    });
   });
 
   it("reads the list from a base URL override", async () => {

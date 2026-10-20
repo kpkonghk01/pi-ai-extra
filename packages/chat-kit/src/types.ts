@@ -82,7 +82,8 @@ export interface ChatModelInfo {
    * PDF to a paid parser, so a model without `file` input is `false` here and a PDF turn on it
    * fails with `UNSUPPORTED`. A turn checks each document by the same rule, so a model that reads
    * images but not files (`false` here) still takes image documents where the provider takes
-   * them. Plain-text documents work on every model.
+   * them. Plain-text documents work on every model. An OpenRouter model from pi-ai's catalogue
+   * (the live list could not be read) has no `file` input, so it is `false`.
    */
   fileDocuments: boolean;
   /** Whether a turn may carry a `responseSchema` (not on an always-thinking Claude model without native structured output). */
