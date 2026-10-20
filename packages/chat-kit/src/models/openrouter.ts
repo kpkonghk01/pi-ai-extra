@@ -1,4 +1,5 @@
 import type { Api, Model, ThinkingLevelMap } from "@earendil-works/pi-ai";
+import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { modelCostAt, roundRate, singleRate, type ModelRate, type TokenRates } from "@hk01/pi-ai-extra-internal/rates";
 import { isRecord } from "../guards.ts";
 import type { ChatModelInput } from "../types.ts";
@@ -29,8 +30,8 @@ interface OpenRouterListEntry {
  *   thinking fixes), updated with the live limits and price, as pi-ai's
  *   `personalizeOpenRouterCatalog` does;
  * - models without tool support are kept: the kit never sends tools;
- * - `:batch`, `:free` and `~*-latest` models and `openrouter/free` are left out
- *   (`isOfferedOpenRouterId`), and so is any model that does not answer in text;
+ * - ids `isOfferedOpenRouterId` leaves out are not listed, and neither is a model that does not
+ *   answer in text or that answers with images (`architecture.output_modalities`);
  * - a new `anthropic/*` id goes through OpenAI Completions, not Anthropic Messages, so a new
  *   Claude family is never sent pi-ai's budget-thinking parameters, which it may reject;
  * - text, image and file input come from `architecture.input_modalities`.
@@ -56,11 +57,18 @@ export async function fetchOpenRouterModels(input: {
 }
 
 /**
- * OpenRouter's moving aliases, such as `~google/gemini-flash-latest` and `~unbiased/pareto-latest`:
- * OpenRouter can point one at another model at any time, which silently changes both its
- * behaviour and its price, so none is offered.
+ * Moving aliases: every `-latest` id, with or without OpenRouter's `~` prefix
+ * (`~google/gemini-flash-latest`, `~unbiased/pareto-latest`, `openai/gpt-chat-latest`). The model
+ * one names can change at any time, which silently changes both its behaviour and its price.
  */
-const MOVING_ALIAS = /^~.*-latest$/;
+const MOVING_ALIAS = /-latest$/;
+
+/**
+ * Third-party routers, which pick the model for each request themselves, named one by one as
+ * OpenRouter listed them on 2026-10-20; a description is never matched. OpenRouter's own routers
+ * are every `openrouter/*` id.
+ */
+const THIRD_PARTY_ROUTERS: ReadonlySet<string> = new Set(["typesafe/jev-router", "nvidia/switchyard"]);
 
 /**
  * Whether an OpenRouter model id is offered at all, on the live list and the installed catalogue
@@ -68,28 +76,52 @@ const MOVING_ALIAS = /^~.*-latest$/;
  *
  * - `:batch` variants: the gateway sends no batch requests, and they get no document cache
  *   breakpoint;
- * - `:free` variants, and `openrouter/free`, which routes to them: they are heavily rate-limited,
- *   and their providers may train on the prompts, which does not suit a newsroom gateway;
- * - `~*-latest` aliases (`MOVING_ALIAS`).
+ * - `:free` variants: they are heavily rate-limited, and their providers may train on the prompts,
+ *   which does not suit a newsroom gateway;
+ * - every model whose provider picks the model itself, by product-owner decision: OpenRouter's own
+ *   routers (every `openrouter/*` id: `auto`, `auto-beta`, `fusion`, `free`, and any new one),
+ *   `THIRD_PARTY_ROUTERS` and moving aliases (`MOVING_ALIAS`).
+ *
+ * Image-output models are left out as well, by their output modalities (`fetchOpenRouterModels`,
+ * `isOfferedInstalledOpenRouterModel`).
  */
 export function isOfferedOpenRouterId(id: string): boolean {
-  return !id.endsWith(":batch") && !id.endsWith(":free") && id !== "openrouter/free" && !MOVING_ALIAS.test(id);
+  return (
+    !id.endsWith(":batch") &&
+    !id.endsWith(":free") &&
+    !id.startsWith("openrouter/") &&
+    !THIRD_PARTY_ROUTERS.has(id) &&
+    !MOVING_ALIAS.test(id)
+  );
 }
 
 /**
- * Whether an installed OpenRouter model is offered, by the live list's rules. pi-ai's chat
- * catalogue is built from OpenRouter's default listing, which has no image-only models, and
- * `getModels()` serves its chat models only, so a chat model there answers in text; the id rules
- * (`isOfferedOpenRouterId`) apply as on the live list.
+ * Whether an installed OpenRouter model is offered, by the live list's rules: the id rules
+ * (`isOfferedOpenRouterId`), text answers, and no image output, which the product owner leaves
+ * out on every provider for now. `getModels()` serves pi-ai's chat models only, so a chat model
+ * there answers in text. pi-ai's chat catalogue records no output modalities, so a chat model that
+ * also answers with images is found by its id in pi-ai's OpenRouter image catalogue
+ * (`google/gemini-3-pro-image`, `google/gemini-nano-banana-2.1`).
  */
 export function isOfferedInstalledOpenRouterModel(model: Model<Api>): boolean {
-  return (model.type ?? "chat") === "chat" && isOfferedOpenRouterId(model.id);
+  return (model.type ?? "chat") === "chat" && isOfferedOpenRouterId(model.id) && !catalogueImageModelIds().has(model.id);
+}
+
+let imageModelIds: ReadonlySet<string> | undefined;
+
+/** The ids of pi-ai's OpenRouter image catalogue, read once. */
+function catalogueImageModelIds(): ReadonlySet<string> {
+  imageModelIds ??= new Set(
+    (openrouterProvider().getAllModels?.() ?? []).filter((model) => model.type === "image").map((model) => model.id),
+  );
+  return imageModelIds;
 }
 
 function openRouterModel(entry: OpenRouterListEntry, known: Model<Api> | undefined, root: string, now: number): ListedModel | undefined {
   if (!isOfferedOpenRouterId(entry.id)) return undefined;
   const architecture = isRecord(entry.architecture) ? entry.architecture : {};
-  if (!answersInText(architecture)) return undefined;
+  const output = outputModalities(architecture);
+  if (!output.includes("text") || output.includes("image")) return undefined;
   const input = inputModalities(architecture);
   const rate = openRouterRate(entry.pricing);
   const topProvider = isRecord(entry.top_provider) ? entry.top_provider : {};
@@ -117,13 +149,13 @@ function openRouterModel(entry: OpenRouterListEntry, known: Model<Api> | undefin
   return { model: model as Model<Api>, rate, input };
 }
 
-/** Whether the model answers in text: `output_modalities`, else the `->` side of `modality`. Unknown: assumed text. */
-function answersInText(architecture: Record<string, unknown>): boolean {
-  if (Array.isArray(architecture.output_modalities)) return architecture.output_modalities.includes("text");
+/** What the model answers with: `output_modalities`, else the `->` side of `modality`. Unknown: text. */
+function outputModalities(architecture: Record<string, unknown>): readonly unknown[] {
+  if (Array.isArray(architecture.output_modalities)) return architecture.output_modalities;
   if (typeof architecture.modality === "string" && architecture.modality.includes("->")) {
-    return architecture.modality.split("->")[1]!.split("+").includes("text");
+    return architecture.modality.split("->")[1]!.split("+");
   }
-  return true;
+  return ["text"];
 }
 
 /** Text, image and file input from `input_modalities` (else `modality`); text always. */
@@ -139,8 +171,8 @@ function inputModalities(architecture: Record<string, unknown>): ChatModelInput[
 /**
  * OpenRouter's per-token decimal-string prices as a one-period schedule in USD per 1M tokens,
  * as pi-ai's `openRouterCost` converts them, except that a missing, invalid or negative input or
- * output price (OpenRouter reports -1 for routers such as `openrouter/auto`) is no rate rather
- * than 0, and a missing cache price is unpublished. The first prompt-length override
+ * output price (OpenRouter reports -1 for routers, which are not offered) is no rate rather than
+ * 0, and a missing cache price is unpublished. The first prompt-length override
  * (`min_prompt_tokens`, without a time-of-day condition) becomes the large-prompt tier. A
  * published zero price is a zero rate, while pi-ai's catalogue zero reads as no rate
  * (`catalogueRate`), so a model OpenRouter prices at zero has a zero rate on the live list and

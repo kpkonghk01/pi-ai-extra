@@ -11,9 +11,11 @@ import type { ListedModel } from "./list.ts";
  * (`gemini-3.1-flash-live-preview`); computer use (`gemini-2.5-computer-use-preview-10-2025`);
  * image-output models, by `-image` (`gemini-3.1-flash-lite-image`, `gemini-3-pro-image-preview`)
  * or by their Nano Banana name (`nano-banana-pro-preview`, `gemini-nano-banana-2.1`); and the
- * Deep Research agents (`deep-research-preview-04-2026`). pi-ai 1.2's catalogues name no other
- * Gemini image-output id: its Google chat catalogue has `gemini-3.1-flash-lite-image`, and its
- * OpenRouter image catalogue the `google/*` ones above.
+ * Deep Research agents (`deep-research-preview-04-2026`). pi-ai 1.2's catalogues name no Gemini
+ * image-output id these rules miss: its Google chat catalogue has one, `gemini-3.1-flash-lite-image`,
+ * and every `google/*` id of its OpenRouter image catalogue is an `-image` id
+ * (`gemini-2.5-flash-image`, `gemini-3-pro-image`, `gemini-3.1-flash-image-preview`, …) or
+ * `gemini-nano-banana-2.1`.
  */
 const NOT_PLAIN_CHAT = /embedding|imagen|veo|tts|(?:^|-)live(?:-|$)|computer-use|(?:^|-)image(?:-|$)|nano-banana|deep-research/i;
 

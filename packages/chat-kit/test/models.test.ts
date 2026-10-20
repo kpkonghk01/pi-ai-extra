@@ -356,7 +356,13 @@ const OPENROUTER_LIST = {
     {
       id: "openrouter/auto",
       name: "Auto Router",
-      architecture: { input_modalities: ["text", "image"], output_modalities: ["text"] },
+      architecture: { input_modalities: ["text", "image"], output_modalities: ["text", "image"] },
+      pricing: { prompt: "-1", completion: "-1" },
+    },
+    {
+      id: "acme/unpriced",
+      name: "Acme: Unpriced",
+      architecture: { input_modalities: ["text"], output_modalities: ["text"] },
       pricing: { prompt: "-1", completion: "-1" },
     },
     {
@@ -383,11 +389,56 @@ const OPENROUTER_LIST = {
       architecture: { input_modalities: ["text"], output_modalities: ["text"] },
       pricing: { prompt: "0.000001", completion: "0.000002" },
     },
+    {
+      id: "openai/gpt-chat-latest",
+      name: "OpenAI: GPT Chat Latest",
+      architecture: { input_modalities: ["text", "image", "file"], output_modalities: ["text"] },
+      pricing: { prompt: "0.000005", completion: "0.00003" },
+    },
+    {
+      id: "openrouter/fusion",
+      name: "OpenRouter: Fusion",
+      architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+      pricing: { prompt: "-1", completion: "-1" },
+    },
+    {
+      id: "typesafe/jev-router",
+      name: "TypeSafe: Jev Router",
+      architecture: { input_modalities: ["text", "image", "file"], output_modalities: ["text"] },
+      pricing: { prompt: "-1", completion: "-1" },
+    },
+    {
+      id: "nvidia/switchyard",
+      name: "NVIDIA: Switchyard",
+      architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+      pricing: { prompt: "-1", completion: "-1" },
+    },
+    {
+      id: "google/gemini-nano-banana-2.1",
+      name: "Google: Nano Banana 2.1",
+      architecture: { input_modalities: ["text", "image"], output_modalities: ["image", "text"] },
+      pricing: { prompt: "0.0000005", completion: "0.000003" },
+    },
   ],
 };
 
 /** OpenRouter ids the kit never offers, live or installed. */
-const EXCLUDED_OPENROUTER_IDS = ["anthropic/claude-sonnet-4.6:batch", "google/gemma-4-31b-it:free", "openrouter/free", "~google/gemini-flash-latest", "~unbiased/pareto-latest"];
+const EXCLUDED_OPENROUTER_IDS = [
+  "anthropic/claude-sonnet-4.6:batch",
+  "google/gemma-4-31b-it:free",
+  // Routers and moving aliases: the provider picks the model.
+  "openrouter/auto",
+  "openrouter/free",
+  "openrouter/fusion",
+  "typesafe/jev-router",
+  "nvidia/switchyard",
+  "~google/gemini-flash-latest",
+  "~unbiased/pareto-latest",
+  "openai/gpt-chat-latest",
+  // Image output.
+  "google/gemini-nano-banana-2.1",
+  "acme/image-maker",
+];
 
 function byId(entry: ChatProviderModels | undefined): Map<string, ChatModelInfo> {
   assert.ok(entry && "models" in entry, JSON.stringify(entry));
@@ -400,7 +451,7 @@ describe("OpenRouter live list", () => {
     return { chat: createChatKit({ providers: [{ name: "router", provider: "openrouter", apiKey: "or-key" }], fetch: fake.fetch }), fake };
   }
 
-  it("lists text-answering models, models without tools kept; :batch, :free, openrouter/free, ~*-latest and image-output models left out", async () => {
+  it("lists text-answering models, models without tools kept; :batch, :free, router, -latest and image-output models left out", async () => {
     const { chat, fake } = kit();
     const [entry] = await chat.listModels();
     assert.ok(entry && "models" in entry);
@@ -408,7 +459,7 @@ describe("OpenRouter live list", () => {
     assert.ok(entry.fetchedAt && !Number.isNaN(Date.parse(entry.fetchedAt)));
     assert.deepEqual(
       entry.models.map((model) => model.id),
-      ["anthropic/claude-sonnet-4.6", "anthropic/claude-nova-6", "acme/text-only", "openrouter/auto"],
+      ["anthropic/claude-sonnet-4.6", "anthropic/claude-nova-6", "acme/text-only", "acme/unpriced"],
     );
     assert.equal(fake.calls[0]?.headers.authorization, undefined, "the public list is read without the key");
     for (const model of EXCLUDED_OPENROUTER_IDS) {
@@ -433,7 +484,7 @@ describe("OpenRouter live list", () => {
     });
     assert.deepEqual(models.get("acme/text-only")?.input, ["text"]);
     assert.equal(models.get("acme/text-only")?.fileDocuments, false);
-    assert.equal(models.get("openrouter/auto")?.rate, undefined, "a -1 price is no rate, never 0");
+    assert.equal(models.get("acme/unpriced")?.rate, undefined, "a -1 price is no rate, never 0");
     assert.deepEqual(models.get("anthropic/claude-nova-6")?.rate, {
       input: 2,
       output: 10,
@@ -538,18 +589,32 @@ describe("OpenRouter live list", () => {
       return { chat: createChatKit({ providers: [{ name: "router", provider: "openrouter", apiKey: "k" }], fetch: fake.fetch }), fake };
     }
 
-    it("is filtered like the live list: no :batch, :free, openrouter/free or ~*-latest model is listed or run", async () => {
+    it("is filtered like the live list: no :batch, :free, router, -latest or image-output model is listed or run", async () => {
       const { chat, fake } = installedKit();
       const [entry] = await chat.listModels();
       assert.ok(entry && "models" in entry && entry.source === "installed");
       const listedIds = entry.models.map((model) => model.id);
       assert.ok(listedIds.includes("anthropic/claude-sonnet-4.6"));
       assert.deepEqual(
-        listedIds.filter((id) => id.endsWith(":batch") || id.endsWith(":free") || id === "openrouter/free" || id.startsWith("~")),
+        listedIds.filter((id) => /:batch$|:free$|^openrouter\/|-latest$|image|nano-banana|^typesafe\/jev-router$/.test(id)),
         [],
       );
-      // All in pi-ai 1.2's OpenRouter catalogue.
-      for (const model of ["anthropic/claude-haiku-4.5:batch", "google/gemma-4-31b-it:free", "openrouter/free", "~google/gemini-flash-latest", "~anthropic/claude-opus-latest"]) {
+      // All in pi-ai 1.2's OpenRouter chat catalogue; the image-output ones are in its image catalogue too.
+      const excluded = [
+        "anthropic/claude-haiku-4.5:batch",
+        "google/gemma-4-31b-it:free",
+        "openrouter/auto",
+        "openrouter/auto-beta",
+        "openrouter/free",
+        "openrouter/fusion",
+        "typesafe/jev-router",
+        "~google/gemini-flash-latest",
+        "~anthropic/claude-opus-latest",
+        "openai/gpt-chat-latest",
+        "google/gemini-3-pro-image",
+        "google/gemini-nano-banana-2.1",
+      ];
+      for (const model of excluded) {
         const last = lastEvent(await collect(chat.runTurn(turn({ model }))));
         assert.equal(last.type === "failed" && last.error.code, "UNKNOWN_MODEL", model);
       }
@@ -698,7 +763,7 @@ describe("Gemini chat-only filter", () => {
   /** pi-ai's Gemini catalogue's moving aliases, which Google can point at another model. */
   const ALIASES = ["gemini-flash-latest", "gemini-flash-lite-latest"];
 
-  it("leaves Live, computer use, image-output (Nano Banana too) and Deep Research models and -latest aliases out of the live list", async () => {
+  it("leaves Live, computer use, image-output (Nano Banana too) and Deep Research models and -latest aliases out of the live list", async (t) => {
     const generate = ["generateContent"];
     const fake = createFakeFetch([
       {
@@ -724,9 +789,17 @@ describe("Gemini chat-only filter", () => {
     const chat = createChatKit({ providers: [{ name: "gemini", provider: "google", apiKey: "gemini-key" }], fetch: fake.fetch });
     const models = byId((await chat.listModels())[0]);
     assert.deepEqual([...models.keys()], ["gemini-3.8-flash", "gemini-3.1-pro-preview-customtools", "gemma-4-31b-it"]);
+    // pi-ai's Gemini adapter sends turns with the global fetch.
+    const sent = t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 500 }));
+    for (const model of ["nano-banana-pro-preview", "gemini-nano-banana-2.1", "gemini-3-pro-image-preview"]) {
+      const turnResult = lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model }))));
+      assert.equal(turnResult.type === "failed" && turnResult.error.code, "UNKNOWN_MODEL", model);
+    }
+    assert.equal(sent.mock.callCount(), 0, "no turn was sent");
+    assert.equal(fake.calls.length, 1, "only the list was read");
   });
 
-  it("filters the installed catalogue the same way when models.list fails (a region block, for example)", async () => {
+  it("filters the installed catalogue the same way when models.list fails (a region block, for example)", async (t) => {
     const fake = createFakeFetch([
       {
         method: "GET",
@@ -746,10 +819,13 @@ describe("Gemini chat-only filter", () => {
     for (const id of ["nano-banana-pro-preview", "gemini-nano-banana-2.1", "gemini-3.1-flash-image", "gemini-3-pro-image"]) {
       assert.equal(isOfferedGeminiId(id), false, id);
     }
-    for (const model of ["gemini-3.1-flash-live-preview", "gemini-flash-latest"]) {
+    const sent = t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 500 }));
+    for (const model of ["gemini-3.1-flash-live-preview", "gemini-flash-latest", "gemini-3.1-flash-lite-image", "nano-banana-pro-preview"]) {
       const turnResult = lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model }))));
       assert.equal(turnResult.type === "failed" && turnResult.error.code, "UNKNOWN_MODEL", `${model}: turns resolve against the filtered list`);
     }
+    assert.equal(sent.mock.callCount(), 0, "no turn was sent");
+    assert.equal(fake.calls.length, 1, "only the list was read; a failed read is not retried within a minute");
   });
 });
 
