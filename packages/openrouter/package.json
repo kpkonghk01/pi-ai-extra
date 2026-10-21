@@ -1,0 +1,37 @@
+{
+  "name": "@hk01/pi-ai-extra-openrouter",
+  "version": "0.1.0",
+  "description": "pi-ai's OpenRouter provider with an explicit key, a live model list and the chat kit's traits",
+  "license": "UNLICENSED",
+  "type": "module",
+  "exports": {
+    "./pi-ai": {
+      "import": {
+        "types": "./dist/pi-ai.d.mts",
+        "default": "./dist/pi-ai.mjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "check": "tsc --noEmit -p .",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\""
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "1.2.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.2.0",
+    "@hk01/pi-ai-extra-internal": "workspace:*"
+  }
+}
