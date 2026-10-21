@@ -18,6 +18,8 @@ Publish one self-contained `.tgz` artifact per public adapter package through Gi
 - `@hk01/pi-ai-extra-toapis` releases from `toapis-vX.Y.Z`.
 - `@hk01/pi-ai-extra-google` releases from `google-vX.Y.Z` (added 2026-09-28 for Gemini image generation, which pi-ai does not provide).
 
+Amended 2026-10-21 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4583)): `@hk01/pi-ai-extra-openrouter` releases from `openrouter-vX.Y.Z` ([ADR 0009](0009-chat-kit-contract-aligned-with-pi-ai.md)). The two kits, added after this list was written, release the same way: `@hk01/pi-ai-extra-image-kit` from `image-kit-vX.Y.Z` ([ADR 0006](0006-image-kit-package.md)) and `@hk01/pi-ai-extra-chat-kit` from `chat-kit-vX.Y.Z` ([ADR 0008](0008-chat-kit-package.md)).
+
 GitHub Actions validates that the tag matches the package manifest version, checks, tests and builds the selected package, packs it, and attaches the artifact to the matching GitHub Release. The pnpm version comes from the root `packageManager` field.
 
 Shared implementation is private workspace code and must be bundled into each public artifact. A consumer must never need to resolve an unpublished sibling workspace package.

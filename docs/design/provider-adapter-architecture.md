@@ -43,11 +43,13 @@ A consumer app imports adapters on its server only. It reads a selected provider
 Consumer server secret
         │
         ▼
-KIE / ToAPIs / Google adapter package
+KIE / ToAPIs / Google / OpenRouter adapter package
         │
         ├─ main entry: validated image operation → upload → task → final image + usage
         │              task lookup by id → status + usage (billing reconciliation)
-        └─ /pi-ai:     pi-ai Provider: chat (Responses / Messages / Gemini) and image models
+        │              (none for OpenRouter, whose images pi-ai serves)
+        └─ /pi-ai:     chat provider: pi-ai Provider with chatKit traits and a live model list;
+                       chat (Responses / Messages / Completions / Gemini) and image models
         │
         ▼
 Selected provider and model
@@ -81,7 +83,7 @@ Use the committed provider files in [`referenc-docs/`](../../referenc-docs/) bef
 
 ## Release path
 
-A `kie-vX.Y.Z`, `toapis-vX.Y.Z`, `google-vX.Y.Z`, `image-kit-vX.Y.Z` or `chat-kit-vX.Y.Z` tag triggers the GitHub Actions release workflow. The workflow validates the corresponding package version, checks, builds, tests and packs it, installs the packed `.tgz` into a fresh project as a consumer would, then attaches it to a GitHub Release. For the kits, the smoke test installs packed copies of the three provider packages as their peers (they are not on a registry): the image kit is loaded from `require()` and `import()` with React, and the chat kit, with pi-ai, from `import()` only (its `require()` must fail), lists every provider's models offline (each uses its installed catalogue or definitions) and runs one offline turn.
+A `kie-vX.Y.Z`, `toapis-vX.Y.Z`, `google-vX.Y.Z`, `openrouter-vX.Y.Z`, `image-kit-vX.Y.Z` or `chat-kit-vX.Y.Z` tag triggers the GitHub Actions release workflow. The workflow validates the corresponding package version, checks, builds, tests and packs it, installs the packed `.tgz` into a fresh project as a consumer would, then attaches it to a GitHub Release. For the kits, the smoke test installs packed copies of the provider packages they peer on (they are not on a registry): the image kit's three image provider packages, and the chat kit's optional provider peers. The image kit is loaded from `require()` and `import()` with React, and the chat kit, with pi-ai, from `import()` only (its `require()` must fail), lists every provider's models offline (each uses its installed catalogue or definitions) and runs one offline turn.
 
 Related ADRs:
 

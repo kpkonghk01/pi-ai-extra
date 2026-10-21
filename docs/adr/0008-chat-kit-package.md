@@ -77,7 +77,7 @@ Amended 2026-10-16 ([DATA-4568](https://hk01-digital.atlassian.net/browse/DATA-4
 
 Amended 2026-10-21 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4583)): [ADR 0009](0009-chat-kit-contract-aligned-with-pi-ai.md) supersedes part of this decision.
 
-- It replaces the turn input, events, usage field names, error shape and provider registration with Chat kit 0.3.0's pi-ai-aligned contract.
+- It replaces the turn input, events, usage field names, error shape and provider registration with the chat kit 0.3.0's pi-ai-aligned contract.
 - It drops the consumer-chosen provider names: a provider is known by its pi-ai id.
 - It partly reverses the rejected option "Fill the gaps inside each provider package". The per-provider parts (grounding, the live lists, the cost readers and the capability flags) move into the provider packages, with a new openrouter package for OpenRouter's. The per-API gaps stay in the kit.
 - "The kit sends no tools" no longer holds: tools now pass through.
