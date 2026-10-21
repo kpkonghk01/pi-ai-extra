@@ -1,8 +1,8 @@
 import type { ChatTurnErrorCode } from "./types.ts";
 
 /**
- * A failure the kit detects itself (before or while building the request). It never escapes
- * `runTurn`: it becomes a `failed` event with this code. Thrown inside a payload transform, it
+ * A failure the kit detects itself (before or while building the request). It never escapes a
+ * turn: it becomes the final `error` event, with this code. Thrown inside a payload transform, it
  * stops the request before anything is sent.
  */
 export class TurnFailure extends Error {

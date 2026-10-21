@@ -19,7 +19,7 @@ The `/pi-ai` subpath is ESM-only because pi-ai itself is ESM-only; a CommonJS se
 
 A fourth package, [`@hk01/pi-ai-extra-image-kit`](packages/image-kit/README.md), is the image client for Google AI Studio apps built on the three provider packages (their peer dependencies): model families derived from the installed catalogues through an app-owned, route-scoped catalogue policy, request validation, NDJSON streaming, a browser reader and React UI (model selector, error panel). Only its `/server` entry imports the provider packages; its `/browser` and `/react` entries run in the browser and never hold keys or provider code ([ADR 0006](docs/adr/0006-image-kit-package.md), [ADR 0007](docs/adr/0007-catalogue-policy-model-selection.md)).
 
-A fifth package, [`@hk01/pi-ai-extra-chat-kit`](#chat-kit), runs one chat turn the same way on Gemini, OpenRouter, KIE and ToAPIs (documents, response schema, safety blocks, usage and cost) and lists each provider's live models, for a server-side gateway with no per-provider code. It is ESM-only and server-only ([ADR 0008](docs/adr/0008-chat-kit-package.md)).
+A fifth package, [`@hk01/pi-ai-extra-chat-kit`](#chat-kit), runs one chat turn the same way on the chat providers you register (Gemini, OpenRouter, KIE, ToAPIs): it takes pi-ai's `Context` and streams pi-ai's events, adds documents, a response schema, safety blocks, usage and cost, and lists each provider's live models, for a server-side gateway with no per-provider code. It is ESM-only and server-only ([ADR 0008](docs/adr/0008-chat-kit-package.md), [ADR 0009](docs/adr/0009-chat-kit-contract-aligned-with-pi-ai.md)). `@hk01/pi-ai-extra-openrouter` is a sixth package: pi-ai's OpenRouter provider with an explicit key and a live list, `/pi-ai` only.
 
 Non-negotiable behaviour (see [ADR 0003](docs/adr/0003-explicit-provider-execution.md)):
 
@@ -32,11 +32,12 @@ Non-negotiable behaviour (see [ADR 0003](docs/adr/0003-explicit-provider-executi
 Install the exact release asset on the server (build) side and pin the full URL:
 
 ```sh
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.4.0/hk01-pi-ai-extra-kie-0.4.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.4.0/hk01-pi-ai-extra-toapis-0.4.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.5.0/hk01-pi-ai-extra-google-0.5.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.5.0/hk01-pi-ai-extra-kie-0.5.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.5.0/hk01-pi-ai-extra-toapis-0.5.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.6.0/hk01-pi-ai-extra-google-0.6.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.1.0/hk01-pi-ai-extra-openrouter-0.1.0.tgz   # optional, chat only, needs pi-ai
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/image-kit-v0.2.0/hk01-pi-ai-extra-image-kit-0.2.0.tgz   # optional, needs all three
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.2.0/hk01-pi-ai-extra-chat-kit-0.2.0.tgz     # optional, needs all three and pi-ai
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.3.0/hk01-pi-ai-extra-chat-kit-0.3.0.tgz     # optional, needs pi-ai and the providers you register
 ```
 
 npm works the same way (`npm install <url>`). Upgrade or roll back by changing the URL. `zod@4.6.5` is installed automatically; install `@earendil-works/pi-ai@1.2.0` only if you use the `/pi-ai` subpath.
@@ -267,6 +268,10 @@ createToapisProvider({
 
 KIE adds `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `gpt-6-sol`, `gpt-6-luna` and `gpt-6-1-sol`, and exports its credit price as `KIE_USD_PER_CREDIT`. The rate types (`ModelRate`, `RatePeriod`, `TokenRates`, `LargePromptRates`) are exported by each `/pi-ai` entry.
 
+### Upgrading to KIE/ToAPIs 0.5 and Google 0.6
+
+The `/pi-ai` factories (`createKieProvider`, `createToapisProvider`, `createGoogleProvider`) now return a chat provider: a pi-ai `Provider` with a `chatKit` member (what the provider takes, which models it offers, model rates and its cost policy) and a live model list as `refreshModels`, which replaces the chat models, so `models.refresh()` reads it for any pi-ai consumer. Plain pi-ai code ignores `chatKit`. The change is additive: new `fetch` option on all three (it serves chat requests and the model list; a request's own `fetch` wins), and `grounding` on Google (Google Search and URL context on every chat request, and a prompt Gemini blocks ends with its block reason as `rawStopReason`). The rate types and `ChatProvider` / `ChatProviderTraits` are exported by each `/pi-ai` entry. `@hk01/pi-ai-extra-openrouter` 0.1.0 is new: `createOpenRouterProvider({ apiKey, baseUrl?, fetch? })` extends pi-ai's `openrouterProvider()` with an explicit key and a live list, and has a `/pi-ai` entry only.
+
 ### Upgrading from KIE/ToAPIs 0.2 and Google 0.3
 
 pi-ai 1.2 removed `createImagesModels()`, `createImagesProvider()`, `ImagesProvider` and `ImagesModel`, so the separate image factories are gone:
@@ -305,52 +310,54 @@ Pass `cacheRetention` explicitly: when it is omitted, pi-ai falls back to the `P
 
 ## Chat kit
 
-`@hk01/pi-ai-extra-chat-kit` is the server-side chat counterpart of the image kit ([ADR 0008](docs/adr/0008-chat-kit-package.md)). A gateway calls `runTurn()` for every chat turn and `listModels()` for the models it can offer, and needs no per-provider code: Gemini, OpenRouter, KIE and ToAPIs get the same turn features (reference documents, a response schema, safety-block reporting, usage and cost), filled in per wire API where pi-ai 1.2 has none. It is ESM-only (like pi-ai) and server-only. It never chooses a provider and never falls back ([ADR 0003](docs/adr/0003-explicit-provider-execution.md)).
+`@hk01/pi-ai-extra-chat-kit` is the server-side chat counterpart of the image kit ([ADR 0008](docs/adr/0008-chat-kit-package.md), [ADR 0009](docs/adr/0009-chat-kit-contract-aligned-with-pi-ai.md)). It registers the chat providers a consumer builds with the provider packages' factories, offers one interface for calling LLMs, and routes each call by its model reference to the matching provider. It extends pi-ai instead of replacing it: a turn takes pi-ai's `Context` and option names and streams pi-ai's events, and the kit adds what pi-ai lacks (reference documents, a response schema, safety-block reporting, a usage record with its cost), filled in per wire API. It is ESM-only (like pi-ai) and server-only. It never chooses a provider and never falls back ([ADR 0003](docs/adr/0003-explicit-provider-execution.md)).
 
 ### Install
 
 ```sh
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.2.0/hk01-pi-ai-extra-chat-kit-0.2.0.tgz
-pnpm add @earendil-works/pi-ai@1.2.0   # peer, with the KIE, ToAPIs and Google packages above
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.3.0/hk01-pi-ai-extra-chat-kit-0.3.0.tgz
+pnpm add @earendil-works/pi-ai@1.2.0   # peer, with the provider packages you use (google 0.6+, openrouter 0.1+, kie and toapis 0.5+)
 ```
 
-### `createChatKit`
+### Chat providers and `createChatKit`
+
+A chat provider is a pi-ai `Provider` with the kit's traits under `chatKit`. Each provider package's `/pi-ai` factory builds one with an explicit key:
 
 ```ts
 import { createChatKit } from "@hk01/pi-ai-extra-chat-kit";
+import { createGoogleProvider } from "@hk01/pi-ai-extra-google/pi-ai";
+import { createOpenRouterProvider } from "@hk01/pi-ai-extra-openrouter/pi-ai";
+import { createKieProvider } from "@hk01/pi-ai-extra-kie/pi-ai";
 
 const chat = createChatKit({
   providers: [
-    { name: "gemini", provider: "google", apiKey: geminiKey, grounding: true },
-    { name: "openrouter", provider: "openrouter", apiKey: openRouterKey },
-    { name: "kie", provider: "kie", apiKey: kieKey },
-    { name: "toapis", provider: "toapis", apiKey: toapisKey, baseUrl: "https://toapis.cn" },
+    createGoogleProvider({ apiKey: geminiKey, grounding: true }),
+    createOpenRouterProvider({ apiKey: openRouterKey }),
+    createKieProvider({ apiKey: kieKey }),
   ],
 });
 ```
 
-| `provider` | pi-ai wire APIs | `baseUrl` (optional) | PDF and image documents |
-| --- | --- | --- | --- |
-| `google` | Gemini | Chat base URL, default `https://generativelanguage.googleapis.com/v1beta` | Yes |
-| `openrouter` | OpenAI Completions; Anthropic Messages for `anthropic/*` | API root, default `https://openrouter.ai/api` (Completions at `<root>/v1`) | Yes |
-| `kie` | OpenAI Responses (Codex), Anthropic Messages (Claude) | Host, default `https://api.kie.ai` (`/openai/v1`, `/anthropic`) | Not yet |
-| `toapis` | OpenAI Responses (Codex), Anthropic Messages (Claude) | Host, default `https://toapis.com` | Not yet |
+| Factory | Provider id | Options beyond `apiKey` | PDF and image documents | Tools |
+| --- | --- | --- | --- | --- |
+| `createGoogleProvider` | `google` | `grounding`, `baseUrl`, `modelIds`, `fetch` | Yes | Yes |
+| `createOpenRouterProvider` (`@hk01/pi-ai-extra-openrouter`) | `openrouter` | `baseUrl`, `fetch` | Yes | Yes |
+| `createKieProvider` | `kie` | `responsesBaseUrl`, `claudeBaseUrl`, `models`, `fetch` | Not yet | Not yet |
+| `createToapisProvider` | `toapis` | `baseUrl`, `models`, `fetch` | Not yet | Not yet |
 
-- `name` is the consumer's own (for example `gemini` for `google`) and is what a turn's `provider` names. Names are unique; two names may share a provider kind, each with its own key.
-- Each provider is registered with its explicit key, in its own pi-ai `Models` collection with an empty auth context: the kit never reads `GEMINI_API_KEY`, `OPENROUTER_API_KEY` or any other environment variable. Google comes from `@hk01/pi-ai-extra-google/pi-ai`, OpenRouter is pi-ai's built-in provider with its environment and OAuth auth replaced by the key, and KIE and ToAPIs come from their `/pi-ai` factories.
-- A turn's `model` must be in that provider's model list (see [`listModels`](#listmodels)): its live list, which a new kit reads before its first turn, or, while no live list could be read, its installed catalogue (`GOOGLE_CHAT_MODEL_IDS`, pi-ai's OpenRouter catalogue, each filtered as the live list is) or package definitions (`KIE_CHAT_MODELS`, `TOAPIS_CHAT_MODELS`). Otherwise it fails with `UNKNOWN_MODEL`.
-- `grounding: true` (Google only) adds the Google Search and URL context tools to every turn.
-- `fetch` (optional) is for tests or instrumentation. It serves every model list, and every turn except Gemini's, whose pi-ai adapter rejects a custom fetch.
-- An unknown provider, a duplicate name, an empty key, an unknown option or `grounding` on another provider throws a `TypeError`.
+- The kit knows a provider by its pi-ai id (`provider.id`). A name a consumer gives a provider (for example the portal's `gemini` for `google`) is the consumer's own: it maps the name before calling the kit, and keeps its own table from configuration to factories.
+- Every key goes to a factory, so the kit never handles one. Each provider resolves only the key its factory bound: the kit registers them in a pi-ai `Models` collection with an empty auth context, so nothing reads `GEMINI_API_KEY`, `OPENROUTER_API_KEY` or any other environment variable.
+- **One kit per tenant.** A chat provider binds one key, so two keys for the same provider are two kits. A multi-tenant service creates a kit per tenant; a kit holds no timers between calls, so it needs no `dispose()`.
+- `createChatKit` throws a `TypeError` for a value that is not a chat provider (no `chatKit` traits, for example a provider from an older package), for two providers with the same id, and for an invalid `fetch`.
+- `fetch` (optional) is for tests or instrumentation: every turn's requests use it instead of the provider's own, except Gemini's, whose pi-ai adapter rejects a custom fetch. Model lists use each factory's `fetch` option.
 
-### `runTurn`
+### Turns: `streamSimple` and `completeSimple`
 
 ```ts
-for await (const event of chat.runTurn(
+const stream = chat.streamSimple(
+  { provider: "google", id: "gemini-3.5-flash" }, // a pi-ai Model is a valid reference too
+  { systemPrompt: gem.instructions, messages: [...history, { role: "user", content: userMessage, timestamp: Date.now() }] }, // pi-ai's Context
   {
-    provider: "gemini",
-    model: "gemini-3.5-flash",
-    systemPrompt: gem.instructions,
     documents: gem.files.map((file) => ({
       name: file.name,
       mimeType: file.mimeType,
@@ -358,20 +365,28 @@ for await (const event of chat.runTurn(
       size: file.bytes, // optional: Gemini fetches by URL only when the size is known to be at most 15 MB
       load: () => blobStore.read(file.key), // called only when the bytes must be sent
     })),
-    history: session.turns, // [{ role: "user" | "assistant", text }]
-    message: userMessage,
     responseSchema: { name: "reply", schema: replyJsonSchema }, // optional: the answer streams as JSON text
-    settings: { temperature: 0.7, maxOutputTokens: 2048, reasoning: "low" }, // optional
+    temperature: 0.7,
+    maxTokens: 2048,
+    reasoning: "low",
+    signal: abortController.signal,
   },
-  { signal: abortController.signal },
-)) {
-  if (event.type === "text") res.write(event.delta);
-  else if (event.type === "done") await usageLog.record(event.usage); // usage: undefined if none was reported, costUsd/costSource inside; truncated: cut off at the output-token limit
-  else await session.saveFailedTurn(event.error, event.usage); // "failed" is always the last event
-}
+);
+for await (const event of stream) if (event.type === "text_delta") res.write(event.delta);
+const message = await stream.result(); // pi-ai's AssistantMessage, with the kit's record under message.chatKit
+if (message.stopReason === "error") showError(message.chatKit.error.code, message.rawStopReason);
+else await usageLog.record(message.chatKit.usage); // undefined if the provider reported none
 ```
 
-A turn emits `text` deltas (thinking is never streamed), then exactly one `done` or `failed` (with `error`). Either carries `usage` only when the provider reported it. It never throws. A free-form answer that stops at the output-token limit (`settings.maxOutputTokens` or the model's maximum) still ends `done`, with `truncated: true`; the text already streamed is the whole, cut-off answer. `truncated` is absent on a normal stop. A turn with a `responseSchema` fails there instead, with `PROVIDER_ERROR`, because a cut-off JSON answer cannot be parsed. Aborting the signal, or stopping the iteration, cancels the request. `settings.reasoning` is pi-ai's `ThinkingLevel` (`minimal` to `max`), clamped to what the model supports; without it, thinking is off where the model allows. Unknown keys in the input, `responseSchema` and `settings` are rejected.
+`completeSimple()` is `streamSimple(...).result()`. Both mirror pi-ai's `Models.streamSimple()` and `completeSimple()` and never throw: a failure arrives as the final `error` event and a `stopReason: "error"` message.
+
+- **Reference.** `{ provider, id }`: the pi-ai provider id and the provider's model id. It must be in the provider's list (see [`listModels`](#listmodels)); otherwise the turn fails with `UNKNOWN_MODEL`.
+- **Context.** pi-ai's `Context`, unextended: `systemPrompt`, `messages`, and `tools`. Documents go in an option and open the first user message, so provider prompt caching covers them (see [Prompt layout and caching](#prompt-layout-and-caching)).
+- **Options.** pi-ai's names: `temperature`, `maxTokens`, `reasoning` (`ThinkingLevel`; omitted means thinking off where the model allows), `signal`, `sessionId`, `maxRetries` (default 2; only the initial request is retried), and `toolChoice` (`"auto"` or `"none"`), plus the kit's `documents` and `responseSchema`. Every optional member also accepts `undefined`, for `exactOptionalPropertyTypes`. Unknown keys are rejected with `INVALID_REQUEST`.
+- **Events.** pi-ai's, passed through: `start`, `text_*`, `thinking_*`, `toolcall_*`, then `done` or `error`. A failure the kit finds before sending is a lone `error` event with no `start`, as pi-ai's `lazyStream` ends a setup failure. A response schema on Anthropic Messages is a forced tool call, which the kit turns into `text_*` events, a text block and `stopReason: "stop"`.
+- **Final message.** pi-ai's `AssistantMessage`: `provider`, `api` and `model` are the model's own (so pi-ai replays thinking only for the same model; `api` is `"unknown"` when no model resolved), `errorMessage` starts with `[provider/model]`, and `rawStopReason` holds the provider's own stop or block reason. `message.usage` stays pi-ai's zero-filled usage. The message goes back into `Context.messages` unchanged: pi-ai's adapters ignore `chatKit`. An answer cut off at `maxTokens` ends `stopReason: "length"` (the text is the whole, cut-off answer); with a `responseSchema` it fails instead, with `PROVIDER_ERROR`, because cut-off JSON cannot be parsed. An abort is `stopReason: "aborted"`, without an error.
+
+**Which overload.** A Gem turn takes a tool-free context (`ChatToolFreeContext`) and an optional `responseSchema`; an agent turn takes a context that may have `tools` and no schema. Tools and a schema are mutually exclusive, in the types and at run time: a turn with both, from `tools`, from a transcript's `toolsAdded` or from an untyped caller, fails with `INVALID_REQUEST` before anything is sent. An empty `tools` array counts as none. Tools, tool calls and tool results pass through to pi-ai; the kit refuses them with `UNSUPPORTED` only for a provider not yet verified live (KIE, ToAPIs) or a model without tool support. An image in the context on a model without image input fails with `UNSUPPORTED` too, where pi-ai would replace it with placeholder text.
 
 ### `listModels`
 
@@ -380,45 +395,45 @@ for (const entry of await chat.listModels({ signal })) {
   if ("error" in entry) showError(entry.provider, entry.error);   // this provider could not be listed at all
   else render(entry.provider, entry.models, entry.refreshError);   // refreshError: the latest refresh failed, models are still usable
 }
-// entry.models[i]: { id, name, input: ["text", "image", "file"], fileDocuments, responseSchema,
-//                    contextWindow, maxOutputTokens, reasoning, rate?: { input, output, cacheRead?, ... } }
+// entry.models[i]: a pi-ai Model, plus model.chatKit: { fileInput, fileDocuments, tools, responseSchema, rate? }
 ```
 
-`listModels()` returns one entry per configured provider, in configuration order: `{ provider, kind, source, fetchedAt?, refreshError?, models }`, or `{ provider, kind, error }` when the list could not be produced at all. One failing provider never hides the others.
+`listModels()` returns one entry per registered provider, in registration order: `{ provider, source, fetchedAt?, refreshError?, models }`, or `{ provider, error }` when the list could not be produced at all. One failing provider never hides the others. Each model is a pi-ai `Model` (`id`, `name`, `api`, `input`, `contextWindow`, `maxTokens`, `reasoning`, `cost`, …) and is also a valid reference for a turn. Thinking levels come from pi-ai's `getSupportedThinkingLevels(model)`.
 
-| `kind` | Live list | Kept |
+Each provider's live list is its own `refreshModels`, so `models.refresh()` reads it for any pi-ai consumer. It replaces the provider's chat models, so a model the provider drops disappears (pi-ai's `createProvider({ fetchModels })` would merge over the baseline and never remove one):
+
+| Provider | Live list | Kept |
 | --- | --- | --- |
-| `openrouter` | Public `GET <root>/v1/models` (no key) | Every model that answers in text, tool support or not, except the [excluded models](#excluded-models). pi-ai's catalogue is filtered the same way |
-| `google` | `models.list` (`GET <base>/models`) with the key | `generateContent` models, `models/` prefix stripped; plain text chat only: not embedding, Imagen, Veo, TTS, Live (`-live-`), computer use or Deep Research models, and not the [excluded models](#excluded-models). The installed catalogue is filtered the same way |
-| `kie` | `GET <host>/openai/v1/models` (Codex) and `GET <host>/anthropic/v1/models` (Claude) with the key | Only ids with a package definition (`KIE_CHAT_MODELS`), matched across `.` and `-` spellings |
+| `openrouter` | Public `GET <root>/v1/models` (no key) | Every model that answers in text, tool support or not. The kit offers all but the [excluded models](#excluded-models) |
+| `google` | `models.list` (`GET <base>/models`) with the key | `generateContent` models, `models/` prefix stripped; narrowed to `modelIds` when set. The kit offers plain text chat models only: not embedding, Imagen, Veo, TTS, Live (`-live-`), computer use or Deep Research models, and not the [excluded models](#excluded-models) |
+| `kie` | `GET <responsesBaseUrl>/models` (Codex) and `GET <claudeBaseUrl>/v1/models` (Claude) with the key | Only ids with a package definition (`KIE_CHAT_MODELS`), matched across `.` and `-` spellings |
 | `toapis` | `GET <host>/v1/models?type=text` with the key | Only ids with a package definition (`TOAPIS_CHAT_MODELS`) |
 
 - **Refresh.** While no live list has been read, `listModels()` and turns read it and wait for it. A live list is fresh for 30 minutes. After that, `listModels()` and turns answer from it at once and read it again in the background; the calls after that read see the new list, and no call waits for it. A failed refresh keeps the last good list (`source: "live"`), or uses the installed catalogue or definitions when no live list has been read (`source: "installed"`), and reports why in `refreshError`; the next attempt waits a minute. Concurrent callers share one refresh. Aborting `signal` makes `listModels()` reject with its reason; the refresh itself completes for the others.
 - **Deadlines.** A list read has one deadline for all its requests and pages (KIE's two lists, every Gemini page), never one per request: 5 seconds while no live list has been read, since calls wait for that read, and 15 seconds for the background refresh of a stale list, which no call waits for.
-- **Turns use the same list.** `runTurn` resolves its `model` against the list `listModels()` would return, so a model only the live list has works, and a model the live list no longer has fails with `UNKNOWN_MODEL` once a read has dropped it. The trade-off of not waiting: the call that finds the list 30 minutes old, and any call before its refresh lands (within 15 seconds), still resolves against the old list, so a model the provider has dropped may be sent once more after the 30 minutes; the provider then answers with its own error (`PROVIDER_ERROR`).
-- **OpenRouter models** are built the way pi-ai's own catalogue generator builds them. A model pi-ai's catalogue knows keeps that entry (its API, compat and thinking fixes) with the live limits and price. A new `anthropic/*` id goes through OpenAI Completions, so a new Claude family is never sent budget-thinking parameters it may reject. `input` comes from `architecture.input_modalities`. A live price of -1 is no rate.
+- **Turns use the same list.** A turn resolves its reference against the list `listModels()` would return, so a model only the live list has works, and a model the live list no longer has fails with `UNKNOWN_MODEL` once a read has dropped it. The trade-off of not waiting: the call that finds the list 30 minutes old, and any call before its refresh lands (within 15 seconds), still resolves against the old list, so a model the provider has dropped may be sent once more; the provider then answers with its own error (`PROVIDER_ERROR`).
+- **OpenRouter models** are built the way pi-ai's own catalogue generator builds them. A model pi-ai's catalogue knows keeps that entry (its API, compat and thinking fixes) with the live limits and price. A new `anthropic/*` id goes through OpenAI Completions, so a new Claude family is never sent budget-thinking parameters it may reject. Input comes from `architecture.input_modalities`. A live price of -1 is no rate. pi-ai's `personalizeOpenRouterCatalog` could later narrow a catalogue to a key's own list.
 - **Gemini models** that pi-ai's catalogue knows keep its metadata (thinking levels, limits). A new id gets text input only, the limits Gemini reports, no thinking levels and, unless the Gemini rate table has it, no rate.
 - **KIE** does not document its model lists' response shape: it is read as an OpenAI-style `{ data: [{ id }] }` list. A list that names none of the package's models counts as a failed refresh, so the definitions stay in use.
 
 #### Excluded models
 
-These are never listed or run, on the live list and on the installed catalogue alike; a turn on one fails with `UNKNOWN_MODEL` before anything is sent.
+These are never listed or run, on the live list and on the installed catalogue alike; a turn on one fails with `UNKNOWN_MODEL` before anything is sent. Each provider package decides them in its `chatKit.offers()`.
 
 - **Image output, every provider** (product-owner decision): Gems do not take image answers yet; offering them will be a separate decision. On OpenRouter, any model whose `architecture.output_modalities` has `image` (`google/gemini-3-pro-image`, `openai/gpt-5-image`, …); in pi-ai's catalogue, which has no output modalities, any id that is also in pi-ai's OpenRouter image catalogue (`google/gemini-3-pro-image`, `google/gemini-nano-banana-2.1`). On Gemini, `-image` ids and Nano Banana ones (`nano-banana-pro-preview`, `gemini-nano-banana-2.1`).
-- **Routers and moving aliases, every provider** (product-owner decision): a model whose provider picks the model itself, which can silently change both its behaviour and its price. On OpenRouter: every `openrouter/*` id (`openrouter/auto`, `auto-beta`, `fusion`, `free`, and any new one); on the live list, every model OpenRouter tags as a router (`architecture.tokenizer` is `Router`), so a new one needs no kit release; the third-party routers `typesafe/jev-router` and `nvidia/switchyard`, by id, since pi-ai's catalogue has no such tag; and every `-latest` alias, with or without the `~` prefix (`~google/gemini-flash-latest`, `~unbiased/pareto-latest`, `openai/gpt-chat-latest`). On Gemini, every `-latest` alias (`gemini-flash-latest`, `gemini-flash-lite-latest`, `gemini-pro-latest`).
+- **Routers and moving aliases, every provider** (product-owner decision): a model whose provider picks the model itself, which can silently change both its behaviour and its price. On OpenRouter: every `openrouter/*` id (`openrouter/auto`, `auto-beta`, `fusion`, `free`, and any new one); on the live list, every model OpenRouter tags as a router (`architecture.tokenizer` is `Router`), so a new one needs no release; the third-party routers `typesafe/jev-router` and `nvidia/switchyard`, by id, since pi-ai's catalogue has no such tag; and every `-latest` alias, with or without the `~` prefix (`~google/gemini-flash-latest`, `~unbiased/pareto-latest`, `openai/gpt-chat-latest`). On Gemini, every `-latest` alias (`gemini-flash-latest`, `gemini-flash-lite-latest`, `gemini-pro-latest`).
 - **OpenRouter `:batch` models**: the kit sends no batch requests.
 - **OpenRouter `:free` models**: they are heavily rate-limited, and their providers may train on the prompts, which does not suit a newsroom gateway.
 
-Each model reports what a gateway admin needs to offer it:
+What each listed model says about itself, under `model.chatKit`:
 
 | Field | Meaning |
 | --- | --- |
-| `id`, `name` | The provider's model id (a turn's `model`) and display name |
-| `input` | What the model reads: `text`, `image`, `file` (PDF) |
-| `fileDocuments` | Whether a turn may send it both PDF and image documents: the provider takes them (not KIE or ToAPIs yet) and the model reads both natively (`input` has `file` and `image`). A model without `file` input is `false`, since a PDF never goes to a paid parser. A model from pi-ai's OpenRouter catalogue (the live list unreadable) is `false` too |
-| `responseSchema` | Whether a turn may carry a `responseSchema` (not an always-thinking Claude model on ToAPIs) |
-| `contextWindow`, `maxOutputTokens`, `reasoning` | Limits, and whether it can think (`settings.reasoning`) |
-| `rate` | The rate period in force now, as published (an unpublished cache rate is absent here), or absent when the model has no rate |
+| `fileInput` | The model reads PDFs natively (pi-ai's `input` has only `text` and `image`) |
+| `fileDocuments` | Whether a turn may send it both PDF and image documents: the provider takes them (not KIE or ToAPIs yet) and the model reads both natively. A model without file input is `false`, since a PDF never goes to a paid parser. A model from pi-ai's OpenRouter catalogue (the live list unreadable) is `false` too |
+| `tools` | Whether a turn may send it `Context.tools`: the provider takes tools (not KIE or ToAPIs yet) and the model does (OpenRouter: `supported_parameters` has `tools`) |
+| `responseSchema` | Whether a turn without `reasoning` may carry a `responseSchema`. With a reasoning level, a schema may still be `UNSUPPORTED` (Anthropic Messages without native structured output) |
+| `rate` | The model's dated rate schedule (`ModelRate`), or absent when the model has none: never a zero rate |
 
 ### Documents
 
@@ -430,25 +445,25 @@ Each model reports what a gateway admin needs to offer it:
 
 - Plain-text documents are loaded, decoded as UTF-8 and sent on every provider as a text block labelled with the file name (`<document name="notes.md">…</document>`).
 - PDFs and images use each API's native file input: by URL when `url` is set (on Gemini only when `size` is known to be at most 15 MB, and never on Gemini 2.0), inline otherwise.
-- KIE and ToAPIs do not document file input, so PDFs and images fail there with `UNSUPPORTED` until a live smoke test enables them. Elsewhere a PDF needs a model with native file input (`input` has `file`; on OpenRouter, from the live list's `input_modalities`) and an image one with image input; otherwise it fails with `UNSUPPORTED` before anything is sent, as does any other MIME type. So an image-only model such as OpenRouter's `moondream/moondream3-preview` takes images but not PDFs. While OpenRouter's list cannot be read, its models come from pi-ai's catalogue, which has no file input: they report `fileDocuments: false` and a PDF fails with `UNSUPPORTED`, while an image still goes to a model that reads images. A Gemini model from the installed catalogue is taken to read PDFs when it reads images.
+- KIE and ToAPIs do not document file input, so PDFs and images fail there with `UNSUPPORTED` until a live smoke test enables them. Elsewhere a PDF needs a model with native file input (`chatKit.fileInput`; on OpenRouter, from the live list's `input_modalities`) and an image one with image input; otherwise it fails with `UNSUPPORTED` before anything is sent, as does any other MIME type. So an image-only model such as OpenRouter's `moondream/moondream3-preview` takes images but not PDFs. While OpenRouter's list cannot be read, its models come from pi-ai's catalogue, which has no file input: a PDF fails with `UNSUPPORTED`, while an image still goes to a model that reads images. A Gemini model from the installed catalogue is taken to read PDFs when it reads images.
 - Every OpenRouter request, on its Completions route and on its Anthropic Messages route (`anthropic/*`), pins the `file-parser` plugin to the `native` PDF engine, so a PDF never falls through to OpenRouter's paid `mistral-ocr` engine. OpenRouter's [Anthropic Messages reference](https://openrouter.ai/docs/api/api-reference/anthropic-messages/create-a-message) takes the same `plugins` array as Completions. KIE and ToAPIs never get the plugin.
 
-Documents never enter pi-ai messages. A unique marker part stands in the first user turn and each API's `onPayload` transform replaces it, exactly once, with the parts above.
+Documents never enter pi-ai messages as parts the adapters would drop. A unique marker part opens the first user message and each API's `onPayload` transform replaces it, exactly once, with the parts above.
 
 ### Prompt layout and caching
 
-The request is ordered: system prompt, documents, history, new message. The documents open the first user turn of the transcript (the first user message of `history`, or else the new message), so the prompt is identical across turns, and across sessions with the same documents, up to the end of the documents. Keep each document's `url` stable for that to hold. The kit passes `cacheRetention: "short"`. On Anthropic Messages it adds one cache breakpoint on the last document block, beside pi-ai's own on the system prompt and the last user message (three of Anthropic's four). Gemini caches implicitly.
+The request is ordered: system prompt, documents, the rest of the conversation. The documents open the first user message of the context, so the prompt is identical across turns, and across sessions with the same documents, up to the end of the documents. Keep each document's `url` stable for that to hold. The kit passes `cacheRetention: "short"`. On Anthropic Messages it adds one cache breakpoint on the last document block, beside pi-ai's own on the system prompt and the last user message (three of Anthropic's four). Gemini caches implicitly.
 
 ### Response schema
 
 | API | Sent as |
 | --- | --- |
 | Gemini | `responseMimeType: "application/json"` and `responseJsonSchema`, without `minItems` / `maxItems` (which Gemini rejects) |
-| OpenAI Completions | strict `response_format` (`json_schema`), with OpenRouter `provider.require_parameters` so an endpoint that would ignore it fails instead |
+| OpenAI Completions | strict `response_format` (`json_schema`), with the turn's model carrying `compat.openRouterRouting.require_parameters` so OpenRouter routes only to endpoints that honour it |
 | OpenAI Responses | strict `text.format` (`json_schema`) |
-| Anthropic Messages | a forced call of one tool whose `input_schema` is the schema; its argument deltas stream as `text`. When the turn thinks, on OpenRouter and KIE: native structured output, `output_config.format` (`json_schema`), streamed as `text` |
+| Anthropic Messages | a forced call of one tool whose `input_schema` is the schema; its argument deltas stream as `text_*` events. When the turn thinks, on OpenRouter and KIE: native structured output, `output_config.format` (`json_schema`), streamed as `text_*` events |
 
-`responseSchema.name` is 1–64 letters, digits, `_` or `-`. Anthropic rejects a forced tool call while the model thinks: with `settings.reasoning`, or on a model that always thinks. A model always thinks when its catalogue entry says thinking cannot be turned off, or when its id is in the Claude Opus 5, Fable 5 or 5.5 family, matched without a provider prefix and with `.` read as `-` (`claude-opus-5` on KIE, `anthropic/claude-opus-5` or `anthropic/claude-sonnet-5.5` on OpenRouter), since a provider's catalogue may not say so.
+`responseSchema.name` is 1–64 letters, digits, `_` or `-`. Anthropic rejects a forced tool call while the model thinks: with `reasoning`, or on a model that always thinks. A model always thinks when its catalogue entry says thinking cannot be turned off, or when its id is in the Claude Opus 5, Fable 5 or 5.5 family, matched without a provider prefix and with `.` read as `-` (`claude-opus-5` on KIE, `anthropic/claude-opus-5` or `anthropic/claude-sonnet-5.5` on OpenRouter), since a provider's catalogue may not say so.
 
 A turn that thinks therefore sends its schema as Anthropic's [native structured output](https://platform.claude.com/docs/en/build-with-claude/structured-outputs) instead, where the provider takes it. The grammar constrains only the answer, so the model still thinks. The kit merges `format` beside pi-ai's own `output_config` (its effort), and strips the keywords native structured output rejects with a 400: `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `maxItems`, `uniqueItems`, `minProperties`, `maxProperties`, a `minItems` other than 0 or 1, and string formats outside Anthropic's list. It also closes every object with `additionalProperties: false`, so validate the answer against your own schema.
 
@@ -460,31 +475,32 @@ A turn that thinks therefore sends its schema as Anthropic's [native structured 
 
 ### Errors
 
-| `error.code` | Meaning |
-| --- | --- |
-| `CONTENT_BLOCKED` | A safety system blocked the prompt or the answer. `reason` is the provider's value: Gemini `SAFETY`, `PROHIBITED_CONTENT`, `BLOCKLIST` or `SPII` (finish reason) or the prompt's `promptFeedback.blockReason`; `content_filter` on the OpenAI APIs, and `refusal` on OpenAI Responses; `refusal` or `sensitive` on Anthropic. |
-| `PROVIDER_ERROR` | The provider failed (`status` is its HTTP status, when there was one), or the answer stopped early: Gemini `RECITATION`, a broken stream, or a `responseSchema` answer cut off at the output-token limit (`reason` is the raw stop reason: `MAX_TOKENS`, `length`, `max_tokens` or `incomplete.max_output_tokens`), including a forced tool call on Anthropic Messages. |
-| `UNSUPPORTED` | The provider or model cannot take this request (documents, a schema with thinking). Nothing was sent. |
-| `UNKNOWN_MODEL` | The provider name is not configured, or the model is not in its model list (see `listModels`; the message says when the live list could not be read). Nothing was sent. |
-| `INVALID_REQUEST` | The input is malformed, or a document's `load()` failed. Nothing was sent. |
-| `ABORTED` | The signal aborted the turn. |
+An error turn has `stopReason: "error"` and `message.chatKit.error`: `{ code, status? }`, present exactly when `stopReason` is `"error"`. `errorMessage` is the account, `rawStopReason` the provider's own value. A new code may come in a minor release: treat an unknown code as `PROVIDER_ERROR`.
 
-Every error names where the turn ran: `error.provider` is the configured provider name (for example `gemini`, not the provider kind) and `error.model` the model id, as the turn gave them (`?` only when malformed input named none). `error.message` starts with `[provider/model]`, built from the two. A turn that fails after partial text still ends `failed`; the text already streamed is the consumer's to keep or drop. Gemini bills blocked prompts, so `failed` carries `usage` whenever the provider reported it.
+| `chatKit.error.code` | Meaning | Sent? |
+| --- | --- | --- |
+| `CONTENT_BLOCKED` | A safety system blocked the prompt or the answer. `rawStopReason` is the provider's value: Gemini `SAFETY`, `PROHIBITED_CONTENT`, `BLOCKLIST` or `SPII` (finish reason) or the prompt's `promptFeedback.blockReason`; `content_filter` on the OpenAI APIs, and `refusal` on OpenAI Responses; `refusal` or `sensitive` on Anthropic | Yes |
+| `PROVIDER_ERROR` | The provider failed (`status` is its HTTP status, when there was one), or the answer stopped early: Gemini `RECITATION`, a broken stream, or a `responseSchema` answer cut off at `maxTokens` (`rawStopReason`: `MAX_TOKENS`, `length`, `max_tokens` or `incomplete.max_output_tokens`), including a forced tool call on Anthropic Messages | Yes |
+| `UNSUPPORTED` | The provider or model cannot take the turn's documents, images, tools, schema or settings | No |
+| `UNKNOWN_MODEL` | No provider has that id, or the model is not offered (see `listModels`; the message says when the live list could not be read) | No |
+| `INVALID_REQUEST` | The input is malformed, tools and a response schema are both set, or a document's `load()` failed | No |
 
-Only the initial request is retried, before the response stream starts: up to twice, by pi-ai, for 408, 409, 429, 5xx and connection errors, honouring `Retry-After`. A turn is never re-sent after its first token, and never to another provider or model.
+An abort is pi-ai's `stopReason: "aborted"`, with no `chatKit.error` (0.2.0's `ABORTED` code is gone). A turn that fails after partial text still ends with the `error` event; the text already streamed is the consumer's to keep or drop. Gemini bills blocked prompts, so a failed turn carries `chatKit.usage` whenever the provider reported it.
+
+Only the initial request is retried, before the response stream starts: by pi-ai, for 408, 409, 429, 5xx and connection errors, honouring `Retry-After`, up to `maxRetries` (default 2). A turn is never re-sent after its first token, and never to another provider or model.
 
 ### Usage and cost
 
-`usage` holds what the provider reported, read from its own usage record, never pi-ai's zero-filled counts ([ADR 0005](docs/adr/0005-provider-reported-usage.md)), and the turn's cost. Every count is optional: one the provider did not report is absent, never `0` and never computed from the others. A turn has `usage` whenever the provider reported any token count or a cost or credit, and `raw` then keeps the provider's record, so a reported cost or credit survives a missing count. Only a turn whose provider reported none of these has no `usage` at all.
+`message.chatKit.usage` holds what the provider reported, read from its own usage record, never pi-ai's zero-filled counts ([ADR 0005](docs/adr/0005-provider-reported-usage.md)), and the turn's cost. It uses pi-ai's count names. Every count is optional: one the provider did not report is absent, never `0` and never computed from the others. A turn has `usage` whenever the provider reported any token count or a cost or credit, and `raw` then keeps the provider's record, so a reported cost or credit survives a missing count. Only a turn whose provider reported none of these has no `usage` at all. Billing reads `chatKit.usage`; `message.usage` stays pi-ai's.
 
 | Field | Meaning | Present in `usage` |
 | --- | --- | --- |
-| `inputTokens` | Every prompt token: cache reads and writes included, and on Gemini the tool-use prompt tokens of grounding (`toolUsePromptTokenCount`) | When reported |
-| `outputTokens` | Every generated token, reasoning included | When reported (a Gemini blocked prompt has none) |
+| `input` | Prompt tokens not read from or written to the cache: the reported prompt count minus the reported cache counts, left out if negative. The whole prompt is `input + cacheRead + cacheWrite`. On Gemini the prompt includes the tool-use prompt tokens of grounding (`toolUsePromptTokenCount`) | When reported |
+| `output` | Every generated token, reasoning included | When reported (a Gemini blocked prompt has none) |
 | `totalTokens` | The provider's own total | When reported (never on Anthropic, which reports none) |
-| `cachedInputTokens` | Prompt tokens read from the prompt cache (part of `inputTokens`) | When reported |
-| `cacheWriteTokens` | Prompt tokens written to the prompt cache (part of `inputTokens`) | When reported (never on Gemini) |
-| `reasoningTokens` | Thinking tokens (part of `outputTokens`) | When reported |
+| `cacheRead` | Prompt tokens read from the prompt cache | When reported |
+| `cacheWrite` | Prompt tokens written to the prompt cache | When reported (never on Gemini) |
+| `reasoning` | Thinking tokens (part of `output`) | When reported |
 | `costUsd` | The turn's cost in USD | When the provider reported one or the model has a rate and a count to price |
 | `costSource` | `provider` or `estimated` | With `costUsd` |
 | `raw` | The provider's own record under its own field names: `{ usageMetadata }` on Gemini, otherwise `{ usage }`, plus any cost or credit field reported beside it | Always |
@@ -492,13 +508,28 @@ Only the initial request is retried, before the response stream starts: up to tw
 The cost comes from the first source that applies:
 
 1. **Provider-reported** (`costSource: "provider"`): OpenRouter's `usage.cost`, or KIE's `credits_consumed` × $0.005. KIE's cost always comes from its credits, because its token counts are unreliable (hidden prompt tokens, some zero input counts), so a KIE turn without credits has no cost. On KIE Codex (OpenAI Responses) the credits are read wherever the stream carries them: next to `type` on the `response.completed` event (where KIE documents them), on the response object, or in a usage object; `raw` keeps them at its top level.
-2. **Estimated** (`costSource: "estimated"`): the model's [rate](#chat-rates) in force when the turn started, applied to the reported counts. The large-prompt tier is chosen by `inputTokens`. Cached and cache-write tokens are charged at their rates, an unpublished one derived as described in [Chat rates](#chat-rates), and the rest of the prompt at the input rate. `outputTokens`, reasoning included, are charged at the output rate. A count the provider did not report adds nothing. Rates come from the KIE and ToAPIs definitions, the Gemini rate table (`googleChatRate`) and OpenRouter's live price (pi-ai's catalogue price while no live list could be read).
+2. **Estimated** (`costSource: "estimated"`): the model's [rate](#chat-rates) in force when the turn started, priced with pi-ai's `calculateCost`. The large-prompt tier is chosen by the whole prompt (`input + cacheRead + cacheWrite`). Cached and cache-write tokens are charged at their rates, an unpublished one derived as described in [Chat rates](#chat-rates), cache writes as 5-minute writes, and the rest of the prompt at the input rate. `output`, reasoning included, is charged at the output rate. A count the provider did not report adds nothing. Rates come from the KIE and ToAPIs definitions, the Gemini rate table (`googleChatRate`) and OpenRouter's live price (pi-ai's catalogue price while no live list could be read).
 3. **None**: no rate, or no counts to price. `costUsd` and `costSource` are absent, never `0`.
+
+### Upgrading from chat-kit 0.2
+
+0.3.0 is one breaking change ([ADR 0009](docs/adr/0009-chat-kit-contract-aligned-with-pi-ai.md)): provider registration, the turn, the events, the usage names and the model list all follow pi-ai.
+
+| 0.2.0 | 0.3.0 |
+| --- | --- |
+| `createChatKit({ providers: ChatProviderConfig[] })` | `createChatKit({ providers: ChatProvider[] })`: build each with its package's factory; the pi-ai id replaces the kind, and a config's `name` stays in the consumer |
+| `runTurn(input, { signal })` | `streamSimple(model, context, options)` and `completeSimple(...)`; `model` is `{ provider, id }` with the pi-ai id. Breaking out of the loop no longer cancels the request: pass a `signal` |
+| `systemPrompt`, `history`, `message`; `documents` (required) | `Context.systemPrompt`, `Context.messages`; the optional `documents` option |
+| `settings: { temperature, maxOutputTokens, reasoning }` | Options `temperature`, `maxTokens`, `reasoning`; new `toolChoice`, `sessionId`, `maxRetries` |
+| Events `text`, `done { usage, truncated }`, `failed` | pi-ai's events; `truncated` is `stopReason: "length"`; usage and errors are on `message.chatKit` |
+| `error { code, provider, model, message, reason, status }`; `ABORTED` | `chatKit.error { code, status? }`, with `provider`, `model`, `errorMessage` and `rawStopReason` on the message; `stopReason: "aborted"` |
+| `inputTokens` (cache included), `outputTokens`, `cachedInputTokens`, `cacheWriteTokens`, `reasoningTokens` | `input` (cache excluded), `output`, `cacheRead`, `cacheWrite`, `reasoning` |
+| `ChatModelInfo` (`maxOutputTokens`, `input` with `file`); `rate` as a period | pi-ai's `Model` plus `chatKit` (`fileInput`, `fileDocuments`, `tools`, `responseSchema`, `rate` as a `ModelRate`) |
 
 ## Google AI Studio (server) integration
 
 1. **Secrets.** Put `KIE_API_KEY`, `TOAPIS_API_KEY` and `GEMINI_API_KEY` in the app's server-side Secrets. Never expose them through Vite `define`, client code or a browser request.
-2. **Install.** Add the pinned release URLs to `dependencies` (`"@hk01/pi-ai-extra-kie": "https://github.com/…/kie-v0.4.0/hk01-pi-ai-extra-kie-0.4.0.tgz"`, likewise for ToAPIs and Google; each package has its own version, see Install). Import the packages only from server modules such as `server.ts`. A CommonJS server bundle (`esbuild --format=cjs --packages=external`) works with the main entries.
+2. **Install.** Add the pinned release URLs to `dependencies` (`"@hk01/pi-ai-extra-kie": "https://github.com/…/kie-v0.5.0/hk01-pi-ai-extra-kie-0.5.0.tgz"`, likewise for ToAPIs and Google; each package has its own version, see Install). Import the packages only from server modules such as `server.ts`. A CommonJS server bundle (`esbuild --format=cjs --packages=external`) works with the main entries.
 
    The `/pi-ai` subpath (and pi-ai itself) is ESM-only. AI Studio's preview runs `server.ts` as ESM, so a static `/pi-ai` import works there, but the CommonJS production bundle then fails at startup with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Before using `/pi-ai`, either build the server as ESM (`--format=esm --outfile=dist/server.mjs` and `"start": "node dist/server.mjs"`), or load it with `await import("@earendil-works/pi-ai")` and `await import("@hk01/pi-ai-extra-<provider>/pi-ai")`, which esbuild keeps as runtime imports.
 3. **Generate / edit.** Read the secret on the server and call the helper. Text-to-image and editing differ only by `model` and `referenceImages`:
@@ -534,7 +565,7 @@ Enter provider keys in the page, then run text-to-image, image-to-image and mult
 ## Release
 
 ```sh
-git tag kie-v0.1.0 && git push origin kie-v0.1.0      # or toapis-vX.Y.Z / google-vX.Y.Z / image-kit-vX.Y.Z / chat-kit-vX.Y.Z
+git tag kie-v0.1.0 && git push origin kie-v0.1.0      # or toapis-vX.Y.Z / google-vX.Y.Z / openrouter-vX.Y.Z / image-kit-vX.Y.Z / chat-kit-vX.Y.Z
 ```
 
 Tag the release commit on `main`. The workflow:
@@ -542,7 +573,7 @@ Tag the release commit on `main`. The workflow:
 1. checks that the tag matches the package version;
 2. runs check, build and test for the package and its workspace dependencies (the kits' tests load the provider packages' built entries);
 3. packs the `.tgz`;
-4. installs it into a fresh project and loads it with `require()` and `import()` (the kits together with packed copies of their provider peers; the image kit with React; the chat kit with pi-ai, from `import()` only, and lists every provider's models and runs one turn, offline);
+4. installs it into a fresh project and loads it with `require()` and `import()` (the kits together with packed copies of their provider peers; the image kit with React; the chat kit with pi-ai, from `import()` only, registers all four chat providers, lists their models and runs one failing turn, offline; openrouter with pi-ai, from its `/pi-ai` `import()` only);
 5. attaches it to a GitHub Release using `GITHUB_TOKEN`.
 
 Each package is released by its own tag, so a KIE fix does not republish ToAPIs or Google. Never replace an asset that consumers use; publish a new patch version instead ([ADR 0001](docs/adr/0001-registry-free-package-releases.md)).
@@ -554,7 +585,7 @@ pnpm install --ignore-scripts
 pnpm run check   # TypeScript 7 (tsc --noEmit)
 pnpm run test    # node:test contract tests with a fake fetch, no network
 pnpm run build   # tsdown: dual CJS/ESM + declarations (oxc isolated declarations)
-pnpm run pack:kie && pnpm run pack:toapis && pnpm run pack:google && pnpm run pack:image-kit && pnpm run pack:chat-kit   # → release-artifacts/
+pnpm run pack:kie && pnpm run pack:toapis && pnpm run pack:google && pnpm run pack:openrouter && pnpm run pack:image-kit && pnpm run pack:chat-kit   # → release-artifacts/
 ```
 
 Exported declarations need explicit types (`isolatedDeclarations`). Provider contracts are in [`referenc-docs/`](referenc-docs/); check them before adding or changing a model operation. Wokey is intentionally excluded.

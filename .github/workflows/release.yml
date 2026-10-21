@@ -6,6 +6,7 @@ on:
       - "kie-v*"
       - "toapis-v*"
       - "google-v*"
+      - "openrouter-v*"
       - "image-kit-v*"
       - "chat-kit-v*"
 
@@ -53,6 +54,11 @@ jobs:
               echo "directory=packages/google" >> "$GITHUB_OUTPUT"
               echo "version=${GITHUB_REF_NAME#google-v}" >> "$GITHUB_OUTPUT"
               ;;
+            openrouter-v*)
+              echo "name=@hk01/pi-ai-extra-openrouter" >> "$GITHUB_OUTPUT"
+              echo "directory=packages/openrouter" >> "$GITHUB_OUTPUT"
+              echo "version=${GITHUB_REF_NAME#openrouter-v}" >> "$GITHUB_OUTPUT"
+              ;;
             image-kit-v*)
               echo "name=@hk01/pi-ai-extra-image-kit" >> "$GITHUB_OUTPUT"
               echo "directory=packages/image-kit" >> "$GITHUB_OUTPUT"
@@ -96,7 +102,7 @@ jobs:
           # The kits' provider peers are not on a registry: pack them for the smoke test only (not released).
           if [ "$PACKAGE_NAME" = "@hk01/pi-ai-extra-image-kit" ] || [ "$PACKAGE_NAME" = "@hk01/pi-ai-extra-chat-kit" ]; then
             mkdir -p smoke-peers
-            for peer in google kie toapis; do
+            for peer in google kie toapis openrouter; do
               pnpm --filter "@hk01/pi-ai-extra-$peer" pack --pack-destination ./smoke-peers
             done
             ls -l smoke-peers
@@ -120,10 +126,29 @@ jobs:
           elif [ "$PACKAGE_NAME" = "@hk01/pi-ai-extra-chat-kit" ]; then
             npm install --no-audit --no-fund "$tarball" "$GITHUB_WORKSPACE"/smoke-peers/*.tgz @earendil-works/pi-ai@1.2.0
             node -e 'try { require(process.env.PACKAGE_NAME); } catch (error) { if (error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED") process.exit(0); throw error; } throw new Error("the chat kit must not load from CommonJS");'
-            # Registers every provider kind with an offline fetch: no live list can be read, so every
+            # Registers every chat provider with an offline fetch: no live list can be read, so every
             # provider uses its installed catalogue or definitions, and an unknown model fails
             # before any turn request.
-            node --input-type=module -e 'const { createChatKit } = await import(process.env.PACKAGE_NAME); const chat = createChatKit({ providers: ["google", "openrouter", "kie", "toapis"].map((provider) => ({ name: provider, provider, apiKey: "smoke" })), fetch: async () => { throw new Error("offline"); } }); const lists = await chat.listModels(); if (lists.length !== 4 || lists.some((entry) => !entry.models?.length || entry.source !== "installed" || entry.refreshError !== "offline")) throw new Error(`listModels is broken: ${JSON.stringify(lists.map(({ models, ...entry }) => ({ ...entry, models: models?.length })))}`); const events = []; for await (const event of chat.runTurn({ provider: "kie", model: "no-such-model", systemPrompt: "", documents: [], history: [], message: "hi" })) events.push(event); if (events.length !== 1 || events[0].type !== "failed" || events[0].error.code !== "UNKNOWN_MODEL") throw new Error(`ESM entry is broken: ${JSON.stringify(events)}`);'
+            cat > "$RUNNER_TEMP/chat-kit-smoke.mjs" <<'SMOKE'
+          const { createChatKit } = await import(process.env.PACKAGE_NAME);
+          const fetch = async () => { throw new Error("offline"); };
+          const { createGoogleProvider } = await import("@hk01/pi-ai-extra-google/pi-ai");
+          const { createOpenRouterProvider } = await import("@hk01/pi-ai-extra-openrouter/pi-ai");
+          const { createKieProvider } = await import("@hk01/pi-ai-extra-kie/pi-ai");
+          const { createToapisProvider } = await import("@hk01/pi-ai-extra-toapis/pi-ai");
+          const providers = [createGoogleProvider({ apiKey: "smoke", fetch }), createOpenRouterProvider({ apiKey: "smoke", fetch }), createKieProvider({ apiKey: "smoke", fetch }), createToapisProvider({ apiKey: "smoke", fetch })];
+          const chat = createChatKit({ providers, fetch });
+          const lists = await chat.listModels();
+          if (lists.length !== 4 || lists.some((entry) => !entry.models?.length || entry.source !== "installed" || entry.refreshError !== "offline")) throw new Error(`listModels is broken: ${JSON.stringify(lists.map(({ models, ...entry }) => ({ ...entry, models: models?.length })))}`);
+          const message = await chat.completeSimple({ provider: "kie", id: "no-such-model" }, { messages: [{ role: "user", content: "hi", timestamp: 1 }] });
+          if (message.stopReason !== "error" || message.chatKit.error?.code !== "UNKNOWN_MODEL") throw new Error(`ESM entry is broken: ${JSON.stringify(message)}`);
+          SMOKE
+            cp "$RUNNER_TEMP/chat-kit-smoke.mjs" ./smoke.mjs
+            node ./smoke.mjs
+          elif [ "$PACKAGE_NAME" = "@hk01/pi-ai-extra-openrouter" ]; then
+            npm install --no-audit --no-fund "$tarball" @earendil-works/pi-ai@1.2.0
+            node -e 'try { require(`${process.env.PACKAGE_NAME}/pi-ai`); } catch (error) { if (error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED") process.exit(0); throw error; } throw new Error("openrouter has no CommonJS entry");'
+            node --input-type=module -e 'const { createOpenRouterProvider } = await import(`${process.env.PACKAGE_NAME}/pi-ai`); const provider = createOpenRouterProvider({ apiKey: "smoke" }); if (provider.id !== "openrouter" || provider.getModels().length === 0 || typeof provider.chatKit.offers !== "function") throw new Error("ESM entry is broken");'
           else
             npm install --no-audit --no-fund "$tarball" @earendil-works/pi-ai@1.2.0
             node -e 'const entry = require(process.env.PACKAGE_NAME); if (typeof entry.isPiAiExtraError !== "function") throw new Error("CommonJS entry is broken");'

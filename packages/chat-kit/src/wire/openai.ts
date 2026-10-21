@@ -50,7 +50,7 @@ export function openAIUsage(
   const output = isRecord(outputDetails) ? outputDetails : {};
   return toChatUsage(
     {
-      input: tokenCount(usage[fields.input]),
+      prompt: tokenCount(usage[fields.input]),
       output: tokenCount(usage[fields.output]),
       total: tokenCount(usage.total_tokens),
       cacheRead: tokenCount(input.cached_tokens),

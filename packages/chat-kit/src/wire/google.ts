@@ -39,8 +39,9 @@ const GOOGLE_PARTS: DocumentEncoder<GooglePart, GooglePart> = {
 
 /**
  * Gemini (`GenerateContentParameters` from `@google/genai`): documents replace the marker part,
- * the response schema becomes `config.responseMimeType` + `config.responseJsonSchema`, and
- * grounding appends the Google Search and URL context tools. `config.abortSignal` is kept as is.
+ * and the response schema becomes `config.responseMimeType` + `config.responseJsonSchema`.
+ * `config.abortSignal` is kept as is. Grounding is the Google provider's own (its `grounding`
+ * option), added after this transform.
  */
 export function transformGooglePayload(payload: unknown, plan: PayloadPlan): unknown {
   if (!isRecord(payload)) return payload;
@@ -54,27 +55,25 @@ export function transformGooglePayload(payload: unknown, plan: PayloadPlan): unk
     config.responseMimeType = "application/json";
     config.responseJsonSchema = sanitizeSchemaForGemini(plan.responseSchema.schema);
   }
-  if (plan.grounding) {
-    config.tools = [...(Array.isArray(config.tools) ? config.tools : []), { googleSearch: {} }, { urlContext: {} }];
-  }
   next.config = config;
   return next;
 }
 
 /**
  * Usage from the last chunk's `usageMetadata`. The prompt is `promptTokenCount`, which already
- * includes `cachedContentTokenCount`, plus `toolUsePromptTokenCount`: the tool results grounding
+ * includes `cachedContentTokenCount` (so `input` is the prompt without it), plus
+ * `toolUsePromptTokenCount`: the tool results grounding
  * feeds back to the model, billed as input. The answer is `candidatesTokenCount` plus
  * `thoughtsTokenCount`. Gemini's `totalTokenCount` is the sum of all four. Each side sums only the
  * counts Gemini reported and is omitted when it reported none of them, as in the Gemini image
  * client: Gemini's JSON leaves zero-valued counters out, so a blocked prompt's usage has no
- * `outputTokens`. Gemini has no cache-write count.
+ * `output`. Gemini has no cache-write count.
  */
 function googleUsage(usageMetadata: Record<string, unknown>): ChatUsage | undefined {
   const thoughts = tokenCount(usageMetadata.thoughtsTokenCount);
   return toChatUsage(
     {
-      input: sumReported(tokenCount(usageMetadata.promptTokenCount), tokenCount(usageMetadata.toolUsePromptTokenCount)),
+      prompt: sumReported(tokenCount(usageMetadata.promptTokenCount), tokenCount(usageMetadata.toolUsePromptTokenCount)),
       output: sumReported(tokenCount(usageMetadata.candidatesTokenCount), thoughts),
       total: tokenCount(usageMetadata.totalTokenCount),
       cacheRead: tokenCount(usageMetadata.cachedContentTokenCount),

@@ -1,14 +1,29 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createFakeFetch, hangingResponse, jsonResponse, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
-import { createChatKit, type ChatModelInfo, type ChatProviderModels } from "../src/index.ts";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import { createOpenRouterProvider } from "@hk01/pi-ai-extra-openrouter/pi-ai";
+import { createChatKit } from "../src/index.ts";
+import { isOfferedGeminiId } from "@hk01/pi-ai-extra-google/pi-ai";
+import { openRouterRate, openRouterThinkingLevelMap } from "@hk01/pi-ai-extra-openrouter/pi-ai";
 import { TurnFailure } from "../src/errors.ts";
-import { createModelList, FAILED_REFRESH_RETRY_MS, LIST_READ_TIMEOUT_MS, MODEL_LIST_TTL_MS, type ListedModel } from "../src/models/list.ts";
-import { isOfferedGeminiId } from "../src/models/gemini.ts";
-import { openRouterRate, openRouterThinkingLevelMap } from "../src/models/openrouter.ts";
+import type { ChatModel, ChatProviderModels } from "../src/index.ts";
+import { createModelList, FAILED_REFRESH_RETRY_MS, LIST_READ_TIMEOUT_MS, MODEL_LIST_TTL_MS } from "../src/models/list.ts";
 import { prepareTurn } from "../src/prepare.ts";
 import { createProviderRegistry } from "../src/registry.ts";
-import { collect, completionsChunk, completionsUsageChunk, jsonBody, lastEvent, sseResponse, testDocument, turn } from "./helpers.ts";
+import {
+  chatProviders,
+  completionsChunk,
+  completionsUsageChunk,
+  contextOf,
+  jsonBody,
+  outcome,
+  runToEnd,
+  sseResponse,
+  testDocument,
+  testKit,
+  turn,
+} from "./helpers.ts";
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 const GEMINI_MODELS_URL = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\?pageSize=1000/;
@@ -16,8 +31,8 @@ const KIE_CODEX_MODELS_URL = "https://api.kie.ai/openai/v1/models";
 const KIE_CLAUDE_MODELS_URL = "https://api.kie.ai/anthropic/v1/models";
 const TOAPIS_MODELS_URL = "https://toapis.com/v1/models?type=text";
 
-function listed(id: string): ListedModel {
-  return { model: { id } as ListedModel["model"], rate: undefined, input: ["text"] };
+function listed(id: string): Model<Api> {
+  return { id } as Model<Api>;
 }
 
 /** A model list over a fake clock and a scripted live source; a promise entry answers when the test settles it. */
@@ -43,7 +58,7 @@ function scriptedList(results: (readonly string[] | Error | Promise<readonly str
   };
 }
 
-const ids = (models: readonly { model: { id: string } }[]) => models.map((entry) => entry.model.id);
+const ids = (models: readonly { id: string }[]) => models.map((model) => model.id);
 
 /** Lets every pending promise callback run (a real macrotask, so it also works under mocked `setTimeout`). */
 const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -68,7 +83,7 @@ describe("model list refresh rules", () => {
     assert.equal(calls(), 1);
     live.resolve(["a"]);
     const found = await first;
-    assert.deepEqual([found.model?.model.id, found.snapshot.source], ["a", "live"]);
+    assert.deepEqual([found.model?.id, found.snapshot.source], ["a", "live"]);
     assert.equal((await list.find("installed-model")).model, undefined, "an id only the installed list has is not found");
     assert.equal(calls(), 1, "a fresh list is not read again");
   });
@@ -76,20 +91,20 @@ describe("model list refresh rules", () => {
   it("serves a stale list at once and refreshes it in the background; the lookup after the refresh sees the new list", async () => {
     const refreshed = Promise.withResolvers<readonly string[]>();
     const { list, calls, advance } = scriptedList([["a", "b"], refreshed.promise]);
-    assert.equal((await list.find("a")).model?.model.id, "a");
+    assert.equal((await list.find("a")).model?.id, "a");
     advance(MODEL_LIST_TTL_MS - 1);
     assert.equal((await list.find("c")).model, undefined, "a fresh list is not read again, even for a miss");
     assert.equal(calls(), 1);
     advance(1);
     const stale = list.find("a");
     assert.equal(await settledYet(stale), true, "a stale lookup does not wait for the refresh");
-    assert.deepEqual([(await stale).model?.model.id, calls()], ["a", 2], "served from the stale list while the refresh runs");
-    assert.equal((await list.find("a")).model?.model.id, "a", "a lookup during the refresh shares it and still sees the stale list");
+    assert.deepEqual([(await stale).model?.id, calls()], ["a", 2], "served from the stale list while the refresh runs");
+    assert.equal((await list.find("a")).model?.id, "a", "a lookup during the refresh shares it and still sees the stale list");
     assert.equal(calls(), 2);
     refreshed.resolve(["b", "c"]);
     await settle();
     assert.equal((await list.find("a")).model, undefined, "a model the refreshed list dropped is gone");
-    assert.equal((await list.find("c")).model?.model.id, "c", "an added one is found");
+    assert.equal((await list.find("c")).model?.id, "c", "an added one is found");
     assert.equal(calls(), 2);
   });
 
@@ -100,7 +115,7 @@ describe("model list refresh rules", () => {
     assert.deepEqual(ids((await list.read()).models), ["a"]);
     await settle();
     const failed = await list.find("a");
-    assert.deepEqual([failed.model?.model.id, failed.snapshot.source, failed.snapshot.refreshError], ["a", "live", "HTTP 503"]);
+    assert.deepEqual([failed.model?.id, failed.snapshot.source, failed.snapshot.refreshError], ["a", "live", "HTTP 503"]);
     advance(FAILED_REFRESH_RETRY_MS - 1);
     assert.equal((await list.find("b")).model, undefined);
     assert.equal(calls(), 2, "no retry within a minute of a failure");
@@ -114,10 +129,10 @@ describe("model list refresh rules", () => {
   it("resolves against the installed list when no live list has been read, and waits for the next cold read after a minute", async () => {
     const { list, calls, advance } = scriptedList([new Error("timed out"), ["a"]]);
     const found = await list.find("installed-model");
-    assert.deepEqual([found.model?.model.id, found.snapshot.source, found.snapshot.refreshError], ["installed-model", "installed", "timed out"]);
+    assert.deepEqual([found.model?.id, found.snapshot.source, found.snapshot.refreshError], ["installed-model", "installed", "timed out"]);
     assert.equal(calls(), 1);
     advance(FAILED_REFRESH_RETRY_MS - 1);
-    assert.equal((await list.find("installed-model")).model?.model.id, "installed-model");
+    assert.equal((await list.find("installed-model")).model?.id, "installed-model");
     assert.equal(calls(), 1, "no retry within a minute of a failure");
     advance(1);
     const live = await list.find("installed-model");
@@ -127,7 +142,7 @@ describe("model list refresh rules", () => {
   it("shares one refresh between concurrent lookups and listings", async () => {
     const { list, calls } = scriptedList([["a"]]);
     const [first, listed, missing] = await Promise.all([list.find("a"), list.read(), list.find("installed-model")]);
-    assert.equal(first.model?.model.id, "a");
+    assert.equal(first.model?.id, "a");
     assert.equal(listed.source, "live");
     assert.equal(missing.model, undefined);
     assert.equal(calls(), 1);
@@ -170,7 +185,7 @@ describe("model list refresh rules", () => {
     t.mock.timers.tick(1);
     const found = await lookup;
     assert.deepEqual(
-      [found.model?.model.id, found.snapshot.source, found.snapshot.refreshError, signal?.aborted],
+      [found.model?.id, found.snapshot.source, found.snapshot.refreshError, signal?.aborted],
       ["installed-model", "installed", "the model list was not read within 5 s", true],
     );
   });
@@ -185,9 +200,9 @@ describe("turns resolve against the live list", () => {
 
   it("reads it before a new kit's first turn: a model the live list dropped fails with UNKNOWN_MODEL, and nothing is sent", async () => {
     const fake = createFakeFetch(KIE_LISTS);
-    const chat = createChatKit({ providers: [{ name: "kie", provider: "kie", apiKey: "kie-key" }], fetch: fake.fetch });
+    const chat = testKit(["kie"], fake.fetch);
     // claude-haiku-4-5 is a package definition, so it is in the installed list.
-    const last = lastEvent(await collect(chat.runTurn(turn(kieTarget))));
+    const last = await outcome(chat, turn(kieTarget));
     assert.equal(last.type === "failed" && last.error.code, "UNKNOWN_MODEL");
     assert.deepEqual(
       fake.calls.map((call) => `${call.method} ${call.url}`),
@@ -205,8 +220,8 @@ describe("turns resolve against the live list", () => {
         respond: [() => jsonResponse({ data: [{ id: "claude-opus-5-5" }, { id: "claude-haiku-4-5" }] }), () => jsonResponse({ data: [{ id: "claude-opus-5-5" }] })],
       },
     ]);
-    const registry = createProviderRegistry([{ name: "kie", provider: "kie", apiKey: "kie-key" }], { fetch: fake.fetch, now: () => clock });
-    const prepare = () => prepareTurn(registry, turn(kieTarget), kieTarget, new AbortController().signal);
+    const registry = createProviderRegistry(chatProviders(["kie"], fake.fetch), { now: () => clock });
+    const prepare = () => prepareTurn(registry, { provider: "kie", id: kieTarget.model }, contextOf(turn(kieTarget)), undefined, { provider: "kie", model: kieTarget.model });
     assert.equal((await prepare()).model.id, "claude-haiku-4-5");
     clock += MODEL_LIST_TTL_MS - 1;
     assert.equal((await prepare()).model.id, "claude-haiku-4-5", "a fresh list is not read again");
@@ -214,8 +229,8 @@ describe("turns resolve against the live list", () => {
     clock += 1;
     // The documented trade-off: the stale list still has the model, so this turn would be sent.
     assert.equal((await prepare()).model.id, "claude-haiku-4-5", "the stale list answers the turn");
-    assert.equal(fake.calls.length, 4, "and the list is read again in the background");
     await settle();
+    assert.equal(fake.calls.length, 4, "and the list is read again in the background");
     await assert.rejects(prepare(), (error: unknown) => error instanceof TurnFailure && error.code === "UNKNOWN_MODEL");
     assert.equal(fake.calls.length, 4);
   });
@@ -226,14 +241,14 @@ describe("turns resolve against the live list", () => {
       { method: "GET", url: KIE_CODEX_MODELS_URL, respond: hangingResponse },
       { method: "GET", url: KIE_CLAUDE_MODELS_URL, respond: hangingResponse },
     ]);
-    const registry = createProviderRegistry([{ name: "kie", provider: "kie", apiKey: "kie-key" }], { fetch: fake.fetch });
-    const prepared = prepareTurn(registry, turn(kieTarget), kieTarget, new AbortController().signal);
+    const registry = createProviderRegistry(chatProviders(["kie"], fake.fetch));
+    const prepared = prepareTurn(registry, { provider: "kie", id: kieTarget.model }, contextOf(turn(kieTarget)), undefined, { provider: "kie", model: kieTarget.model });
     assert.equal(await settledYet(prepared), false, "the cold turn waits for the list");
     t.mock.timers.tick(LIST_READ_TIMEOUT_MS.cold - 1);
     assert.equal(await settledYet(prepared), false);
     t.mock.timers.tick(1);
     assert.equal((await prepared).model.id, "claude-haiku-4-5", "from the installed definitions");
-    const snapshot = await registry.get("kie")!.models.read();
+    const snapshot = await registry.providers.get("kie")!.models.read();
     assert.deepEqual([snapshot.source, snapshot.refreshError], ["installed", "the model list was not read within 5 s"]);
   });
 
@@ -244,20 +259,21 @@ describe("turns resolve against the live list", () => {
       { method: "GET", url: KIE_CODEX_MODELS_URL, respond: [() => jsonResponse({ data: [{ id: "gpt-5-6-sol" }] }), hangingResponse] },
       { method: "GET", url: KIE_CLAUDE_MODELS_URL, respond: [() => jsonResponse({ data: [{ id: "claude-haiku-4-5" }] }), hangingResponse] },
     ]);
-    const registry = createProviderRegistry([{ name: "kie", provider: "kie", apiKey: "kie-key" }], { fetch: fake.fetch, now: () => clock });
-    const prepare = () => prepareTurn(registry, turn(kieTarget), kieTarget, new AbortController().signal);
+    const registry = createProviderRegistry(chatProviders(["kie"], fake.fetch), { now: () => clock });
+    const prepare = () => prepareTurn(registry, { provider: "kie", id: kieTarget.model }, contextOf(turn(kieTarget)), undefined, { provider: "kie", model: kieTarget.model });
     assert.equal((await prepare()).model.id, "claude-haiku-4-5");
     clock += MODEL_LIST_TTL_MS;
     const stale = prepare();
     assert.equal(await settledYet(stale), true, "no timer had to fire: the turn did not wait for the hanging read");
     assert.equal((await stale).model.id, "claude-haiku-4-5");
+    await settle();
     assert.equal(fake.calls.length, 4, "the background refresh is under way");
     t.mock.timers.tick(LIST_READ_TIMEOUT_MS.background - 1);
     await settle();
-    assert.equal((await registry.get("kie")!.models.read()).refreshError, undefined, "still running at 14,999 ms");
+    assert.equal((await registry.providers.get("kie")!.models.read()).refreshError, undefined, "still running at 14,999 ms");
     t.mock.timers.tick(1);
     await settle();
-    const snapshot = await registry.get("kie")!.models.read();
+    const snapshot = await registry.providers.get("kie")!.models.read();
     assert.deepEqual(
       [snapshot.source, snapshot.refreshError, ids(snapshot.models)],
       ["live", "the model list was not read within 15 s", ["gpt-5-6-sol", "claude-haiku-4-5"]],
@@ -291,17 +307,18 @@ describe("turns resolve against the live list", () => {
         respond: [() => jsonResponse({ data: [{ id: "claude-haiku-4-5" }] }), slowList(10_000, ["claude-opus-5-5"])],
       },
     ]);
-    const registry = createProviderRegistry([{ name: "kie", provider: "kie", apiKey: "kie-key" }], { fetch: fake.fetch, now: () => clock });
-    const prepare = () => prepareTurn(registry, turn(kieTarget), kieTarget, new AbortController().signal);
+    const registry = createProviderRegistry(chatProviders(["kie"], fake.fetch), { now: () => clock });
+    const prepare = () => prepareTurn(registry, { provider: "kie", id: kieTarget.model }, contextOf(turn(kieTarget)), undefined, { provider: "kie", model: kieTarget.model });
     assert.equal((await prepare()).model.id, "claude-haiku-4-5");
     clock += MODEL_LIST_TTL_MS;
     assert.equal((await prepare()).model.id, "claude-haiku-4-5", "the stale list answers while the slow refresh runs");
+    await settle();
     t.mock.timers.tick(LIST_READ_TIMEOUT_MS.cold);
     await settle();
-    assert.equal((await registry.get("kie")!.models.read()).refreshError, undefined, "past the cold deadline, still running");
+    assert.equal((await registry.providers.get("kie")!.models.read()).refreshError, undefined, "past the cold deadline, still running");
     t.mock.timers.tick(10_000 - LIST_READ_TIMEOUT_MS.cold);
     await settle();
-    const snapshot = await registry.get("kie")!.models.read();
+    const snapshot = await registry.providers.get("kie")!.models.read();
     assert.deepEqual([snapshot.refreshError, ids(snapshot.models)], [undefined, ["gpt-5-6-sol", "claude-opus-5-5"]], "the 10 s answer replaced the list");
     await assert.rejects(prepare(), (error: unknown) => error instanceof TurnFailure && error.code === "UNKNOWN_MODEL");
   });
@@ -447,7 +464,7 @@ const EXCLUDED_OPENROUTER_IDS = [
   "acme/image-maker",
 ];
 
-function byId(entry: ChatProviderModels | undefined): Map<string, ChatModelInfo> {
+function byId(entry: ChatProviderModels | undefined): Map<string, ChatModel> {
   assert.ok(entry && "models" in entry, JSON.stringify(entry));
   return new Map(entry.models.map((model) => [model.id, model]));
 }
@@ -455,7 +472,7 @@ function byId(entry: ChatProviderModels | undefined): Map<string, ChatModelInfo>
 describe("OpenRouter live list", () => {
   function kit(extra: FakeRoute[] = []) {
     const fake = createFakeFetch([{ method: "GET", url: OPENROUTER_MODELS_URL, respond: () => jsonResponse(OPENROUTER_LIST) }, ...extra]);
-    return { chat: createChatKit({ providers: [{ name: "router", provider: "openrouter", apiKey: "or-key" }], fetch: fake.fetch }), fake };
+    return { chat: testKit(["openrouter"], fake.fetch), fake };
   }
 
   it("lists text-answering models, models without tools kept; :batch, :free, router, -latest and image-output models left out", async () => {
@@ -470,7 +487,7 @@ describe("OpenRouter live list", () => {
     );
     assert.equal(fake.calls[0]?.headers.authorization, undefined, "the public list is read without the key");
     for (const model of EXCLUDED_OPENROUTER_IDS) {
-      const last = lastEvent(await collect(chat.runTurn(turn({ model }))));
+      const last = await outcome(chat, turn({ model }));
       assert.equal(last.type === "failed" && last.error.code, "UNKNOWN_MODEL", model);
     }
     assert.equal(fake.calls.length, 1, "no turn was sent");
@@ -478,25 +495,24 @@ describe("OpenRouter live list", () => {
 
   it("reports input, documents, schema support, limits, reasoning and the live rate per model", async () => {
     const models = byId((await kit().chat.listModels())[0]);
-    assert.deepEqual(models.get("anthropic/claude-sonnet-4.6"), {
-      id: "anthropic/claude-sonnet-4.6",
-      name: "Anthropic: Claude Sonnet 4.6",
-      input: ["text", "image", "file"],
+    const sonnet = models.get("anthropic/claude-sonnet-4.6");
+    assert.deepEqual(
+      [sonnet?.id, sonnet?.name, sonnet?.input, sonnet?.contextWindow, sonnet?.maxTokens, sonnet?.reasoning, sonnet?.provider],
+      ["anthropic/claude-sonnet-4.6", "Anthropic: Claude Sonnet 4.6", ["text", "image"], 1_000_000, 128_000, true, "openrouter"],
+      "pi-ai's own Model fields",
+    );
+    assert.deepEqual(sonnet?.chatKit, {
+      fileInput: true,
       fileDocuments: true,
+      tools: true,
       responseSchema: true,
-      contextWindow: 1_000_000,
-      maxOutputTokens: 128_000,
-      reasoning: true,
-      rate: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+      rate: { periods: [{ input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }] },
     });
     assert.deepEqual(models.get("acme/text-only")?.input, ["text"]);
-    assert.equal(models.get("acme/text-only")?.fileDocuments, false);
-    assert.equal(models.get("acme/unpriced")?.rate, undefined, "a -1 price is no rate, never 0");
-    assert.deepEqual(models.get("anthropic/claude-nova-6")?.rate, {
-      input: 2,
-      output: 10,
-      cacheRead: 0.2,
-      largePrompt: { overPromptTokens: 200_000, input: 4, output: 15, cacheRead: 0.2 },
+    assert.equal(models.get("acme/text-only")?.chatKit.fileDocuments, false);
+    assert.equal(models.get("acme/unpriced")?.chatKit.rate, undefined, "a -1 price is no rate, never 0");
+    assert.deepEqual(models.get("anthropic/claude-nova-6")?.chatKit.rate, {
+      periods: [{ input: 2, output: 10, cacheRead: 0.2, largePrompt: { overPromptTokens: 200_000, input: 4, output: 15, cacheRead: 0.2 } }],
     });
   });
 
@@ -526,20 +542,20 @@ describe("OpenRouter live list", () => {
         respond: () => sseResponse([completionsChunk({ content: "A cat." }, "stop"), "[DONE]"]),
       },
     ]);
-    const chat = createChatKit({ providers: [{ name: "router", provider: "openrouter", apiKey: "or-key" }], fetch: fake.fetch });
+    const chat = testKit(["openrouter"], fake.fetch);
     const models = byId((await chat.listModels())[0]);
     const moondream = models.get("moondream/moondream3-preview");
-    assert.deepEqual([moondream?.input, moondream?.fileDocuments], [["text", "image"], false]);
+    assert.deepEqual([moondream?.input, moondream?.chatKit.fileInput, moondream?.chatKit.fileDocuments], [["text", "image"], false, false]);
     const fileReader = models.get("acme/file-reader");
-    assert.deepEqual([fileReader?.input, fileReader?.fileDocuments], [["text", "file"], false], "PDFs, but not images");
+    assert.deepEqual([fileReader?.input, fileReader?.chatKit.fileInput, fileReader?.chatKit.fileDocuments], [["text"], true, false], "PDFs, but not images");
 
     const pdf = testDocument("brief.pdf", "application/pdf", "%PDF-1.7");
-    const refused = lastEvent(await collect(chat.runTurn(turn({ model: "moondream/moondream3-preview", documents: [pdf] }))));
+    const refused = await outcome(chat, turn({ model: "moondream/moondream3-preview", documents: [pdf] }));
     assert.equal(refused.type === "failed" && refused.error.code, "UNSUPPORTED");
     assert.match(refused.type === "failed" ? refused.error.message : "", /does not read PDF files natively/);
     assert.equal(pdf.loads, 0);
     const png = testDocument("cat.png", "image/png", "x");
-    const answered = lastEvent(await collect(chat.runTurn(turn({ model: "moondream/moondream3-preview", documents: [png] }))));
+    const answered = await outcome(chat, turn({ model: "moondream/moondream3-preview", documents: [png] }));
     assert.equal(answered.type, "done", "an image goes as a native image part");
     assert.equal(fake.calls.filter((call) => call.method === "POST").length, 1, "only the image turn was sent");
   });
@@ -558,7 +574,7 @@ describe("OpenRouter live list", () => {
       },
     ]);
     // No listModels() first: the miss refreshes the list.
-    const last = lastEvent(await collect(chat.runTurn(turn({ model: "anthropic/claude-nova-6" }))));
+    const last = await outcome(chat, turn({ model: "anthropic/claude-nova-6" }));
     assert.equal(last.type, "done");
     assert.equal(last.type === "done" && last.usage?.costSource, "provider");
     const body = jsonBody(fake.calls.find((call) => call.method === "POST")?.body);
@@ -576,13 +592,13 @@ describe("OpenRouter live list", () => {
       },
     ]);
     await chat.listModels();
-    await collect(chat.runTurn(turn({ model: "anthropic/claude-sonnet-4.6" })));
+    (await runToEnd(chat, turn({ model: "anthropic/claude-sonnet-4.6" }))).events;
     assert.match(fake.calls.at(-1)?.url ?? "", /\/api\/v1\/messages/, "still on Anthropic Messages");
   });
 
   it("uses pi-ai's catalogue when the list cannot be read, and says why", async () => {
     const fake = createFakeFetch([{ method: "GET", url: OPENROUTER_MODELS_URL, respond: () => jsonResponse({ error: { message: "down" } }, 503) }]);
-    const chat = createChatKit({ providers: [{ name: "router", provider: "openrouter", apiKey: "k" }], fetch: fake.fetch });
+    const chat = testKit(["openrouter"], fake.fetch, { keys: { openrouter: "k" } });
     const [entry] = await chat.listModels();
     assert.ok(entry && "models" in entry);
     assert.equal(entry.source, "installed");
@@ -593,7 +609,7 @@ describe("OpenRouter live list", () => {
   describe("pi-ai's catalogue, while the list cannot be read", () => {
     function installedKit() {
       const fake = createFakeFetch([{ method: "GET", url: OPENROUTER_MODELS_URL, respond: () => jsonResponse({ error: { message: "down" } }, 503) }]);
-      return { chat: createChatKit({ providers: [{ name: "router", provider: "openrouter", apiKey: "k" }], fetch: fake.fetch }), fake };
+      return { chat: testKit(["openrouter"], fake.fetch, { keys: { openrouter: "k" } }), fake };
     }
 
     it("is filtered like the live list: no :batch, :free, router, -latest or image-output model is listed or run", async () => {
@@ -622,7 +638,7 @@ describe("OpenRouter live list", () => {
         "google/gemini-nano-banana-2.1",
       ];
       for (const model of excluded) {
-        const last = lastEvent(await collect(chat.runTurn(turn({ model }))));
+        const last = await outcome(chat, turn({ model }));
         assert.equal(last.type === "failed" && last.error.code, "UNKNOWN_MODEL", model);
       }
       assert.equal(fake.calls.filter((call) => call.method === "POST").length, 0, "no turn was sent");
@@ -632,9 +648,9 @@ describe("OpenRouter live list", () => {
       const { chat, fake } = installedKit();
       const sonnet = byId((await chat.listModels())[0]).get("anthropic/claude-sonnet-4.6");
       // The live list says this model reads files ("reports input, documents, ..." above); pi-ai's catalogue cannot.
-      assert.deepEqual([sonnet?.input, sonnet?.fileDocuments], [["text", "image"], false]);
+      assert.deepEqual([sonnet?.input, sonnet?.chatKit.fileDocuments], [["text", "image"], false]);
       const pdf = testDocument("brief.pdf", "application/pdf", "%PDF-1.7");
-      const last = lastEvent(await collect(chat.runTurn(turn({ model: "anthropic/claude-sonnet-4.6", documents: [pdf] }))));
+      const last = await outcome(chat, turn({ model: "anthropic/claude-sonnet-4.6", documents: [pdf] }));
       assert.equal(last.type === "failed" && last.error.code, "UNSUPPORTED");
       assert.match(last.type === "failed" ? last.error.message : "", /does not read PDF files natively \(its live model list could not be read: HTTP 503/);
       assert.equal(pdf.loads, 0);
@@ -645,7 +661,7 @@ describe("OpenRouter live list", () => {
   it("reads the list from a base URL override", async () => {
     const fake = createFakeFetch([{ method: "GET", url: "https://proxy.example.com/openrouter/v1/models", respond: () => jsonResponse(OPENROUTER_LIST) }]);
     const chat = createChatKit({
-      providers: [{ name: "router", provider: "openrouter", apiKey: "k", baseUrl: "https://proxy.example.com/openrouter" }],
+      providers: [createOpenRouterProvider({ apiKey: "k", baseUrl: "https://proxy.example.com/openrouter", fetch: fake.fetch })],
       fetch: fake.fetch,
     });
     const [entry] = await chat.listModels();
@@ -703,25 +719,21 @@ describe("Gemini live list", () => {
         ],
       },
     ]);
-    const chat = createChatKit({ providers: [{ name: "gemini", provider: "google", apiKey: "gemini-key" }], fetch: fake.fetch });
+    const chat = testKit(["google"], fake.fetch, { keys: { google: "gemini-key" } });
     const models = byId((await chat.listModels())[0]);
     assert.deepEqual([...models.keys()], ["gemini-3.8-flash", "gemini-4-argon-preview"]);
     assert.equal(fake.calls[0]?.headers["x-goog-api-key"], "gemini-key");
     assert.match(fake.calls[1]?.url ?? "", /pageToken=page-2/);
     const flash = models.get("gemini-3.8-flash");
-    assert.equal(flash?.fileDocuments, true);
+    assert.equal(flash?.chatKit.fileDocuments, true);
     assert.equal(flash?.contextWindow, 1_048_576, "pi-ai's catalogue entry");
-    assert.equal(flash?.rate?.cacheRead, Date.now() < Date.parse("2027-01-01T00:00:00Z") ? 0.075 : 0.15, "the Gemini rate table");
-    assert.deepEqual(models.get("gemini-4-argon-preview"), {
-      id: "gemini-4-argon-preview",
-      name: "Gemini 4 Argon Preview",
-      input: ["text"],
-      fileDocuments: false,
-      responseSchema: true,
-      contextWindow: 2_097_152,
-      maxOutputTokens: 131_072,
-      reasoning: true,
-    });
+    assert.equal(flash?.chatKit.rate?.periods[0]?.cacheRead, Date.now() < Date.parse("2027-01-01T00:00:00Z") ? 0.075 : 0.15, "the Gemini rate table");
+    const argon = models.get("gemini-4-argon-preview");
+    assert.deepEqual(
+      [argon?.name, argon?.input, argon?.contextWindow, argon?.maxTokens, argon?.reasoning],
+      ["Gemini 4 Argon Preview", ["text"], 2_097_152, 131_072, true],
+    );
+    assert.deepEqual(argon?.chatKit, { fileInput: false, fileDocuments: false, tools: true, responseSchema: true }, "a new id has no rate");
   });
 });
 
@@ -745,7 +757,7 @@ describe("Gemini paging under one deadline", () => {
         });
     const page = (id: string, next?: string) => ({ models: [{ name: `models/${id}`, supportedGenerationMethods: ["generateContent"] }], ...(next ? { nextPageToken: next } : {}) });
     const fake = createFakeFetch([{ method: "GET", url: GEMINI_MODELS_URL, respond: [slowPage(page("gemini-3.8-flash", "page-2")), slowPage(page("gemini-3.6-flash"))] }]);
-    const chat = createChatKit({ providers: [{ name: "gemini", provider: "google", apiKey: "gemini-key" }], fetch: fake.fetch });
+    const chat = testKit(["google"], fake.fetch, { keys: { google: "gemini-key" } });
     const listing = chat.listModels();
     await settle();
     t.mock.timers.tick(3_000);
@@ -793,13 +805,13 @@ describe("Gemini chat-only filter", () => {
           }),
       },
     ]);
-    const chat = createChatKit({ providers: [{ name: "gemini", provider: "google", apiKey: "gemini-key" }], fetch: fake.fetch });
+    const chat = testKit(["google"], fake.fetch, { keys: { google: "gemini-key" } });
     const models = byId((await chat.listModels())[0]);
     assert.deepEqual([...models.keys()], ["gemini-3.8-flash", "gemini-3.1-pro-preview-customtools", "gemma-4-31b-it"]);
     // pi-ai's Gemini adapter sends turns with the global fetch.
     const sent = t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 500 }));
     for (const model of ["nano-banana-pro-preview", "gemini-nano-banana-2.1", "gemini-3-pro-image-preview"]) {
-      const turnResult = lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model }))));
+      const turnResult = await outcome(chat, turn({ provider: "google", model }));
       assert.equal(turnResult.type === "failed" && turnResult.error.code, "UNKNOWN_MODEL", model);
     }
     assert.equal(sent.mock.callCount(), 0, "no turn was sent");
@@ -814,7 +826,7 @@ describe("Gemini chat-only filter", () => {
         respond: () => jsonResponse({ error: { code: 400, message: "User location is not supported for the API use." } }, 400),
       },
     ]);
-    const chat = createChatKit({ providers: [{ name: "gemini", provider: "google", apiKey: "gemini-key" }], fetch: fake.fetch });
+    const chat = testKit(["google"], fake.fetch, { keys: { google: "gemini-key" } });
     const [entry] = await chat.listModels();
     assert.ok(entry && "models" in entry);
     assert.equal(entry.source, "installed");
@@ -828,7 +840,7 @@ describe("Gemini chat-only filter", () => {
     }
     const sent = t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 500 }));
     for (const model of ["gemini-3.1-flash-live-preview", "gemini-flash-latest", "gemini-3.1-flash-lite-image", "nano-banana-pro-preview"]) {
-      const turnResult = lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model }))));
+      const turnResult = await outcome(chat, turn({ provider: "google", model }));
       assert.equal(turnResult.type === "failed" && turnResult.error.code, "UNKNOWN_MODEL", `${model}: turns resolve against the filtered list`);
     }
     assert.equal(sent.mock.callCount(), 0, "no turn was sent");
@@ -842,7 +854,7 @@ describe("KIE and ToAPIs live lists", () => {
       { method: "GET", url: KIE_CODEX_MODELS_URL, respond: () => jsonResponse({ object: "list", data: [{ id: "gpt-5.6-sol" }, { id: "gpt-9" }] }) },
       { method: "GET", url: KIE_CLAUDE_MODELS_URL, respond: () => jsonResponse({ data: [{ id: "claude-opus-5-5" }, { id: "claude-sonnet-4-6" }] }) },
     ]);
-    const chat = createChatKit({ providers: [{ name: "kie", provider: "kie", apiKey: "kie-key" }], fetch: fake.fetch });
+    const chat = testKit(["kie"], fake.fetch);
     const models = byId((await chat.listModels())[0]);
     assert.deepEqual([...models.keys()], ["gpt-5-6-sol", "claude-opus-5-5", "claude-sonnet-4-6"]);
     assert.deepEqual(
@@ -850,11 +862,11 @@ describe("KIE and ToAPIs live lists", () => {
       ["Bearer kie-key", "Bearer kie-key"],
     );
     const opus = models.get("claude-opus-5-5");
-    assert.equal(opus?.fileDocuments, false, "KIE document input stays off");
-    assert.equal(opus?.responseSchema, true, "an always-thinking Claude, through KIE's native structured output");
-    assert.deepEqual(opus?.rate, { input: 1.6, output: 8 });
-    assert.equal(models.get("claude-sonnet-4-6")?.responseSchema, true);
-    const turnResult = lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "claude-haiku-4-5" }))));
+    assert.equal(opus?.chatKit.fileDocuments, false, "KIE document input stays off");
+    assert.equal(opus?.chatKit.responseSchema, true, "an always-thinking Claude, through KIE's native structured output");
+    assert.deepEqual(opus?.chatKit.rate, { periods: [{ input: 1.6, output: 8 }] });
+    assert.equal(models.get("claude-sonnet-4-6")?.chatKit.responseSchema, true);
+    const turnResult = await outcome(chat, turn({ provider: "kie", model: "claude-haiku-4-5" }));
     assert.equal(turnResult.type === "failed" && turnResult.error.code, "UNKNOWN_MODEL", "turns resolve against the live list");
   });
 
@@ -863,7 +875,7 @@ describe("KIE and ToAPIs live lists", () => {
       { method: "GET", url: KIE_CODEX_MODELS_URL, respond: () => jsonResponse({ code: 401, msg: "Unauthorized" }) },
       { method: "GET", url: KIE_CLAUDE_MODELS_URL, respond: () => jsonResponse({ data: [] }) },
     ]);
-    const chat = createChatKit({ providers: [{ name: "kie", provider: "kie", apiKey: "bad" }], fetch: fake.fetch });
+    const chat = testKit(["kie"], fake.fetch, { keys: { kie: "bad" } });
     const [entry] = await chat.listModels();
     assert.ok(entry && "models" in entry);
     assert.equal(entry.source, "installed");
@@ -879,7 +891,7 @@ describe("KIE and ToAPIs live lists", () => {
         respond: () => jsonResponse({ success: true, object: "list", data: [{ id: "claude-sonnet-4-6" }, { id: "glm-5" }] }),
       },
     ]);
-    const chat = createChatKit({ providers: [{ name: "toapis", provider: "toapis", apiKey: "t-key" }], fetch: fake.fetch });
+    const chat = testKit(["toapis"], fake.fetch);
     const models = byId((await chat.listModels())[0]);
     assert.deepEqual([...models.keys()], ["claude-sonnet-4-6"]);
     assert.equal(fake.calls[0]?.headers.authorization, "Bearer t-key");
@@ -892,22 +904,16 @@ describe("listModels", () => {
       { method: "GET", url: OPENROUTER_MODELS_URL, respond: () => jsonResponse(OPENROUTER_LIST) },
       { method: "GET", url: TOAPIS_MODELS_URL, respond: () => new Response("<html>bad gateway</html>", { status: 502 }) },
     ]);
-    const chat = createChatKit({
-      providers: [
-        { name: "toapis", provider: "toapis", apiKey: "t" },
-        { name: "router", provider: "openrouter", apiKey: "o" },
-      ],
-      fetch: fake.fetch,
-    });
+    const chat = testKit(["toapis", "openrouter"], fake.fetch);
     const [toapis, router] = await chat.listModels();
     assert.ok(toapis && "models" in toapis && router && "models" in router);
-    assert.deepEqual([toapis.provider, toapis.kind, toapis.source, toapis.refreshError], ["toapis", "toapis", "installed", "HTTP 502 from https://toapis.com/v1/models"]);
-    assert.deepEqual([router.provider, router.source], ["router", "live"]);
+    assert.deepEqual([toapis.provider, toapis.source, toapis.refreshError], ["toapis", "installed", "HTTP 502 from https://toapis.com/v1/models"]);
+    assert.deepEqual([router.provider, router.source], ["openrouter", "live"]);
   });
 
   it("rejects with the signal's reason when the caller stops waiting", async () => {
     const fake = createFakeFetch([{ method: "GET", url: OPENROUTER_MODELS_URL, respond: () => jsonResponse(OPENROUTER_LIST) }]);
-    const chat = createChatKit({ providers: [{ name: "router", provider: "openrouter", apiKey: "o" }], fetch: fake.fetch });
+    const chat = testKit(["openrouter"], fake.fetch, { keys: { openrouter: "o" } });
     const controller = new AbortController();
     controller.abort(new Error("gone"));
     await assert.rejects(chat.listModels({ signal: controller.signal }), /gone/);

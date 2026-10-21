@@ -47,7 +47,6 @@ function plan(overrides: Partial<PayloadPlan> = {}): PayloadPlan {
     marker: MARKER,
     documents: [TEXT_DOC, PDF_BY_URL, PNG_INLINE],
     responseSchema: undefined,
-    grounding: false,
     targetsOpenRouter: false,
     nativeStructuredOutput: false,
     ...overrides,
@@ -88,16 +87,16 @@ describe("Gemini payload transform", () => {
     assert.deepEqual({ ...input, config: { ...input.config, abortSignal: undefined } }, snapshot);
   });
 
-  it("adds the sanitized response schema and the grounding tools", () => {
+  it("adds the sanitized response schema, and leaves grounding to the Google provider", () => {
     const next = transformGooglePayload(
       payload(),
-      plan({ marker: undefined, documents: [], responseSchema: { name: "x", schema: { ...SCHEMA, maxItems: 2 } }, grounding: true }),
+      plan({ marker: undefined, documents: [], responseSchema: { name: "x", schema: { ...SCHEMA, maxItems: 2 } } }),
     ) as {
       config: Record<string, unknown>;
     };
     assert.equal(next.config.responseMimeType, "application/json");
     assert.deepEqual(next.config.responseJsonSchema, SCHEMA);
-    assert.deepEqual(next.config.tools, [{ functionDeclarations: [] }, { googleSearch: {} }, { urlContext: {} }]);
+    assert.deepEqual(next.config.tools, [{ functionDeclarations: [] }]);
     assert.equal(next.config.systemInstruction, "Be brief.");
   });
 
@@ -209,13 +208,13 @@ describe("OpenAI Completions payload transform", () => {
     assert.deepEqual(next.plugins, [{ id: "web" }, { id: "file-parser", pdf: { engine: "native" } }]);
   });
 
-  it("adds a strict response_format and asks OpenRouter for endpoints that honour it", () => {
+  it("adds a strict response_format, leaving the routing preferences to the model's compat", () => {
     const next = transformOpenAICompletionsPayload(
       { ...payload(), provider: { order: ["openai"] } },
       plan({ marker: undefined, documents: [], responseSchema: { name: "answer", schema: SCHEMA } }),
     ) as Record<string, unknown>;
     assert.deepEqual(next.response_format, { type: "json_schema", json_schema: { name: "answer", schema: SCHEMA, strict: true } });
-    assert.deepEqual(next.provider, { order: ["openai"], require_parameters: true });
+    assert.deepEqual(next.provider, { order: ["openai"] });
   });
 
   it("fails when the marker is missing or merged into a plain-text message", () => {

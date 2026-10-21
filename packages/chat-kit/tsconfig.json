@@ -6,6 +6,7 @@
     "paths": {
       "@hk01/pi-ai-extra-google/pi-ai": ["../google/src/pi-ai/index.ts"],
       "@hk01/pi-ai-extra-kie/pi-ai": ["../kie/src/pi-ai/index.ts"],
+      "@hk01/pi-ai-extra-openrouter/pi-ai": ["../openrouter/src/pi-ai/index.ts"],
       "@hk01/pi-ai-extra-toapis/pi-ai": ["../toapis/src/pi-ai/index.ts"]
     }
   },

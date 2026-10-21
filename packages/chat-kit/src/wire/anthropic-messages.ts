@@ -1,7 +1,7 @@
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { TurnFailure } from "../errors.ts";
 import { isRecord } from "../guards.ts";
-import { modelIdKey } from "../model-id.ts";
+import { modelIdKey } from "@hk01/pi-ai-extra-internal/model-id";
 import type { ChatUsage } from "../types.ts";
 import { createUsageCapture, tokenCount, toChatUsage } from "../usage.ts";
 import { sanitizeSchemaForAnthropic } from "./anthropic-schema.ts";
@@ -126,8 +126,8 @@ function alwaysThinks(model: Model<Api>): boolean {
  */
 export function anthropicSchemaUnsupported(model: Model<Api>, request: SchemaRequest): string | undefined {
   if (!request.responseSchema || request.nativeStructuredOutput) return undefined;
-  if (request.settings.reasoning !== undefined) {
-    return "a response schema on Anthropic Messages is a forced tool call, which Anthropic does not allow with thinking, and this provider does not take native structured output yet; remove settings.reasoning.";
+  if (request.reasoning !== undefined) {
+    return "a response schema on Anthropic Messages is a forced tool call, which Anthropic does not allow with thinking, and this provider does not take native structured output yet; remove the reasoning option.";
   }
   if (alwaysThinks(model)) {
     return "a response schema on Anthropic Messages is a forced tool call, which Anthropic does not allow with thinking, and this model always thinks; this provider does not take native structured output yet.";
@@ -137,13 +137,14 @@ export function anthropicSchemaUnsupported(model: Model<Api>, request: SchemaReq
 
 /** A forced tool call unless the model thinks during the turn and the provider takes native structured output. */
 function anthropicSchemaAsToolCall(model: Model<Api>, request: SchemaRequest): boolean {
-  const thinks = request.settings.reasoning !== undefined || alwaysThinks(model);
+  const thinks = request.reasoning !== undefined || alwaysThinks(model);
   return !(thinks && request.nativeStructuredOutput);
 }
 
 /**
  * The Messages usage object: `input_tokens` excludes cache reads (`cache_read_input_tokens`) and
- * writes (`cache_creation_input_tokens`), so `inputTokens` adds the ones reported. Anthropic
+ * writes (`cache_creation_input_tokens`): it is `ChatUsage.input` as it stands (the prompt is the
+ * three added up, and `toChatUsage` takes the cache counts back off). Anthropic
  * reports no total, so `totalTokens` is omitted, and reasoning only as
  * `output_tokens_details.thinking_tokens` where a proxy passes it on.
  */
@@ -154,7 +155,7 @@ function anthropicUsage(usage: Record<string, unknown>, raw: Record<string, unkn
   const output = isRecord(usage.output_tokens_details) ? usage.output_tokens_details : {};
   return toChatUsage(
     {
-      input: input === undefined ? undefined : input + (cacheRead ?? 0) + (cacheWrite ?? 0),
+      prompt: input === undefined ? undefined : input + (cacheRead ?? 0) + (cacheWrite ?? 0),
       output: tokenCount(usage.output_tokens),
       cacheRead,
       cacheWrite,

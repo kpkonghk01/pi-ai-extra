@@ -1,6 +1,6 @@
-import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Model, ThinkingLevel } from "@earendil-works/pi-ai";
 import type { DocumentPlacement, PreparedDocument } from "../documents.ts";
-import type { ChatDocument, ChatResponseSchema, ChatTurnSettings, ChatUsage } from "../types.ts";
+import type { ChatDocument, ChatResponseSchema, ChatUsage } from "../types.ts";
 
 /** Everything a payload transform adds to the request pi-ai built. */
 export interface PayloadPlan {
@@ -8,8 +8,6 @@ export interface PayloadPlan {
   marker: string | undefined;
   documents: readonly PreparedDocument[];
   responseSchema: ChatResponseSchema | undefined;
-  /** Gemini only: add Google Search and URL context tools. */
-  grounding: boolean;
   /**
    * The request goes to OpenRouter (`targetsOpenRouter()`), so Anthropic Messages pins its file
    * parser to `native` too. OpenAI Completions, which only OpenRouter speaks here, always does.
@@ -25,7 +23,8 @@ export interface PayloadPlan {
 /** What decides how, and whether, a model takes a response schema. */
 export interface SchemaRequest {
   responseSchema: ChatResponseSchema | undefined;
-  settings: ChatTurnSettings;
+  /** The turn's `reasoning` option; undefined: thinking off where the model allows it. */
+  reasoning: ThinkingLevel | undefined;
   /**
    * Whether the provider accepts native structured output on this API: Anthropic Messages
    * `output_config.format`, which works while the model thinks.
@@ -54,7 +53,7 @@ export interface StreamObserver {
 
 /**
  * What the kit does differently per pi-ai wire API. The gaps it fills (documents, response
- * schema, safety-block reporting, grounding) belong to the API, not to the provider, so one
+ * schema, safety-block reporting, usage) belong to the API, not to the provider, so one
  * implementation serves every provider that speaks the API.
  */
 export interface WireApi {

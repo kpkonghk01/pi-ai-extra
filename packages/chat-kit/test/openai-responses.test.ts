@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createFakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
-import { createChatKit } from "../src/index.ts";
-import { collect, jsonBody, lastEvent, sseResponse, textOf, turn, wireFetch } from "./helpers.ts";
+import { collect, jsonBody, outcome,
+  outcomeOf,
+  runToEnd, sseResponse, textOf, turn, wireFetch , testKit } from "./helpers.ts";
 
 const KIE_RESPONSES_URL = "https://api.kie.ai/openai/v1/responses";
 const SCHEMA = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false };
@@ -40,7 +41,7 @@ function responsesStream(text: string[], terminal: Record<string, unknown>): Res
 
 function kit(routes: FakeRoute[]) {
   const fake = createFakeFetch(routes);
-  return { chat: createChatKit({ providers: [{ name: "kie", provider: "kie", apiKey: "kie-key" }], fetch: wireFetch(fake) }), fake };
+  return { chat: testKit(["kie"], wireFetch(fake)), fake };
 }
 
 describe("runTurn on OpenAI Responses (KIE Codex)", () => {
@@ -63,17 +64,15 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
           }),
       },
     ]);
-    const events = await collect(
-      chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol", responseSchema: { name: "verdict", schema: SCHEMA } })),
-    );
+    const { events, message } = await runToEnd(chat, turn({ provider: "kie", model: "gpt-5-6-sol", responseSchema: { name: "verdict", schema: SCHEMA } }));
     assert.equal(textOf(events), '{"ok":true}');
-    assert.deepEqual(lastEvent(events), {
+    assert.deepEqual(outcomeOf(message), {
       type: "done",
       usage: {
-        inputTokens: 30,
-        outputTokens: 4,
-        cachedInputTokens: 10,
-        reasoningTokens: 0,
+        input: 20,
+        output: 4,
+        cacheRead: 10,
+        reasoning: 0,
         totalTokens: 34,
         costUsd: 0.0024,
         costSource: "provider",
@@ -100,16 +99,16 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
         ],
       },
     ]);
-    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol" })))), {
+    assert.deepEqual(await outcome(chat, turn({ provider: "kie", model: "gpt-5-6-sol" })), {
       type: "done",
       usage: {
-        inputTokens: 30,
-        outputTokens: 4,
+        input: 30,
+        output: 4,
         totalTokens: 34,
         raw: { usage: { input_tokens: 30, output_tokens: 4, total_tokens: 34 } },
       },
     });
-    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol" })))), { type: "done" });
+    assert.deepEqual(await outcome(chat, turn({ provider: "kie", model: "gpt-5-6-sol" })), { type: "done" });
   });
 
   it("keeps KIE's credits_consumed and the prompt count when no output_tokens is reported", async () => {
@@ -124,9 +123,9 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
           }),
       },
     ]);
-    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol" })))), {
+    assert.deepEqual(await outcome(chat, turn({ provider: "kie", model: "gpt-5-6-sol" })), {
       type: "done",
-      usage: { inputTokens: 30, costUsd: 0.0024, costSource: "provider", raw: { usage: { input_tokens: 30 }, credits_consumed: 0.48 } },
+      usage: { input: 30, costUsd: 0.0024, costSource: "provider", raw: { usage: { input_tokens: 30 }, credits_consumed: 0.48 } },
     });
   });
 
@@ -142,10 +141,10 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
     };
     for (const [where, terminal] of Object.entries(placements)) {
       const { chat } = kit([{ method: "POST", url: KIE_RESPONSES_URL, respond: () => responsesStream(["OK"], terminal) }]);
-      const last = lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-6-sol" }))));
+      const last = await outcome(chat, turn({ provider: "kie", model: "gpt-6-sol" }));
       assert.equal(last.type, "done", where);
       const reported = last.type === "done" ? last.usage : undefined;
-      assert.deepEqual([reported?.inputTokens, reported?.outputTokens], [0, 5], where);
+      assert.deepEqual([reported?.input, reported?.output], [0, 5], where);
       assert.deepEqual([reported?.costUsd, reported?.costSource], [0.00005, "provider"], where);
     }
   });
@@ -168,13 +167,13 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
           }),
       },
     ]);
-    const last = lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol" }))));
+    const last = await outcome(chat, turn({ provider: "kie", model: "gpt-5-6-sol" }));
     assert.equal(last.type === "failed" && last.error.code, "CONTENT_BLOCKED");
     assert.equal(last.type === "failed" && last.error.reason, "content_filter");
-    assert.equal(last.type === "failed" && last.usage?.inputTokens, 5);
+    assert.equal(last.type === "failed" && last.usage?.input, 5);
   });
 
-  function maxOutputTokensStop(text: string[]): Response {
+  function maxTokensStop(text: string[]): Response {
     return responsesStream(text, {
       type: "response.incomplete",
       response: {
@@ -188,24 +187,22 @@ describe("runTurn on OpenAI Responses (KIE Codex)", () => {
   }
 
   it("ends a free-form answer cut off at max_output_tokens with done and truncated, keeping its text", async () => {
-    const { chat } = kit([{ method: "POST", url: KIE_RESPONSES_URL, respond: () => maxOutputTokensStop(["Once upon", " a ti"]) }]);
-    const events = await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol" })));
+    const { chat } = kit([{ method: "POST", url: KIE_RESPONSES_URL, respond: () => maxTokensStop(["Once upon", " a ti"]) }]);
+    const { events, message } = await runToEnd(chat, turn({ provider: "kie", model: "gpt-5-6-sol" }));
     assert.equal(textOf(events), "Once upon a ti");
-    const last = lastEvent(events);
+    const last = outcomeOf(message);
     assert.equal(last.type === "done" && last.truncated, true);
-    assert.equal(last.type === "done" && last.usage?.outputTokens, 16);
+    assert.equal(last.type === "done" && last.usage?.output, 16);
   });
 
   it("fails a response-schema answer cut off at max_output_tokens, with the raw stop reason", async () => {
-    const { chat } = kit([{ method: "POST", url: KIE_RESPONSES_URL, respond: () => maxOutputTokensStop(['{"ok":']) }]);
-    const last = lastEvent(
-      await collect(chat.runTurn(turn({ provider: "kie", model: "gpt-5-6-sol", responseSchema: { name: "verdict", schema: SCHEMA } }))),
-    );
+    const { chat } = kit([{ method: "POST", url: KIE_RESPONSES_URL, respond: () => maxTokensStop(['{"ok":']) }]);
+    const last = await outcome(chat, turn({ provider: "kie", model: "gpt-5-6-sol", responseSchema: { name: "verdict", schema: SCHEMA } }));
     assert.equal(last.type, "failed");
     if (last.type !== "failed") return;
     assert.equal(last.error.code, "PROVIDER_ERROR");
     assert.equal(last.error.reason, "incomplete.max_output_tokens");
     assert.match(last.error.message, /output-token limit/);
-    assert.equal(last.usage?.outputTokens, 16);
+    assert.equal(last.usage?.output, 16);
   });
 });

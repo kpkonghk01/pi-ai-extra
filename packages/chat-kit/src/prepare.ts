@@ -1,23 +1,31 @@
-import type { Api, Context, Message, Model, Usage } from "@earendil-works/pi-ai";
+import {
+  getCurrentTools,
+  normalizeContext,
+  type Api,
+  type AssistantMessageEventStream,
+  type Context,
+  type Message,
+  type Model,
+  type ModelsSimpleStreamOptions,
+} from "@earendil-works/pi-ai";
+import { untilAborted } from "./abort.ts";
+import type { TurnPricing } from "./cost.ts";
 import {
   createDocumentMarker,
   documentKind,
-  NATIVE_INPUT_FOR,
   prepareDocument,
   SUPPORTED_DOCUMENT_TYPES,
   type DocumentKind,
   type PreparedDocument,
 } from "./documents.ts";
-import { untilAborted } from "./abort.ts";
-import type { TurnPricing } from "./cost.ts";
 import { errorText, TurnFailure } from "./errors.ts";
-import { parseTurnInput } from "./input.ts";
-import type { ListedModel, RegisteredProvider } from "./registry.ts";
-import type { ChatDocument, ChatTurnInput, ChatTurnSettings } from "./types.ts";
-import { wireApiFor, type PayloadPlan, type WireApi } from "./wire/index.ts";
+import { parseTurn, type TurnOptions } from "./input.ts";
+import type { ProviderRegistry, RegisteredProvider } from "./registry.ts";
+import type { ChatDocument, ChatModelRef } from "./types.ts";
+import { wireApiFor, type PayloadPlan, type SchemaRequest, type WireApi } from "./wire/index.ts";
 import { targetsOpenRouter } from "./wire/openrouter.ts";
 
-/** Where a turn runs, as its input names it: the consumer's provider name and the model id. */
+/** Where a turn runs, as its reference names it: the pi-ai provider id and the model id. */
 export interface TurnTarget {
   provider: string;
   model: string;
@@ -26,83 +34,136 @@ export interface TurnTarget {
 /** A turn that passed every check, with its documents loaded: ready to send. */
 export interface PreparedTurn {
   target: TurnTarget;
-  provider: RegisteredProvider;
+  /** The model to send: the listed one, with OpenRouter's `require_parameters` for a schema on Completions. */
   model: Model<Api>;
   wire: WireApi;
+  /** The caller's context, with the documents' marker opening the first user message. */
   context: Context;
   plan: PayloadPlan;
-  settings: ChatTurnSettings;
+  options: TurnOptions;
   /** The answer is the arguments of a forced tool call (a response schema on Anthropic Messages). */
   schemaAsToolCall: boolean;
   pricing: TurnPricing;
+  /** pi-ai's `Models.streamSimple`, in the kit's `Models` collection. */
+  send(model: Model<Api>, context: Context, options: ModelsSimpleStreamOptions): AssistantMessageEventStream;
 }
 
-/** pi-ai requires usage on every assistant message, including the history the kit replays. */
-const ZERO_USAGE: Usage = {
-  input: 0,
-  output: 0,
-  cacheRead: 0,
-  cacheWrite: 0,
-  totalTokens: 0,
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
+/** The caller's signal aborted the turn before it was sent. */
+export class TurnAborted extends Error {
+  constructor() {
+    super("The turn was aborted.");
+    this.name = "TurnAborted";
+  }
+}
 
 /** Everything checked before any document is loaded or any request is sent. */
 export async function prepareTurn(
-  registry: ReadonlyMap<string, RegisteredProvider>,
-  input: ChatTurnInput,
+  registry: ProviderRegistry,
+  ref: ChatModelRef,
+  context: Context,
+  rawOptions: TurnOptions | undefined,
   target: TurnTarget,
-  signal: AbortSignal,
 ): Promise<PreparedTurn> {
-  const validation = parseTurnInput(input);
-  if (!validation.ok) throw new TurnFailure("INVALID_REQUEST", `Invalid turn input: ${validation.message}`);
-  const provider = registry.get(input.provider);
-  if (!provider) throw new TurnFailure("UNKNOWN_MODEL", `No provider named ${JSON.stringify(input.provider)} is configured.`);
-  const startedAt = Date.now();
-  const { model: listed, snapshot } = await untilAborted(provider.models.find(input.model), signal, turnAborted);
-  const unread = snapshot.refreshError === undefined ? "" : ` (its live model list could not be read: ${snapshot.refreshError})`;
-  if (!listed) {
-    throw new TurnFailure("UNKNOWN_MODEL", `Model ${JSON.stringify(input.model)} is not in the ${provider.kind} model list${unread}.`);
+  const validation = parseTurn(ref, context, rawOptions);
+  if (!validation.ok) throw new TurnFailure("INVALID_REQUEST", `Invalid turn: ${validation.message}`);
+  const { options } = validation;
+  const documents = options.documents ?? [];
+  const tools = getCurrentTools(normalizeContext(context).messages);
+  if (tools.length > 0 && options.responseSchema !== undefined) {
+    throw new TurnFailure(
+      "INVALID_REQUEST",
+      "A turn takes tools or a response schema, not both: tools serve an agent turn, a response schema a Gem turn.",
+    );
   }
-  const { model } = listed;
+  if (documents.length > 0 && !context.messages.some((message) => message.role === "user")) {
+    throw new TurnFailure("INVALID_REQUEST", "Documents open the first user message, and the context has none.");
+  }
+
+  const entry = registry.providers.get(ref.provider);
+  if (!entry) throw new TurnFailure("UNKNOWN_MODEL", `No provider with the id ${JSON.stringify(ref.provider)} is registered.`);
+  const startedAt = Date.now();
+  const { model, snapshot } = await untilAborted(entry.models.find(ref.id), options.signal, () => new TurnAborted());
+  const unread = snapshot.refreshError === undefined ? "" : ` (its live model list could not be read: ${snapshot.refreshError})`;
+  if (!model) throw new TurnFailure("UNKNOWN_MODEL", `Model ${JSON.stringify(ref.id)} is not offered by provider ${entry.id}${unread}.`);
   const wire = wireApiFor(model.api);
   if (!wire) throw new TurnFailure("UNSUPPORTED", `chat-kit does not support the ${JSON.stringify(model.api)} API of this model.`);
-  const settings = input.settings ?? {};
+  const described = entry.traits.describe(model);
   // From the installed list, a model reads only what the installed catalogue says it reads.
   const installedNote = snapshot.source === "installed" ? unread : "";
-  const kinds = input.documents.map((document) => checkDocument(document, provider, listed, installedNote));
-  const schemaRequest = { responseSchema: input.responseSchema, settings, nativeStructuredOutput: provider.nativeStructuredOutput };
+
+  if (tools.length > 0) checkTools(entry, model, described.tools);
+  if (!model.input.includes("image") && hasImages(context.messages)) {
+    throw new TurnFailure(
+      "UNSUPPORTED",
+      `Model ${model.id} does not read images${installedNote}, so the images in the context cannot be sent.`,
+    );
+  }
+  const reads = { pdf: described.fileInput, image: model.input.includes("image") };
+  const kinds = documents.map((document) => checkDocument(document, entry, model, reads, installedNote));
+  const schemaRequest: SchemaRequest = {
+    responseSchema: options.responseSchema,
+    reasoning: options.reasoning,
+    nativeStructuredOutput: entry.traits.takes.nativeStructuredOutput,
+  };
   const unsupported = wire.unsupported(model, schemaRequest);
   if (unsupported) throw new TurnFailure("UNSUPPORTED", `This model cannot take this request: ${unsupported}`);
 
-  const documents = await untilAborted(
-    Promise.all(input.documents.map((document, index) => loadDocument(document, kinds[index]!, wire, model))),
-    signal,
-    turnAborted,
+  const prepared = await untilAborted(
+    Promise.all(documents.map((document, index) => loadDocument(document, kinds[index]!, wire, model))),
+    options.signal,
+    () => new TurnAborted(),
   );
-  const marker = documents.length > 0 ? createDocumentMarker() : undefined;
-  const schemaAsToolCall = input.responseSchema !== undefined && wire.schemaAsToolCall(model, schemaRequest);
+  const marker = prepared.length > 0 ? createDocumentMarker() : undefined;
+  const schemaAsToolCall = options.responseSchema !== undefined && wire.schemaAsToolCall(model, schemaRequest);
+  const toOpenRouter = targetsOpenRouter(model);
   return {
     target,
-    provider,
-    model,
+    model: options.responseSchema !== undefined && model.api === "openai-completions" && toOpenRouter ? withRequiredParameters(model) : model,
     wire,
-    context: buildContext(input, model, marker),
+    context: withDocumentMarker(context, marker),
     plan: {
       marker,
-      documents,
-      responseSchema: input.responseSchema,
-      grounding: provider.grounding,
-      targetsOpenRouter: targetsOpenRouter(model),
-      nativeStructuredOutput: input.responseSchema !== undefined && !schemaAsToolCall && provider.nativeStructuredOutput,
+      documents: prepared,
+      responseSchema: options.responseSchema,
+      targetsOpenRouter: toOpenRouter,
+      nativeStructuredOutput: options.responseSchema !== undefined && !schemaAsToolCall && entry.traits.takes.nativeStructuredOutput,
     },
-    settings,
+    options,
     schemaAsToolCall,
-    pricing: { policy: provider.cost, rate: listed.rate, startedAt },
+    pricing: { policy: entry.traits, rate: described.rate, startedAt },
+    send: (sent, sentContext, sentOptions) => registry.models.streamSimple(sent, sentContext, sentOptions),
   };
 }
 
-function checkDocument(document: ChatDocument, provider: RegisteredProvider, listed: ListedModel, installedNote: string): DocumentKind {
+/** Tools pass through to pi-ai only where the provider takes them (verified live) and the model does. */
+function checkTools(entry: RegisteredProvider, model: Model<Api>, modelTakesTools: boolean): void {
+  if (!entry.traits.takes.tools) {
+    throw new TurnFailure("UNSUPPORTED", `Provider ${entry.id} does not take tools yet (not verified live), so this turn's tools cannot be sent.`);
+  }
+  if (!modelTakesTools) throw new TurnFailure("UNSUPPORTED", `Model ${model.id} does not take tools.`);
+}
+
+/**
+ * Whether a user message or tool result carries an image. pi-ai replaces an image with
+ * placeholder text for a model without image input; the kit refuses the turn instead, as ADR 0003
+ * forbids silently discarding reference images.
+ */
+function hasImages(messages: readonly Message[]): boolean {
+  return messages.some(
+    (message) =>
+      (message.role === "user" || message.role === "toolResult") &&
+      Array.isArray(message.content) &&
+      message.content.some((part) => part.type === "image"),
+  );
+}
+
+function checkDocument(
+  document: ChatDocument,
+  entry: RegisteredProvider,
+  model: Model<Api>,
+  reads: { pdf: boolean; image: boolean },
+  installedNote: string,
+): DocumentKind {
   const kind = documentKind(document.mimeType);
   if (kind === undefined) {
     throw new TurnFailure(
@@ -111,16 +172,15 @@ function checkDocument(document: ChatDocument, provider: RegisteredProvider, lis
     );
   }
   if (kind === "text") return kind;
-  if (!provider.fileDocuments) {
+  if (!entry.traits.takes.fileDocuments) {
     throw new TurnFailure(
       "UNSUPPORTED",
-      `Provider ${provider.kind} does not take PDF or image documents yet (its file input is undocumented), so ${JSON.stringify(document.name)} cannot be sent.`,
+      `Provider ${entry.id} does not take PDF or image documents yet (its file input is undocumented), so ${JSON.stringify(document.name)} cannot be sent.`,
     );
   }
-  const reads = NATIVE_INPUT_FOR[kind];
-  if (!listed.input.includes(reads)) {
-    const takes = listed.input.length === 1 ? "takes text only" : `does not read ${kind === "pdf" ? "PDF files natively" : "images"}`;
-    throw new TurnFailure("UNSUPPORTED", `Model ${listed.model.id} ${takes}${installedNote}, so it cannot read ${JSON.stringify(document.name)}.`);
+  if (!reads[kind]) {
+    const takes = !reads.pdf && !reads.image ? "takes text only" : `does not read ${kind === "pdf" ? "PDF files natively" : "images"}`;
+    throw new TurnFailure("UNSUPPORTED", `Model ${model.id} ${takes}${installedNote}, so it cannot read ${JSON.stringify(document.name)}.`);
   }
   return kind;
 }
@@ -136,43 +196,24 @@ async function loadDocument(document: ChatDocument, kind: DocumentKind, wire: Wi
 }
 
 /**
- * The transcript: system prompt, history, then the new message. The documents' marker opens the
- * first user turn (the first user message of the history, otherwise the new message), so the
- * prompt is identical across turns, and across sessions of the same documents, up to the end of
- * the documents, which lets provider prompt caching reuse it.
+ * The context with the documents' marker opening the first user message, so the prompt is
+ * identical across turns, and across sessions of the same documents, up to the end of the
+ * documents, which lets provider prompt caching reuse it. Each wire's payload transform replaces
+ * the marker with the documents' parts.
  */
-function buildContext(input: ChatTurnInput, model: Model<Api>, marker: string | undefined): Context {
-  const firstUser = input.history.findIndex((entry) => entry.role === "user");
-  const timestamp = Date.now();
-  const user = (text: string, withMarker: boolean): Message => ({
-    role: "user",
-    content:
-      withMarker && marker !== undefined
-        ? [
-            { type: "text", text: marker },
-            { type: "text", text },
-          ]
-        : text,
-    timestamp,
+function withDocumentMarker(context: Context, marker: string | undefined): Context {
+  if (marker === undefined) return context;
+  const first = context.messages.findIndex((message) => message.role === "user");
+  const messages = context.messages.map((message, index): Message => {
+    if (index !== first || message.role !== "user") return message;
+    const rest = typeof message.content === "string" ? (message.content ? [{ type: "text" as const, text: message.content }] : []) : message.content;
+    return { ...message, content: [{ type: "text", text: marker }, ...rest] };
   });
-  const messages: Message[] = input.history.map((entry, index) =>
-    entry.role === "user"
-      ? user(entry.text, index === firstUser)
-      : {
-          role: "assistant",
-          content: [{ type: "text", text: entry.text }],
-          api: model.api,
-          provider: model.provider,
-          model: model.id,
-          usage: ZERO_USAGE,
-          stopReason: "stop",
-          timestamp,
-        },
-  );
-  messages.push(user(input.message, firstUser === -1));
-  return { ...(input.systemPrompt ? { systemPrompt: input.systemPrompt } : {}), messages };
+  return { ...context, messages };
 }
 
-function turnAborted(): TurnFailure {
-  return new TurnFailure("ABORTED", "The turn was aborted.");
+/** The model with OpenRouter asked to route only to endpoints that honour every request parameter (the response schema). */
+function withRequiredParameters(model: Model<Api>): Model<Api> {
+  const compat = (model.compat ?? {}) as { openRouterRouting?: Record<string, unknown> };
+  return { ...model, compat: { ...compat, openRouterRouting: { ...compat.openRouterRouting, require_parameters: true } } } as Model<Api>;
 }

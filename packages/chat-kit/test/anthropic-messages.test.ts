@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { createFakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
-import { createChatKit } from "../src/index.ts";
 import { anthropicSchemaUnsupported } from "../src/wire/anthropic-messages.ts";
-import { anthropicEvents, collect, jsonBody, lastEvent, sseResponse, testDocument, textOf, turn, wireFetch } from "./helpers.ts";
+import { anthropicEvents, collect, jsonBody, outcome,
+  outcomeOf,
+  runToEnd, sseResponse, testDocument, textOf, turn, wireFetch , testKit } from "./helpers.ts";
 
 // The Anthropic SDK posts to the beta Messages endpoint (`/v1/messages?beta=true`).
 const OPENROUTER_MESSAGES_URL = /^https:\/\/openrouter\.ai\/api\/v1\/messages\b/;
@@ -13,14 +14,7 @@ const SCHEMA = { type: "object", properties: { title: { type: "string" } }, requ
 
 function kit(routes: FakeRoute[]) {
   const fake = createFakeFetch(routes);
-  const chat = createChatKit({
-    providers: [
-      { name: "router", provider: "openrouter", apiKey: "or-key" },
-      { name: "kie", provider: "kie", apiKey: "kie-key" },
-      { name: "toapis", provider: "toapis", apiKey: "toapis-key" },
-    ],
-    fetch: wireFetch(fake),
-  });
+  const chat = testKit(["openrouter", "kie", "toapis"], wireFetch(fake), { keys: { toapis: "toapis-key" } });
   return { chat, fake };
 }
 
@@ -35,9 +29,7 @@ describe("runTurn on Anthropic Messages", () => {
         respond: () => sseResponse(anthropicEvents({ blocks: [{ type: "text", text: "Sure." }], stopReason: "end_turn" })),
       },
     ]);
-    const events = await collect(
-      chat.runTurn(
-        turn({
+    const { events, message } = await runToEnd(chat, turn({
           model: "anthropic/claude-sonnet-4.6",
           documents: [notes, pdf],
           history: [
@@ -45,18 +37,16 @@ describe("runTurn on Anthropic Messages", () => {
             { role: "assistant", text: "A1" },
           ],
           message: "Q2",
-        }),
-      ),
-    );
+        }),);
     assert.equal(textOf(events), "Sure.");
     // No totalTokens: Anthropic reports no total, and the kit never computes one.
-    assert.deepEqual(lastEvent(events), {
+    assert.deepEqual(outcomeOf(message), {
       type: "done",
       usage: {
-        inputTokens: 32,
-        outputTokens: 9,
-        cachedInputTokens: 5,
-        cacheWriteTokens: 7,
+        input: 20,
+        output: 9,
+        cacheRead: 5,
+        cacheWrite: 7,
         // OpenRouter reported no cost: estimated from the catalogue rate (3 in, 15 out, 0.3 cache read,
         // 3.75 cache write per 1M): 20 × 3 + 5 × 0.3 + 7 × 3.75 + 9 × 15 = 222.75 per 1M tokens.
         costUsd: 0.00022275,
@@ -98,17 +88,12 @@ describe("runTurn on Anthropic Messages", () => {
           ),
       },
     ]);
-    const events = await collect(
-      chat.runTurn(turn({ model: "anthropic/claude-sonnet-4.6", responseSchema: { name: "answer", schema: SCHEMA } })),
-    );
+    const { events, message } = await runToEnd(chat, turn({ model: "anthropic/claude-sonnet-4.6", responseSchema: { name: "answer", schema: SCHEMA } }));
     assert.deepEqual(
-      events.filter((event) => event.type === "text"),
-      [
-        { type: "text", delta: '{"ti' },
-        { type: "text", delta: 'tle":"Hi"}' },
-      ],
+      events.flatMap((event) => (event.type === "text_delta" ? [event.delta] : [])),
+      ['{"ti', 'tle":"Hi"}'],
     );
-    assert.equal(lastEvent(events).type, "done");
+    assert.equal(outcomeOf(message).type, "done");
     const body = jsonBody(fake.calls[0]?.body);
     assert.deepEqual(body.tools, [{ name: "answer", description: "Respond with the answer as this tool's input.", input_schema: SCHEMA }]);
     assert.deepEqual(body.tool_choice, { type: "tool", name: "answer" });
@@ -123,11 +108,9 @@ describe("runTurn on Anthropic Messages", () => {
         respond: () => sseResponse(anthropicEvents({ blocks: [{ type: "text", text: "Here you go" }], stopReason: "end_turn" })),
       },
     ]);
-    const events = await collect(
-      chat.runTurn(turn({ model: "anthropic/claude-sonnet-4.6", responseSchema: { name: "answer", schema: SCHEMA } })),
-    );
+    const { events, message } = await runToEnd(chat, turn({ model: "anthropic/claude-sonnet-4.6", responseSchema: { name: "answer", schema: SCHEMA } }));
     assert.equal(textOf(events), "", "free text is never passed off as the schema answer");
-    const last = lastEvent(events);
+    const last = outcomeOf(message);
     assert.equal(last.type === "failed" && last.error.code, "PROVIDER_ERROR");
     assert.equal(last.type === "failed" && last.error.reason, "end_turn");
     assert.match(last.type === "failed" ? last.error.message : "", /without the response-schema tool call/);
@@ -141,11 +124,11 @@ describe("runTurn on Anthropic Messages", () => {
         respond: () => sseResponse(anthropicEvents({ blocks: [{ type: "text", text: "A long ans" }], stopReason: "max_tokens" })),
       },
     ]);
-    const events = await collect(chat.runTurn(turn({ provider: "kie", model: "claude-sonnet-4-6" })));
+    const { events, message } = await runToEnd(chat, turn({ provider: "kie", model: "claude-sonnet-4-6" }));
     assert.equal(textOf(events), "A long ans");
-    const last = lastEvent(events);
+    const last = outcomeOf(message);
     assert.equal(last.type === "done" && last.truncated, true);
-    assert.equal(last.type === "done" && last.usage?.outputTokens, 9);
+    assert.equal(last.type === "done" && last.usage?.output, 9);
   });
 
   it("omits usage the provider did not report: no cache counts without cache fields, no usage without counts", async () => {
@@ -169,12 +152,12 @@ describe("runTurn on Anthropic Messages", () => {
         ],
       },
     ]);
-    const withoutCache = lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "claude-sonnet-4-6" }))));
+    const withoutCache = await outcome(chat, turn({ provider: "kie", model: "claude-sonnet-4-6" }));
     assert.deepEqual(withoutCache, {
       type: "done",
-      usage: { inputTokens: 20, outputTokens: 9, raw: { usage: { input_tokens: 20, output_tokens: 9 } } },
+      usage: { input: 20, output: 9, raw: { usage: { input_tokens: 20, output_tokens: 9 } } },
     });
-    const withoutUsage = lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "claude-sonnet-4-6" }))));
+    const withoutUsage = await outcome(chat, turn({ provider: "kie", model: "claude-sonnet-4-6" }));
     assert.deepEqual(withoutUsage, { type: "done" });
   });
 
@@ -195,9 +178,9 @@ describe("runTurn on Anthropic Messages", () => {
           ),
       },
     ]);
-    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "kie", model: "claude-sonnet-4-6" })))), {
+    assert.deepEqual(await outcome(chat, turn({ provider: "kie", model: "claude-sonnet-4-6" })), {
       type: "done",
-      usage: { inputTokens: 20, costUsd: 0.00075, costSource: "provider", raw: { usage: { input_tokens: 20 }, credits_consumed: 0.15 } },
+      usage: { input: 20, costUsd: 0.00075, costSource: "provider", raw: { usage: { input_tokens: 20 }, credits_consumed: 0.15 } },
     });
   });
 
@@ -212,16 +195,14 @@ describe("runTurn on Anthropic Messages", () => {
           ),
       },
     ]);
-    const events = await collect(
-      chat.runTurn(turn({ model: "anthropic/claude-sonnet-4.6", responseSchema: { name: "answer", schema: SCHEMA } })),
-    );
-    const last = lastEvent(events);
+    const { events, message } = await runToEnd(chat, turn({ model: "anthropic/claude-sonnet-4.6", responseSchema: { name: "answer", schema: SCHEMA } }));
+    const last = outcomeOf(message);
     assert.equal(last.type, "failed");
     if (last.type !== "failed") return;
     assert.equal(last.error.code, "PROVIDER_ERROR");
     assert.equal(last.error.reason, "max_tokens");
-    assert.match(last.error.message, /^\[router\/anthropic\/claude-sonnet-4\.6\] The answer hit the output-token limit/);
-    assert.equal(last.usage?.outputTokens, 9);
+    assert.match(last.error.message, /^\[openrouter\/anthropic\/claude-sonnet-4\.6\] The answer hit the output-token limit/);
+    assert.equal(last.usage?.output, 9);
   });
 
   it("reports a refusal as CONTENT_BLOCKED with usage, and keeps KIE's credits_consumed in raw usage", async () => {
@@ -239,16 +220,14 @@ describe("runTurn on Anthropic Messages", () => {
           ),
       },
     ]);
-    const events = await collect(chat.runTurn(turn({ provider: "kie", model: "claude-sonnet-4-6" })));
+    const { events, message } = await runToEnd(chat, turn({ provider: "kie", model: "claude-sonnet-4-6" }));
     assert.equal(fake.calls[0]?.headers.authorization, "Bearer kie-key");
     assert.equal(textOf(events), "I can");
-    const last = lastEvent(events);
+    const last = outcomeOf(message);
     assert.equal(last.type, "failed");
     if (last.type !== "failed") return;
     assert.equal(last.error.code, "CONTENT_BLOCKED");
     assert.equal(last.error.reason, "refusal");
-    assert.equal(last.error.provider, "kie");
-    assert.equal(last.error.model, "claude-sonnet-4-6");
     assert.match(last.error.message, /^\[kie\/claude-sonnet-4-6\] Claude stopped with refusal/);
     assert.deepEqual(last.usage?.raw, {
       usage: { input_tokens: 20, output_tokens: 9, cache_read_input_tokens: 5, cache_creation_input_tokens: 7 },
@@ -265,8 +244,8 @@ describe("runTurn on Anthropic Messages", () => {
         respond: () => sseResponse(anthropicEvents({ blocks: [{ type: "text", text: "ok" }], stopReason: "end_turn" })),
       },
     ]);
-    const events = await collect(chat.runTurn(turn({ provider: "kie", model: "claude-sonnet-4-6", documents: [notes] })));
-    assert.equal(lastEvent(events).type, "done");
+    const { events, message } = await runToEnd(chat, turn({ provider: "kie", model: "claude-sonnet-4-6", documents: [notes] }));
+    assert.equal(outcomeOf(message).type, "done");
     const body = jsonBody(fake.calls[0]?.body);
     const messages = body.messages as { content: unknown }[];
     assert.deepEqual(messages[0]?.content, [
@@ -278,24 +257,18 @@ describe("runTurn on Anthropic Messages", () => {
 
   it("rejects a response schema with reasoning on ToAPIs, which has no native structured output, before sending anything", async () => {
     const { chat, fake } = kit([]);
-    const withReasoning = lastEvent(
-      await collect(
-        chat.runTurn(
-          turn({
+    const withReasoning = await outcome(chat, turn({
             provider: "toapis",
             model: "claude-sonnet-4-6",
             responseSchema: { name: "answer", schema: SCHEMA },
             settings: { reasoning: "high" },
-          }),
-        ),
-      ),
-    );
+          }));
     assert.equal(withReasoning.type === "failed" && withReasoning.error.code, "UNSUPPORTED");
-    assert.match(withReasoning.type === "failed" ? withReasoning.error.message : "", /remove settings\.reasoning/);
+    assert.match(withReasoning.type === "failed" ? withReasoning.error.message : "", /remove the reasoning option/);
     assert.equal(fake.calls.length, 0);
     // ToAPIs offers no always-thinking Claude by default; the rule is the wire's.
     const alwaysThinking = { id: "claude-opus-5-5", api: "anthropic-messages" } as Model<Api>;
-    const request = { responseSchema: { name: "answer", schema: SCHEMA }, settings: {} };
+    const request = { responseSchema: { name: "answer", schema: SCHEMA }, reasoning: undefined };
     assert.match(anthropicSchemaUnsupported(alwaysThinking, { ...request, nativeStructuredOutput: false }) ?? "", /always thinks/);
     assert.equal(anthropicSchemaUnsupported(alwaysThinking, { ...request, nativeStructuredOutput: true }), undefined);
   });
@@ -304,9 +277,9 @@ describe("runTurn on Anthropic Messages", () => {
     // Verified live on 2026-10-16: KIE claude-opus-5-5 with thinking answered valid JSON under output_config.format.
     const respond = () => sseResponse(anthropicEvents({ blocks: [{ type: "text", text: '{"title":"Hi"}' }], stopReason: "end_turn" }));
     const { chat, fake } = kit([{ method: "POST", url: KIE_MESSAGES_URL, respond }]);
-    const events = await collect(chat.runTurn(turn({ provider: "kie", model: "claude-opus-5-5", responseSchema: { name: "answer", schema: SCHEMA } })));
+    const { events, message } = await runToEnd(chat, turn({ provider: "kie", model: "claude-opus-5-5", responseSchema: { name: "answer", schema: SCHEMA } }));
     assert.equal(textOf(events), '{"title":"Hi"}');
-    assert.equal(lastEvent(events).type, "done");
+    assert.equal(outcomeOf(message).type, "done");
     const alwaysThinks = jsonBody(fake.calls[0]?.body);
     assert.deepEqual((alwaysThinks.output_config as Record<string, unknown>).format, {
       type: "json_schema",
@@ -314,11 +287,7 @@ describe("runTurn on Anthropic Messages", () => {
     });
     assert.equal(alwaysThinks.tools, undefined);
     assert.equal(alwaysThinks.tool_choice, undefined);
-    await collect(
-      chat.runTurn(
-        turn({ provider: "kie", model: "claude-sonnet-4-6", responseSchema: { name: "answer", schema: SCHEMA }, settings: { reasoning: "high" } }),
-      ),
-    );
+    (await runToEnd(chat, turn({ provider: "kie", model: "claude-sonnet-4-6", responseSchema: { name: "answer", schema: SCHEMA }, settings: { reasoning: "high" } }))).events;
     const withReasoning = jsonBody(fake.calls[1]?.body);
     assert.ok(isNativeFormat(withReasoning.output_config));
     assert.equal(withReasoning.tool_choice, undefined);
@@ -332,11 +301,9 @@ describe("runTurn on Anthropic Messages", () => {
         respond: () => sseResponse(anthropicEvents({ blocks: [{ type: "text", text: '{"title":"Hi"}' }], stopReason: "end_turn" })),
       },
     ]);
-    const events = await collect(
-      chat.runTurn(turn({ model: "anthropic/claude-opus-5", responseSchema: { name: "answer", schema: SCHEMA } })),
-    );
+    const { events, message } = await runToEnd(chat, turn({ model: "anthropic/claude-opus-5", responseSchema: { name: "answer", schema: SCHEMA } }));
     assert.equal(textOf(events), '{"title":"Hi"}');
-    assert.equal(lastEvent(events).type, "done");
+    assert.equal(outcomeOf(message).type, "done");
     const body = jsonBody(fake.calls[0]?.body);
     assert.deepEqual((body.output_config as Record<string, unknown>).format, {
       type: "json_schema",
@@ -349,11 +316,7 @@ describe("runTurn on Anthropic Messages", () => {
   it("sends native structured output on OpenRouter when reasoning is requested on a model that can stop thinking", async () => {
     const respond = () => sseResponse(anthropicEvents({ blocks: [{ type: "text", text: "{}" }], stopReason: "end_turn" }));
     const { chat, fake } = kit([{ method: "POST", url: OPENROUTER_MESSAGES_URL, respond }]);
-    await collect(
-      chat.runTurn(
-        turn({ model: "anthropic/claude-sonnet-4.6", responseSchema: { name: "answer", schema: SCHEMA }, settings: { reasoning: "high" } }),
-      ),
-    );
+    (await runToEnd(chat, turn({ model: "anthropic/claude-sonnet-4.6", responseSchema: { name: "answer", schema: SCHEMA }, settings: { reasoning: "high" } }))).events;
     const thinking = jsonBody(fake.calls[0]?.body);
     assert.ok(isNativeFormat(thinking.output_config));
     assert.equal(thinking.tool_choice, undefined);
