@@ -116,7 +116,7 @@ export interface ChatProviderRegistration {
 
 A per-call key can still be added later as an option, without breaking anything.
 
-**DATA-4580's contract lands in 0.3.0.** `ChatProviderConfig` and `ChatProviderKind` go now, not in a second breaking release. The trade-off: 0.3.0 ships with four provider package releases, one of them new, and DATA-4572 and DATA-4573 wait for it. Otherwise the portal's provider config and `createChatKit` call would break twice. Chat kit stops importing the provider packages, so they become optional peers, and the portal can uninstall ToAPIs. What remains of DATA-4580, none of it public:
+**DATA-4580's contract lands in 0.3.0** (decided by the product owner, 2026-10-21). `ChatProviderConfig` and `ChatProviderKind` go now, not in a second breaking release. The trade-off: 0.3.0 ships with four provider package releases, one of them new, and DATA-4572 and DATA-4573 wait for it. Otherwise the portal's provider config and `createChatKit` call would break twice. Chat kit stops importing the provider packages, so they become optional peers, and the portal can uninstall ToAPIs. What remains of DATA-4580, none of it public:
 
 - the key-gated smoke script (`pnpm smoke:chat --provider <id>`), which also checks tool calls;
 - the "Adding a reseller" checklist in `docs/design/`, with tool calls added to what is verified live;
@@ -127,7 +127,10 @@ A per-call key can still be added later as an option, without breaking anything.
 
 ```ts
 export interface ChatKit {
+  /** First overload: a Gem-style turn, whose answer follows a JSON Schema and whose context declares no tools. Second: any other turn, tools allowed. */
+  streamSimple(model: ChatModelRef, context: ChatSchemaContext, options: ChatSchemaStreamOptions): ChatTurnStream;
   streamSimple(model: ChatModelRef, context: Context, options?: ChatStreamOptions): ChatTurnStream;
+  completeSimple(model: ChatModelRef, context: ChatSchemaContext, options: ChatSchemaStreamOptions): Promise<ChatAssistantMessage>;
   completeSimple(model: ChatModelRef, context: Context, options?: ChatStreamOptions): Promise<ChatAssistantMessage>;
   listModels(options?: ChatListModelsOptions): Promise<ChatProviderModels[]>;
 }
@@ -138,20 +141,26 @@ export interface ChatModelRef {
   id: string;
 }
 
-export type ChatStreamOptions = Pick<
-  SimpleStreamOptions,
-  "signal" | "temperature" | "maxTokens" | "reasoning" | "toolChoice" | "sessionId" | "maxRetries"
-> & {
+/** What every turn takes: pi-ai's options, plus reference documents. */
+type ChatBaseStreamOptions = Pick<SimpleStreamOptions, "signal" | "temperature" | "maxTokens" | "reasoning" | "sessionId" | "maxRetries"> & {
   /** Reference documents. They open the first user message, so provider prompt caching covers them. */
   documents?: readonly ChatDocument[];
-  /** A JSON Schema the answer must follow. The answer then streams as JSON text. */
-  responseSchema?: ChatResponseSchema;
 };
+
+/** A turn that may use tools. It has no response schema. */
+export type ChatStreamOptions = ChatBaseStreamOptions & Pick<SimpleStreamOptions, "toolChoice"> & { responseSchema?: undefined };
+
+/** A turn whose answer follows a JSON Schema. The answer then streams as JSON text. */
+export type ChatSchemaStreamOptions = ChatBaseStreamOptions & { responseSchema: ChatResponseSchema };
+
+/** pi-ai's `Context` without tools: the context of a response-schema turn. */
+export type ChatSchemaContext = Omit<Context, "tools"> & { tools?: undefined };
 ```
 
 - The calls mirror pi-ai's `Models.streamSimple(model, context, options)` and `completeSimple()`. The names `stream()` and `complete()` stay free for a later variant with per-API options.
 - `model` is a reference, not a pi-ai `Model`. A `Model.provider` is pi-ai's provider id, and two provider names may share one. The reference uses pi-ai's field names, `provider` and `id`.
 - `context` is pi-ai's `Context`, unextended: system prompt, user, assistant, tool-result and system messages, tools, images. A router hands it on unchanged. pi-ai's `TranscriptContext`, which pi-agent-core passes, fits too: `normalizeContext` keeps its messages as they are.
+- **Tools and a response schema are mutually exclusive** (decided by the product owner, 2026-10-21). Tools serve the agent use case; a response schema serves the Gem use case. The overloads enforce it: with `responseSchema`, the context has no `tools`, and the other overload takes no `responseSchema`. Untyped callers, such as a router mapping JSON requests, can still send both. That is the caller's error, not a model's limit, so the turn fails before sending with `INVALID_REQUEST`. The runtime check reads the normalized transcript, so it also counts tools a system message adds (`toolsAdded`), which the type cannot see. An empty `tools` array counts as no tools.
 - Documents and the response schema sit beside the `Context`, in the options. `ChatDocument` (`{ name, mimeType, url?, size?, load }`) and `ChatResponseSchema` (`{ name, schema }`) are unchanged.
 - The settings are pi-ai's: `temperature`, `maxTokens`, `reasoning` (`ThinkingLevel`). Without `reasoning`, thinking is off where the model allows it, which is pi-ai's own rule.
 - `maxRetries` defaults to 2. pi-ai retries only before the stream starts, so a turn is never re-sent after its first token.
@@ -161,13 +170,11 @@ export type ChatStreamOptions = Pick<
 ### 3. Tools
 
 - `Context.tools`, tool calls and tool results pass through to pi-ai unchanged. pi-ai supports them on every API Chat kit uses.
-- Chat kit refuses tools in three cases only, each before anything is sent, with `UNSUPPORTED`:
-  - a provider whose tool support has not been verified live (`chat.tools` is false: KIE and ToAPIs, for now);
-  - a model without tool support (OpenRouter's live list);
-  - tools with a response schema on the forced-tool path (below).
+- Chat kit refuses tools in two cases only, each before anything is sent, with `UNSUPPORTED`:
+  - a provider whose tool support has not been verified live (`chat.tools` is false). KIE and ToAPIs stay off until a live smoke test (decided by the product owner, 2026-10-21): a reseller that ignored `tools` would answer without calling them, silently.
+  - a model without tool support (OpenRouter's live list).
 - `toolChoice` is pi-ai's `ToolChoice`, `"auto" | "none"`. A forced or named choice (OpenAI `required`, Anthropic `{ type: "tool" }`) would widen this union later. Widening an input type breaks no caller.
-- **Response schema with tools.** The schema goes only as native structured output: Gemini `responseJsonSchema`, OpenAI `response_format` and `text.format`, Anthropic `output_config.format`. Anthropic Messages without native structured output (ToAPIs today) has only the forced tool call, which would stop the model calling the consumer's tools, so that turn is `UNSUPPORTED`. A model may still stop to call a tool (`toolUse`); the schema shapes its final text.
-- **Response schema without tools** keeps 0.2.0's rules, including the forced tool call. Chat kit turns that call into text: the tool's events become `text_start`, `text_delta` and `text_end`, its block becomes a text block, and `stopReason` is `"stop"`. On every API, the schema answer is the message's text.
+- **Response schema.** A turn has tools or a response schema, never both (section 2). The response schema keeps 0.2.0's rules, including the forced tool call on Anthropic Messages. Chat kit turns that call into text: the tool's events become `text_start`, `text_delta` and `text_end`, its block becomes a text block, and `stopReason` is `"stop"`. On every API, the schema answer is the message's text.
 
 ### 4. Output
 
@@ -287,8 +294,9 @@ export type ChatProviderModels =
 
 - pi-ai's names and meanings: `id`, `name`, `api`, `contextWindow`, `maxTokens`, `reasoning`, and `input` with one added value.
 - `thinkingLevels` is pi-ai's `getSupportedThinkingLevels(model)`, without `off` for a model Chat kit knows always thinks.
-- Chat kit's extras: the `file` input, `tools`, `fileDocuments`, `responseSchema` (for a turn with no reasoning level and no tools), `rate`, and the list's `source`, `fetchedAt` and `refreshError`.
+- Chat kit's extras: the `file` input, `tools`, `fileDocuments`, `responseSchema` (for a turn with no reasoning level), `rate`, and the list's `source`, `fetchedAt` and `refreshError`.
 - `kind` becomes `providerId`, pi-ai's `Provider.id`.
+- ADR 0008's exclusions stay fixed in 0.3.0 (decided by the product owner, 2026-10-21). A per-kit opt-in can come later without a break.
 
 ### 7. Errors
 
@@ -300,7 +308,7 @@ export type ChatTurnErrorCode = "CONTENT_BLOCKED" | "PROVIDER_ERROR" | "UNSUPPOR
 | --- | --- | --- |
 | `UNKNOWN_MODEL` | The provider name is not registered, or the model is not offered | No |
 | `UNSUPPORTED` | The model or provider cannot take the turn's documents, images, tools, schema or settings | No |
-| `INVALID_REQUEST` | The model reference, `Context` or options are malformed, or a document's `load()` failed | No |
+| `INVALID_REQUEST` | The model reference, `Context` or options are malformed, the turn has both tools and a response schema, or a document's `load()` failed | No |
 | `CONTENT_BLOCKED` | A safety system blocked the prompt or the answer; `rawStopReason` is the provider's value | Yes |
 | `PROVIDER_ERROR` | The provider failed, or the answer stopped early | Yes |
 
@@ -317,15 +325,15 @@ export type ChatTurnErrorCode = "CONTENT_BLOCKED" | "PROVIDER_ERROR" | "UNSUPPOR
 | `createChatKit({ providers: ChatProviderConfig[], fetch? })` | `createChatKit({ providers: ChatProviderRegistration[], fetch? })` |
 | `ChatProviderConfig { name, provider, apiKey, baseUrl?, grounding? }` | `ChatProviderRegistration { name, provider: ChatProvider }`; the key, base URL and grounding go to the factory |
 | `ChatProviderKind` | Removed; each package's factory. `providerId` is pi-ai's id |
-| — | `ChatProvider`, `ChatProviderTraits`, `ChatModelRef`, `ChatStreamOptions`, `ChatTurnStream`, `ChatAssistantMessage`, `ChatTurnRecord` |
+| — | `ChatProvider`, `ChatProviderTraits`, `ChatModelRef`, `ChatStreamOptions`, `ChatSchemaStreamOptions`, `ChatSchemaContext`, `ChatTurnStream`, `ChatAssistantMessage`, `ChatTurnRecord` |
 | `ChatKit.runTurn(input, options)` | `ChatKit.streamSimple(model, context, options)`, `ChatKit.completeSimple(...)` |
 | `ChatTurnInput.provider`, `.model` | `ChatModelRef.provider`, `.id` |
 | `ChatTurnInput.systemPrompt` | `Context.systemPrompt` |
 | `ChatTurnInput.history`, `.message`; `ChatHistoryMessage` | `Context.messages`: pi-ai `UserMessage` and `AssistantMessage` |
-| `ChatTurnInput.documents` (required) | `ChatStreamOptions.documents` (optional) |
-| `ChatTurnInput.responseSchema` | `ChatStreamOptions.responseSchema` |
-| `ChatTurnSettings { temperature, maxOutputTokens, reasoning }` | `ChatStreamOptions` `temperature`, `maxTokens`, `reasoning` |
-| `ChatTurnOptions { signal }` | `ChatStreamOptions.signal` |
+| `ChatTurnInput.documents` (required) | The `documents` option (optional) |
+| `ChatTurnInput.responseSchema` | `ChatSchemaStreamOptions.responseSchema`, with a `ChatSchemaContext` |
+| `ChatTurnSettings { temperature, maxOutputTokens, reasoning }` | The `temperature`, `maxTokens` and `reasoning` options |
+| `ChatTurnOptions { signal }` | The `signal` option |
 | `ChatTurnEvent` | pi-ai `AssistantMessageEvent` (table in section 4) |
 | `ChatTurnError { code, provider, model, message, reason?, status? }` | `chatKit.error { code, status? }`, `chatKit.provider`, `message.model`, `message.errorMessage`, `message.rawStopReason` |
 | `ChatTurnErrorCode` `ABORTED` | `stopReason: "aborted"` |
@@ -369,8 +377,8 @@ export function gemContext(turn: { systemPrompt: string; history: ChatMessage[];
 
 **LLM API router.**
 
-- Enables: an OpenAI or Anthropic request maps onto a `ChatModelRef`, a `Context` (messages, base64 images, tools) and `ChatStreamOptions` (`temperature`, `maxTokens`, `reasoning`, `toolChoice`, `responseSchema`). pi-ai's events carry everything a response needs: text, thinking, tool calls with ids, the stop reason. The error codes map to HTTP statuses before any byte is sent. `chatKit.usage` gives one record per call, with cost.
-- Still lacks, each an added option or a widened union: forced and named `toolChoice`; sampling parameters (`top_p`, `stop`, `seed`) through pi-ai's `samplingParams`; images by URL and files in place in a message (pi-ai has no such block; the router inlines images, and documents go at the start); `json_object` mode; client-set `cache_control`; batch through pi-ai's `deferred`.
+- Enables: an OpenAI or Anthropic request maps onto a `ChatModelRef`, a `Context` (messages, base64 images, tools) and the options (`temperature`, `maxTokens`, `reasoning`, and `toolChoice` or `responseSchema`). pi-ai's events carry everything a response needs: text, thinking, tool calls with ids, the stop reason. The error codes map to HTTP statuses before any byte is sent. `chatKit.usage` gives one record per call, with cost.
+- Still lacks, each an added option, a widened union or a loosened check: tools and structured output together (OpenAI and Anthropic APIs allow both in one request, so a router may want them later; allowing it loosens a type and a runtime check, which breaks no caller); forced and named `toolChoice`; sampling parameters (`top_p`, `stop`, `seed`) through pi-ai's `samplingParams`; images by URL and files in place in a message (pi-ai has no such block; the router inlines images, and documents go at the start); `json_object` mode; client-set `cache_control`; batch through pi-ai's `deferred`; the excluded models, through a per-kit opt-in.
 
 **Multi-tenant BYOK service.**
 
@@ -379,10 +387,10 @@ export function gemContext(turn: { systemPrompt: string; history: ChatMessage[];
 
 **Multi-tenant BYOK agent platform.**
 
-- Enables: tools and MCP tools, as pi-ai `Tool`s, pass through. The stream is a pi-ai `AssistantMessageEventStream`, so pi-agent-core's loop can run on it through a three-line `StreamFn` adapter. Gem-style documents and a response schema work per call. Provider keys stay in the per-tenant kit; tool secrets are the platform's.
+- Enables: tools and MCP tools, as pi-ai `Tool`s, pass through. The stream is a pi-ai `AssistantMessageEventStream`, so pi-agent-core's loop can run on it through a three-line `StreamFn` adapter. Gem-style documents work per call, and a response schema on a turn without tools. Provider keys stay in the per-tenant kit; tool secrets are the platform's.
 - Still lacks, all additive: an exported `StreamFn` adapter; documents placed later than the first user message; long runs through `deferred`. Flows and cron are the platform's.
 
-Nothing in these lists needs a breaking change: each is a new optional option, a widened input union, a new export or a new optional trait.
+Nothing in these lists needs a breaking change: each is a new optional option, a widened input union, a loosened check, a new export or a new optional trait.
 
 ### 10. Versioning
 
@@ -399,10 +407,10 @@ The optional peer ranges make a package manager warn about a provider package to
 
 ## Open questions
 
-1. **Pull DATA-4580's contract into 0.3.0?** Recommended: yes, as section 1 says. It costs a larger first release, and spares the portal a second break of its provider config.
-2. **Tools on KIE and ToAPIs before a live smoke test?** Recommended: off (`UNSUPPORTED`) until DATA-4580's smoke script verifies a tool call on each route, as with documents. A reseller that ignores `tools` would answer without calling them, silently.
-3. **Tools with a response schema where only the forced tool call exists (ToAPIs Claude)?** Recommended: `UNSUPPORTED`. The alternative, dropping the consumer's tools or the schema for that turn, changes the request silently.
-4. **Should the router and BYOK service see the excluded models (`openrouter/auto`, `:free`, image output)?** Recommended: not in 0.3.0. The exclusions stay fixed; an opt-in per kit can be added later without breaking anything.
+The product owner decided the four earlier questions on 2026-10-21: DATA-4580's contract lands in 0.3.0 (section 1), tools stay off on KIE and ToAPIs until a live smoke test (section 3), tools and a response schema are mutually exclusive (section 2), and the exclusions stay fixed in 0.3.0 (section 6). Two naming questions remain:
+
+1. **The chat provider's member name. Pending the product owner.** This ADR calls it `chat`. The proposal is `chatKit`.
+2. **The model reference. Pending the product owner.** This ADR uses the object `{ provider, id }`. The proposal is the string `"<provider name>/<model id>"`, split at the first `/` because OpenRouter ids contain `/` (`openrouter/anthropic/claude-opus-5` is provider `openrouter`, model `anthropic/claude-opus-5`). It matches the portal's Model reference and the `model` field of an OpenAI-style request.
 
 ## Considered options
 
@@ -411,6 +419,7 @@ The optional peer ranges make a package manager warn about a provider package to
 - **Put documents and the schema in an extended `ChatContext`.** Rejected: the `Context` would no longer pass through a router untouched, and the product owner decided the extras sit beside it.
 - **Keys per call.** Rejected for 0.3.0: model lists belong to a key, and a key passed on every call reaches every call site. It can be added later.
 - **Leave registration to DATA-4580.** Rejected: a second breaking release for the same consumers.
+- **Allow tools with a response schema.** Rejected by the product owner: tools serve the agent use case and a schema the Gem use case, and on Anthropic Messages without native structured output the forced tool call would block the consumer's tools. Allowing both later breaks no caller.
 - **Make the traits Chat kit-internal, looked up by `Provider.id`.** Rejected: a new reseller would again need a Chat kit release, which DATA-4580 exists to stop.
 
 ## Consequences
