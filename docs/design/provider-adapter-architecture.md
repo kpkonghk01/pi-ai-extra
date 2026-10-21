@@ -13,8 +13,9 @@ pi-ai-extra/
 │   ├── kie/            @hk01/pi-ai-extra-kie
 │   ├── toapis/         @hk01/pi-ai-extra-toapis
 │   ├── google/         @hk01/pi-ai-extra-google (Gemini images; pi-ai has none)
+│   ├── openrouter/     @hk01/pi-ai-extra-openrouter (pi-ai's OpenRouter provider with an explicit key and a live model list; /pi-ai only)
 │   ├── image-kit/      @hk01/pi-ai-extra-image-kit (consumer image client over the three provider packages)
-│   └── chat-kit/       @hk01/pi-ai-extra-chat-kit (server-side chat turns and live model lists on pi-ai over Gemini, OpenRouter, KIE, ToAPIs)
+│   └── chat-kit/       @hk01/pi-ai-extra-chat-kit (server-side chat turns and live model lists on pi-ai over the chat providers the consumer registers)
 ├── examples/playground local-only live test page (not released)
 ├── referenc-docs/      provider source contracts
 └── .github/workflows/  tag-to-GitHub-Release automation
@@ -25,14 +26,14 @@ pi-ai-extra/
 Each provider package (`kie`, `toapis`, `google`) has:
 
 - **Main entry** (CommonJS and ESM): the image helper, catalogue, task lookup and errors. It has no pi-ai import.
-- **`/pi-ai`** (ESM only): one pi-ai `Provider` factory serving the package's chat and image models.
+- **`/pi-ai`** (ESM only): one pi-ai `Provider` factory serving the package's chat and image models. It returns a chat provider, with a `chatKit` member and a live model list ([ADR 0009](../adr/0009-chat-kit-contract-aligned-with-pi-ai.md)).
 
-See [ADR 0004](../adr/0004-dual-format-helper-esm-pi-ai-subpath.md).
+`openrouter` has only `/pi-ai`, because pi-ai already serves OpenRouter's images. See [ADR 0004](../adr/0004-dual-format-helper-esm-pi-ai-subpath.md) and its DATA-4583 amendment.
 
-The two kits sit on the consumer side of the provider boundary and take the provider packages as peer dependencies:
+The two kits sit on the consumer side of the provider boundary. The image kit takes the three image provider packages as peer dependencies; the chat kit takes the provider packages as optional peers:
 
 - **image-kit** ([ADR 0006](../adr/0006-image-kit-package.md), [ADR 0007](../adr/0007-catalogue-policy-model-selection.md)), CommonJS and ESM: model families from the installed catalogues through an app-owned catalogue policy, request validation and NDJSON streaming (`/server`, the only entry that imports the provider packages), a browser reader (`/browser`) and React UI (`/react`). It does not import pi-ai.
-- **chat-kit** ([ADR 0008](../adr/0008-chat-kit-package.md)), ESM only: one server-only entry that runs a chat turn on pi-ai with the same documents, response schema, safety-block reporting, usage and cost on every provider, and lists each provider's live models. It is the exception to ADR 0004's dual-format main entry, since it exists only to drive pi-ai (see that ADR's DATA-4567 amendment), and pi-ai is a required peer.
+- **chat-kit** ([ADR 0008](../adr/0008-chat-kit-package.md), [ADR 0009](../adr/0009-chat-kit-contract-aligned-with-pi-ai.md)), ESM only: one server-only entry. It registers the chat providers the consumer builds with the factories. It runs a turn from pi-ai's `Context` to pi-ai's event stream, with the same documents, response schema, safety-block reporting, usage and cost on every provider. It lists each provider's live models as pi-ai `Model`s. It is the exception to ADR 0004's dual-format main entry, since it exists only to drive pi-ai (see that ADR's DATA-4567 amendment), and pi-ai is a required peer.
 
 ## Consumer boundary
 
@@ -90,4 +91,4 @@ Related ADRs:
 - [ADR 0004](../adr/0004-dual-format-helper-esm-pi-ai-subpath.md): module formats.
 - [ADR 0005](../adr/0005-provider-reported-usage.md): usage and billing.
 - [ADR 0006](../adr/0006-image-kit-package.md) and [ADR 0007](../adr/0007-catalogue-policy-model-selection.md): the image kit and its catalogue policy.
-- [ADR 0008](../adr/0008-chat-kit-package.md): the chat kit.
+- [ADR 0008](../adr/0008-chat-kit-package.md) and [ADR 0009](../adr/0009-chat-kit-contract-aligned-with-pi-ai.md): the chat kit and its pi-ai-aligned 0.3.0 contract.

@@ -21,6 +21,8 @@ Amended 2026-10-16 ([DATA-4566](https://hk01-digital.atlassian.net/browse/DATA-4
 
 Amended 2026-10-16 ([DATA-4567](https://hk01-digital.atlassian.net/browse/DATA-4567)): `@hk01/pi-ai-extra-chat-kit` ([ADR 0008](0008-chat-kit-package.md)) is an exception to the first three points. Its only entry imports pi-ai and ships as ESM only (`.mjs` / `.d.mts`), with no CommonJS build and no `/pi-ai` subpath, and pi-ai is a required exact peer (`1.2.0`), not an optional one. The kit exists only to drive pi-ai, which is ESM-only, so a main entry without pi-ai would have nothing to hold, and a CommonJS build could not load it. Like the `/pi-ai` subpath, the kit needs ESM or a dynamic `import()`; its release smoke test checks that `require()` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`. The provider packages and the image kit keep the decision unchanged.
 
+Amended 2026-10-21 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4583)): `@hk01/pi-ai-extra-openrouter` ([ADR 0009](0009-chat-kit-contract-aligned-with-pi-ai.md)) is a second exception, to the first and third points. It has no main entry, only the ESM-only `/pi-ai` subpath, and pi-ai is a required exact peer (`1.2.0`). The package is only a pi-ai provider, since pi-ai already serves OpenRouter's images, so a main entry would have nothing to hold. Keeping the `/pi-ai` path gives every provider package the same import path. Chat kit's exception stands, and its provider-package peers become optional. The other provider packages keep the decision unchanged.
+
 ## Consequences
 
 CommonJS servers adopt the helpers without changing their build. Using the pi-ai factories requires ESM (or a dynamic `import()`), just as pi-ai does.
