@@ -23,6 +23,8 @@ Amended 2026-09-28: the original decision assumed `createProvider()` accepted an
 
 Amended 2026-10-16 ([DATA-4566](https://hk01-digital.atlassian.net/browse/DATA-4566)): pi-ai 1.2 (since 0.99.0) removed the separate `ImagesModels` collection and `createImagesProvider()`, and `createProvider()` accepts the `images` map, so the separate images factories (`createKieImagesProvider()`, `createToapisImagesProvider()`, `createGoogleImagesProvider()`) were folded into the provider factories, with their settings as `imageSettings`. Chat and image models now share one `Models` collection, where a second provider with the same id replaces the first. Keeping a separate images-only factory under the same id would make registering both silently drop one; giving it a different id (for example `kie-images`) would split one provider and key across two ids. One factory per package keeps the provider id, the key and the no-fallback boundary in one place.
 
+Amended 2026-10-21 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4583)): [ADR 0009](0009-chat-kit-contract-aligned-with-pi-ai.md) adds `@hk01/pi-ai-extra-openrouter`, which has the pi-ai layer only. pi-ai already serves OpenRouter's image generation (`openrouter-images`), so there is no helper for a main entry to hold. Its one factory, `createOpenRouterProvider()`, extends pi-ai's `openrouterProvider()`. Each package's factory now returns a chat provider: a pi-ai `Provider` with a `chatKit` member and a `refreshModels` live list. There is still one factory per package.
+
 ## Consequences
 
 Consumer applications do not need to duplicate provider wiring. They select the appropriate layer based on their existing application boundary.

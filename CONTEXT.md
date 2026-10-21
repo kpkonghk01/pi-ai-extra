@@ -22,7 +22,7 @@ The consumer owns user-facing selection, server-side secret configuration, and p
 
 ## BYOK
 
-Bring Your Own Key. The consumer application supplies its provider API key at runtime from server-side secret configuration. Adapter packages do not read environment variables, persist keys, or expose keys to browser code.
+Bring Your Own Key. The consumer application supplies its provider API key at runtime from server-side secret configuration. Adapter packages do not read environment variables, persist keys, or expose keys to browser code. A multi-tenant consumer creates one chat kit per tenant, from that tenant's keys; two keys for the same provider are two chat kits.
 
 ## Reference image
 
@@ -36,7 +36,11 @@ _Avoid_: Multi-Provider Module, 統一 Provider Module (the earlier browser-modu
 
 ## Chat kit
 
-The consumer-side server package that runs one chat turn on the provider and model the consumer application chose. It gives every provider the same turn features — reference documents, a required response shape, safety-block reporting and usage — so the consumer never writes per-provider code. Like the image kit, it never chooses a provider for the user and never falls back.
+The consumer-side server package that registers the providers a consumer application builds from its configuration (keys) with the provider packages' factories, offers one interface for calling LLMs, and routes each call by its model reference to the matching provider. It runs the turn on exactly the provider and model the consumer application chose. It extends pi-ai rather than replacing it: a turn takes pi-ai's `Context` and option names, and streams pi-ai's events. Beside them it gives every provider the same extras pi-ai lacks — reference documents, a required response shape, safety-block reporting and a usage record — so the consumer never writes per-provider code. Like the image kit, it never chooses a provider for the user and never falls back.
+
+## Chat provider
+
+The pi-ai `Provider` a provider adapter's factory builds with an explicit key, carrying under its `chatKit` member the traits the chat kit needs and pi-ai has no field for: document and tool support, native structured output, which models are offered and what each reads, model rates and the provider's cost policy. It is still a pi-ai `Provider`; plain pi-ai code ignores the traits. The chat kit identifies a chat provider by its pi-ai provider id, such as `google`. A name a consumer application gives a provider, such as the portal's `gemini`, is the consumer's own, and the consumer maps it before calling the kit.
 
 ## Model rate
 
@@ -66,7 +70,7 @@ A versioned `.tgz` package attached to a GitHub Release. It is the consumer-inst
 
 ## Usage record
 
-The usage and billing a provider reported for one task or request: credits, USD cost, billing status, token counts and provider duration. It contains only provider-reported, validated values; absent values are omitted, never estimated or set to zero. The chat kit adds a turn's cost beside the record, marked as provider-reported or as estimated from the Model rate.
+The usage and billing a provider reported for one task or request: credits, USD cost, billing status, token counts and provider duration. It contains only provider-reported, validated values; absent values are omitted, never estimated or set to zero. The chat kit adds a turn's cost beside the record, marked as provider-reported or as estimated from the Model rate. The chat kit's record of a turn uses pi-ai's count names (`input`, `output`, `cacheRead`, `cacheWrite`, `reasoning`), and unlike pi-ai's `Usage` it leaves out a count the provider did not report. Its `input` excludes cache tokens: it is derived, the reported prompt count minus the reported cache counts, and left out if negative, so it still rests only on reported values. An image task's record keeps its own names (`cachedInput`, `total`), and its `input` includes cached tokens.
 
 ## Cost estimate
 

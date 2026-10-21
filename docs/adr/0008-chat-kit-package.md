@@ -75,6 +75,15 @@ Amended 2026-10-16 ([DATA-4568](https://hk01-digital.atlassian.net/browse/DATA-4
 - **Response schema.** Anthropic Messages has native structured output too (`output_config.format`), which works while the model thinks. The kit uses it for a turn that thinks, where the provider takes it: OpenRouter, which documents it, and KIE, which does not but answered valid JSON under it while thinking in a live smoke test (`claude-opus-5-5`, 2026-10-16). ToAPIs keeps the forced tool call, and a thinking turn with a schema stays `UNSUPPORTED` there until a live smoke test verifies native structured output.
 - **Cost.** Each provider kind's cost rules, including why KIE's cost is never estimated, are stated once, in the README's [Usage and cost](../../README.md#usage-and-cost). OpenRouter's rates come from its live `/models` pricing, since no package holds them; until the live list is read, OpenRouter models are priced from pi-ai's catalogue.
 
+Amended 2026-10-21 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4583)): [ADR 0009](0009-chat-kit-contract-aligned-with-pi-ai.md) supersedes part of this decision.
+
+- It replaces the turn input, events, usage field names, error shape and provider registration with the chat kit 0.3.0's pi-ai-aligned contract.
+- It drops the consumer-chosen provider names: a provider is known by its pi-ai id.
+- It partly reverses the rejected option "Fill the gaps inside each provider package". The per-provider parts (grounding, the live lists, the cost readers and the capability flags) move into the provider packages, with a new openrouter package for OpenRouter's. The per-API gaps stay in the kit.
+- "The kit sends no tools" no longer holds: tools now pass through.
+
+The per-API features, documents, response schema, rates, live-list rules and exclusions stand.
+
 ## Considered options
 
 - **Fill the gaps inside each provider package.** Rejected: it duplicates per-API code, and `google` and `openrouter` have no package to hold it.
