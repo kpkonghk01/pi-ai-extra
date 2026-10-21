@@ -1,5 +1,15 @@
-import type { Provider } from "@earendil-works/pi-ai";
-import { createChatProvider, helperImages, roundRate, singleRate, type ChatModelDefinition, type ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
+import {
+  createChatProvider,
+  helperImages,
+  reportedAmount,
+  roundRate,
+  roundUsd,
+  singleRate,
+  withLiveChatModels,
+  type ChatModelDefinition,
+  type ChatProtocol,
+  type ChatProvider,
+} from "@hk01/pi-ai-extra-internal/pi-ai";
 import {
   KIE_API_BASE_URL,
   KIE_CLAUDE_BASE_URL,
@@ -11,8 +21,18 @@ import {
 import { generateKieImage, type KieImageRequest, type KieImageSettings } from "../generate.ts";
 import { KIE_IMAGE_MODELS } from "../models.ts";
 import { kieEnvelopeStreams } from "./envelope-fetch.ts";
+import { fetchKieModels } from "./live-models.ts";
 
-export type { ChatModelDefinition, ChatProtocol, LargePromptRates, ModelRate, RatePeriod, TokenRates } from "@hk01/pi-ai-extra-internal/pi-ai";
+export type {
+  ChatModelDefinition,
+  ChatProtocol,
+  ChatProvider,
+  ChatProviderTraits,
+  LargePromptRates,
+  ModelRate,
+  RatePeriod,
+  TokenRates,
+} from "@hk01/pi-ai-extra-internal/pi-ai";
 
 /*
  * Rates as of 2026-10-16, source: https://kie.ai/pricing, read from
@@ -110,29 +130,43 @@ export interface KieProviderOptions {
   claudeBaseUrl?: string | undefined;
   /** Image helper settings (`apiBaseUrl`, `uploadBaseUrl`, `poll`) applied to every image request. */
   imageSettings?: KieImageSettings | undefined;
+  /** Custom fetch for chat requests and the live model list, for tests or instrumentation. A request's own `fetch` wins. */
+  fetch?: typeof globalThis.fetch | undefined;
 }
 
 /**
  * pi-ai provider for KIE. Codex models use pi-ai's OpenAI Responses adapter; Claude
  * models use its Anthropic Messages adapter with KIE's Bearer authentication.
  *
+ * It is a chat provider (ADR 0009):
+ *
+ * - `refreshModels` reads KIE's Codex and Claude lists and keeps the chat models they name
+ *   (`fetchKieModels`).
+ * - `chatKit`: KIE's file input and tools are undocumented, so neither is taken until a live
+ *   smoke test; native structured output answered valid JSON while thinking in a live check on
+ *   2026-10-16 (`claude-opus-5-5`). Every chat model is offered, reads PDFs when it reads images,
+ *   and is priced from its definition's rate. A turn's cost is KIE's own charge,
+ *   `credits_consumed` × `KIE_USD_PER_CREDIT`, never an estimate: KIE's token counts are
+ *   unreliable (hidden prompt tokens, some zero input counts).
+ *
  * It also serves `KIE_IMAGE_MODELS` (`models.getModelOfType("image", "kie", id)`),
  * generated through `generateKieImage`. Image options go in `ImagesOptions.metadata`
  * using the helper's option names (for example `{ aspectRatio: "16:9", resolution: "2K" }`)
  * and are validated strictly.
  */
-export function createKieProvider(options: KieProviderOptions): Provider<ChatProtocol> {
-  return createChatProvider({
+export function createKieProvider(options: KieProviderOptions): ChatProvider<ChatProtocol> {
+  const definitions = options.models ?? KIE_CHAT_MODELS;
+  const responsesBaseUrl = options.responsesBaseUrl ?? KIE_RESPONSES_BASE_URL;
+  const claudeBaseUrl = options.claudeBaseUrl ?? KIE_CLAUDE_BASE_URL;
+  const base = createChatProvider({
     id: KIE_PROVIDER_ID,
     name: KIE_PROVIDER_NAME,
     apiKey: options.apiKey,
-    baseUrls: {
-      "openai-responses": options.responsesBaseUrl ?? KIE_RESPONSES_BASE_URL,
-      "anthropic-messages": options.claudeBaseUrl ?? KIE_CLAUDE_BASE_URL,
-    },
-    models: options.models ?? KIE_CHAT_MODELS,
+    baseUrls: { "openai-responses": responsesBaseUrl, "anthropic-messages": claudeBaseUrl },
+    models: definitions,
     anthropicAuth: "bearer",
     wrapStreams: kieEnvelopeStreams,
+    fetch: options.fetch,
     images: helperImages({
       provider: KIE_PROVIDER_ID,
       api: KIE_IMAGES_API,
@@ -143,4 +177,31 @@ export function createKieProvider(options: KieProviderOptions): Provider<ChatPro
       generate: (request) => generateKieImage(request as unknown as KieImageRequest),
     }),
   });
+  const installed = base.getModels();
+  const provider = withLiveChatModels(base, (signal) =>
+    fetchKieModels({
+      fetch: options.fetch ?? ((input, init) => globalThis.fetch(input, init)),
+      apiKey: options.apiKey,
+      responsesBaseUrl,
+      claudeBaseUrl,
+      installed,
+      signal,
+    }),
+  );
+  return {
+    ...provider,
+    chatKit: {
+      takes: { fileDocuments: false, tools: false, nativeStructuredOutput: true },
+      offers: (model) => (model.type ?? "chat") === "chat",
+      describe: (model) => {
+        const rate = definitions.find((definition) => definition.id === model.id)?.rate;
+        return { fileInput: model.input.includes("image"), tools: true, ...(rate === undefined ? {} : { rate }) };
+      },
+      reportedCostUsd: (raw) => {
+        const credits = reportedAmount(raw.credits_consumed);
+        return credits === undefined ? undefined : roundUsd(credits * KIE_USD_PER_CREDIT);
+      },
+      estimatesCost: false,
+    },
+  };
 }

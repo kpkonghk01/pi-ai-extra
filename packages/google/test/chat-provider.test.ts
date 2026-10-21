@@ -1,0 +1,145 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { createAssistantMessageEventStream, createModels } from "@earendil-works/pi-ai";
+import { createFakeFetch, jsonResponse } from "@hk01/pi-ai-extra-internal/testing";
+import { createGoogleProvider, isOfferedGeminiId } from "../src/pi-ai/index.ts";
+import { googleChatStreams, withGroundingTools } from "../src/pi-ai/streams.ts";
+
+const MODELS_URL = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\?pageSize=1000/;
+const models = () => createModels({ authContext: { env: async () => undefined, fileExists: async () => false } });
+
+describe("Google chat provider: live list", () => {
+  it("replaces the catalogue with the key's generateContent models on refresh, keeping a known id's catalogue entry", async () => {
+    const fake = createFakeFetch([
+      {
+        method: "GET",
+        url: MODELS_URL,
+        respond: () =>
+          jsonResponse({
+            models: [
+              { name: "models/gemini-3.5-flash", supportedGenerationMethods: ["generateContent"] },
+              { name: "models/gemini-4-argon-preview", displayName: "Gemini 4 Argon", supportedGenerationMethods: ["generateContent"], thinking: true, inputTokenLimit: 2_000_000, outputTokenLimit: 100_000 },
+              { name: "models/text-embedding-9", supportedGenerationMethods: ["embedContent"] },
+            ],
+          }),
+      },
+    ]);
+    const google = createGoogleProvider({ apiKey: "gemini-key", fetch: fake.fetch });
+    const collection = models();
+    collection.setProvider(google);
+    const installed = google.getModels().find((model) => model.id === "gemini-3.5-flash");
+    const result = await collection.refresh({ providers: ["google"], force: true });
+    assert.equal(result.errors.size, 0);
+    assert.deepEqual(google.getModels().map((model) => model.id), ["gemini-3.5-flash", "gemini-4-argon-preview"]);
+    assert.equal(google.getModels()[0]?.contextWindow, installed?.contextWindow, "a known id keeps pi-ai's entry");
+    const argon = google.getModels()[1]!;
+    assert.deepEqual([argon.name, argon.input, argon.reasoning, argon.contextWindow, argon.maxTokens], ["Gemini 4 Argon", ["text"], true, 2_000_000, 100_000]);
+    assert.equal(fake.calls[0]?.headers["x-goog-api-key"], "gemini-key");
+    assert.ok(google.getAllModels?.().some((model) => model.type === "image"), "image models stay");
+  });
+
+  it("narrows the live list to modelIds, and keeps the installed list when the read fails", async () => {
+    const fake = createFakeFetch([
+      { method: "GET", url: MODELS_URL, respond: () => jsonResponse({ models: [{ name: "models/gemini-3.5-flash", supportedGenerationMethods: ["generateContent"] }, { name: "models/gemini-2.5-pro", supportedGenerationMethods: ["generateContent"] }] }) },
+    ]);
+    const google = createGoogleProvider({ apiKey: "k", modelIds: ["gemini-2.5-pro"], fetch: fake.fetch });
+    const collection = models();
+    collection.setProvider(google);
+    await collection.refresh({ providers: ["google"], force: true });
+    assert.deepEqual(google.getModels().map((model) => model.id), ["gemini-2.5-pro"]);
+
+    const down = createFakeFetch([{ method: "GET", url: MODELS_URL, respond: () => jsonResponse({ error: { message: "blocked" } }, 403) }]);
+    const blocked = createGoogleProvider({ apiKey: "k", fetch: down.fetch });
+    const installed = blocked.getModels().map((model) => model.id);
+    const second = models();
+    second.setProvider(blocked);
+    const result = await second.refresh({ providers: ["google"], force: true });
+    assert.match(result.errors.get("google")?.message ?? "", /HTTP 403/);
+    assert.deepEqual(blocked.getModels().map((model) => model.id), installed);
+  });
+});
+
+describe("Google chat provider: chatKit traits", () => {
+  const { chatKit, getModels } = createGoogleProvider({ apiKey: "k" });
+
+  it("takes documents and tools, not native structured output, and estimates every turn", () => {
+    assert.deepEqual(chatKit.takes, { fileDocuments: true, tools: true, nativeStructuredOutput: false });
+    assert.equal(chatKit.estimatesCost, true);
+    assert.equal(chatKit.reportedCostUsd({ usageMetadata: { totalTokenCount: 5 } }), undefined);
+  });
+
+  it("offers plain text chat models only: no image-output, Live, embedding or -latest ids", () => {
+    for (const id of ["gemini-3.1-flash-live-preview", "gemini-3.1-flash-lite-image", "nano-banana-pro-preview", "gemini-flash-latest", "text-embedding-9"]) {
+      assert.equal(isOfferedGeminiId(id), false, id);
+    }
+    assert.equal(isOfferedGeminiId("gemini-3.5-flash"), true);
+    const offered = getModels().filter((model) => chatKit.offers(model));
+    assert.ok(offered.length > 0 && offered.length < getModels().length);
+  });
+
+  it("reads PDFs when a model reads images, takes tools on Gemini models, and prices from the rate table", () => {
+    const flash = getModels().find((model) => model.id === "gemini-3.8-flash")!;
+    const described = chatKit.describe(flash);
+    assert.deepEqual([described.fileInput, described.tools], [true, true]);
+    assert.equal(described.rate?.periods[0]?.input, 0.75);
+    const gemma = { ...flash, id: "gemma-4-27b" };
+    assert.equal(chatKit.describe(gemma).tools, false);
+  });
+});
+
+describe("Google chat provider: grounding", () => {
+  it("appends Google Search and URL context to config.tools, keeping the tools already there", () => {
+    const next = withGroundingTools({ model: "m", config: { tools: [{ functionDeclarations: [] }], systemInstruction: "Be brief." } }) as { config: Record<string, unknown> };
+    assert.deepEqual(next.config.tools, [{ functionDeclarations: [] }, { googleSearch: {} }, { urlContext: {} }]);
+    assert.equal(next.config.systemInstruction, "Be brief.");
+    assert.deepEqual((withGroundingTools({ model: "m" }) as { config: { tools: unknown } }).config.tools, [{ googleSearch: {} }, { urlContext: {} }]);
+  });
+});
+
+describe("googleChatStreams", () => {
+  const message = (extra: Record<string, unknown> = {}) => ({
+    role: "assistant" as const,
+    content: [],
+    api: "google-generative-ai",
+    provider: "google",
+    model: "m",
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason: "error" as const,
+    errorMessage: "Google stream ended without a finish reason",
+    timestamp: 1,
+    ...extra,
+  });
+
+  /** An inner stream that sends one payload through `onPayload`, observes one raw chunk, and ends with `final`. */
+  function inner(chunk: unknown, final: ReturnType<typeof message>, sent: { payload?: unknown }) {
+    const run = (_model: unknown, _context: unknown, options: Record<string, any> | undefined) => {
+      const stream = createAssistantMessageEventStream();
+      void (async () => {
+        sent.payload = (await options?.onPayload?.({ model: "m", config: {} }, {})) ?? { model: "m", config: {} };
+        await options?.onProviderStreamEvent?.(chunk, {});
+        stream.push({ type: "error", reason: "error", error: final });
+        stream.end(final);
+      })();
+      return stream;
+    };
+    return { stream: run, streamSimple: run } as never;
+  }
+
+  it("copies a prompt block reason to rawStopReason, and leaves the caller's hooks working", async () => {
+    const observed: unknown[] = [];
+    const sent: { payload?: unknown } = {};
+    const streams = googleChatStreams(inner({ promptFeedback: { blockReason: "BLOCKLIST" } }, message(), sent), false);
+    const result = await streams.streamSimple({} as never, {} as never, { onProviderStreamEvent: (event: unknown) => void observed.push(event) } as never).result();
+    assert.equal(result.rawStopReason, "BLOCKLIST");
+    assert.equal(observed.length, 1, "the caller's observer still sees the chunk");
+    assert.deepEqual(sent.payload, { model: "m", config: {} }, "no grounding tools without grounding");
+  });
+
+  it("keeps a stop reason pi-ai already set, and adds the grounding tools when grounding is on", async () => {
+    const sent: { payload?: unknown } = {};
+    const streams = googleChatStreams(inner({ promptFeedback: { blockReason: "BLOCKLIST" } }, message({ rawStopReason: "SAFETY" }), sent), true);
+    const result = await streams.stream({} as never, {} as never, {} as never).result();
+    assert.equal(result.rawStopReason, "SAFETY");
+    assert.deepEqual((sent.payload as { config: { tools: unknown } }).config.tools, [{ googleSearch: {} }, { urlContext: {} }]);
+  });
+});

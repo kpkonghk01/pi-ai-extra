@@ -1,19 +1,30 @@
-import type { Provider } from "@earendil-works/pi-ai";
 import { withoutTrailingSlash } from "@hk01/pi-ai-extra-internal";
 import {
   createChatProvider,
   helperImages,
   roundRate,
   singleRate,
+  withLiveChatModels,
   type ChatModelDefinition,
   type ChatProtocol,
+  type ChatProvider,
   type ModelRate,
 } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { TOAPIS_BASE_URL, TOAPIS_IMAGES_API, TOAPIS_PROVIDER_ID, TOAPIS_PROVIDER_NAME, toapisResponsesBaseUrl } from "../constants.ts";
 import { generateToapisImage, type ToapisImageRequest, type ToapisImageSettings } from "../generate.ts";
 import { TOAPIS_IMAGE_MODELS } from "../models.ts";
+import { fetchToapisModels } from "./live-models.ts";
 
-export type { ChatModelDefinition, ChatProtocol, LargePromptRates, ModelRate, RatePeriod, TokenRates } from "@hk01/pi-ai-extra-internal/pi-ai";
+export type {
+  ChatModelDefinition,
+  ChatProtocol,
+  ChatProvider,
+  ChatProviderTraits,
+  LargePromptRates,
+  ModelRate,
+  RatePeriod,
+  TokenRates,
+} from "@hk01/pi-ai-extra-internal/pi-ai";
 
 /**
  * A one-period schedule in USD per 1M tokens from a ToAPIs pricing entry: input =
@@ -55,25 +66,38 @@ export interface ToapisProviderOptions {
    * The image host is set here, independently of the chat `baseUrl`.
    */
   imageSettings?: ToapisImageSettings | undefined;
+  /** Custom fetch for chat requests and the live model list, for tests or instrumentation. A request's own `fetch` wins. */
+  fetch?: typeof globalThis.fetch | undefined;
 }
 
 /**
  * pi-ai provider for ToAPIs. Codex models use pi-ai's OpenAI Responses adapter
  * (`<host>/v1/responses`); Claude models use its Anthropic Messages adapter (`<host>/v1/messages`).
  *
+ * It is a chat provider (ADR 0009):
+ *
+ * - `refreshModels` reads `GET <host>/v1/models?type=text` and keeps the chat models it names
+ *   (`fetchToapisModels`).
+ * - `chatKit`: ToAPIs' file input, tools and native structured output are undocumented, so none
+ *   is taken until a live smoke test. Every chat model is offered, reads PDFs when it reads
+ *   images, and is priced from its definition's rate. ToAPIs reports no charge, so every turn is
+ *   estimated.
+ *
  * It also serves `TOAPIS_IMAGE_MODELS` (`models.getModelOfType("image", "toapis", id)`),
  * generated through `generateToapisImage`. Image options go in `ImagesOptions.metadata`
  * using the helper's option names and are validated strictly.
  */
-export function createToapisProvider(options: ToapisProviderOptions): Provider<ChatProtocol> {
+export function createToapisProvider(options: ToapisProviderOptions): ChatProvider<ChatProtocol> {
   const host = withoutTrailingSlash(options.baseUrl ?? TOAPIS_BASE_URL);
-  return createChatProvider({
+  const definitions = options.models ?? TOAPIS_CHAT_MODELS;
+  const base = createChatProvider({
     id: TOAPIS_PROVIDER_ID,
     name: TOAPIS_PROVIDER_NAME,
     apiKey: options.apiKey,
     baseUrls: { "openai-responses": toapisResponsesBaseUrl(host), "anthropic-messages": host },
-    models: options.models ?? TOAPIS_CHAT_MODELS,
+    models: definitions,
     anthropicAuth: "x-api-key",
+    fetch: options.fetch,
     images: helperImages({
       provider: TOAPIS_PROVIDER_ID,
       api: TOAPIS_IMAGES_API,
@@ -84,4 +108,27 @@ export function createToapisProvider(options: ToapisProviderOptions): Provider<C
       generate: (request) => generateToapisImage(request as unknown as ToapisImageRequest),
     }),
   });
+  const installed = base.getModels();
+  const provider = withLiveChatModels(base, (signal) =>
+    fetchToapisModels({
+      fetch: options.fetch ?? ((input, init) => globalThis.fetch(input, init)),
+      apiKey: options.apiKey,
+      host,
+      installed,
+      signal,
+    }),
+  );
+  return {
+    ...provider,
+    chatKit: {
+      takes: { fileDocuments: false, tools: false, nativeStructuredOutput: false },
+      offers: (model) => (model.type ?? "chat") === "chat",
+      describe: (model) => {
+        const rate = definitions.find((definition) => definition.id === model.id)?.rate;
+        return { fileInput: model.input.includes("image"), tools: true, ...(rate === undefined ? {} : { rate }) };
+      },
+      reportedCostUsd: () => undefined,
+      estimatesCost: true,
+    },
+  };
 }

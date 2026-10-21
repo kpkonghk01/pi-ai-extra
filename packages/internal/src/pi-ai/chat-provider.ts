@@ -4,6 +4,7 @@ import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.l
 import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
 import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
 import { explicitApiKeyAuth } from "./auth.ts";
+import { withDefaultFetch } from "./live-models.ts";
 import { assertModelRate, modelCostAt, type ModelRate } from "./rates.ts";
 import type { HelperImages } from "./images-provider.ts";
 
@@ -46,6 +47,8 @@ export interface ChatProviderInput {
   wrapStreams?: ((streams: ProviderStreams) => ProviderStreams) | undefined;
   /** Image models served by the same provider (pi-ai 1.2 keeps chat and image models in one `Models`). */
   images?: HelperImages | undefined;
+  /** The fetch chat requests use unless a request brings its own (`StreamOptions.fetch`). Default: the global fetch. */
+  fetch?: typeof globalThis.fetch | undefined;
 }
 
 const DEFAULTS: Record<ChatProtocol, { contextWindow: number; maxTokens: number }> = {
@@ -54,7 +57,9 @@ const DEFAULTS: Record<ChatProtocol, { contextWindow: number; maxTokens: number 
 };
 
 export function createChatProvider(input: ChatProviderInput): Provider<ChatProtocol> {
-  const wrap = input.wrapStreams ?? ((streams: ProviderStreams) => streams);
+  const quirks = input.wrapStreams ?? ((streams: ProviderStreams) => streams);
+  // The default fetch goes outside the quirk adapter, so the adapter wraps it (KIE's envelope fetch).
+  const wrap = (streams: ProviderStreams) => withDefaultFetch(quirks(streams), input.fetch);
   const anthropic = wrap(anthropicMessagesApi());
   return createProvider<ChatProtocol>({
     id: input.id,

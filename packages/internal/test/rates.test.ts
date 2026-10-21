@@ -4,7 +4,6 @@ import {
   assertModelRate,
   buildChatModel,
   catalogueRate,
-  estimateCostUsd,
   modelCostAt,
   ratePeriodAt,
   roundRate,
@@ -90,7 +89,6 @@ describe("rate schedules", () => {
     const before = Date.parse("2026-12-31T23:59:59.999Z");
     assert.equal(ratePeriodAt(dated, before), undefined);
     assert.equal(ratePeriodAt(dated, Date.parse("2027-01-01T00:00:00Z"))?.input, 1);
-    assert.equal(estimateCostUsd(dated, { input: 1_000, output: 1_000 }, before), undefined, "no estimate before the first period");
     assert.deepEqual(modelCostAt(dated, before), { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, "pi-ai's placeholder, not a rate");
     assert.equal(ratePeriodAt({ periods: [] }, Date.now()), undefined);
   });
@@ -125,39 +123,6 @@ describe("rate schedules", () => {
       () => buildChatModel("kie", "https://api.kie.ai/anthropic", { id: "claude-x", protocol: "anthropic-messages", rate: { periods: [] } }),
       /kie chat model claude-x: invalid rate/,
     );
-  });
-});
-
-describe("estimateCostUsd", () => {
-  const BEFORE = Date.parse("2026-12-31T12:00:00Z");
-  const AFTER = Date.parse("2027-01-01T12:00:00Z");
-
-  it("prices uncached input, cache reads and output at the rate in force at call time", () => {
-    // 1M prompt tokens of which 400k cached, and 100k answer tokens.
-    const counts = { input: 1_000_000, cacheRead: 400_000, output: 100_000 };
-    assert.equal(estimateCostUsd(DOUBLING, counts, BEFORE), 0.855); // 0.6 × 0.75 + 0.4 × 0.075 + 0.1 × 3.75
-    assert.equal(estimateCostUsd(DOUBLING, counts, AFTER), 1.71); // 0.6 × 1.5 + 0.4 × 0.15 + 0.1 × 7.5
-  });
-
-  it("prices the whole request at the large-prompt tier only when the prompt is over 200k", () => {
-    assert.equal(estimateCostUsd(TIERED, { input: 200_000, output: 1_000 }, BEFORE), 0.412); // 0.2 × 2 + 0.001 × 12
-    assert.equal(estimateCostUsd(TIERED, { input: 200_001, output: 1_000 }, BEFORE), 0.818004); // 0.200001 × 4 + 0.001 × 18
-    assert.equal(estimateCostUsd(TIERED, { input: 250_000, cacheRead: 50_000, output: 1_000 }, BEFORE), 0.838); // 0.2 × 4 + 0.05 × 0.4 + 0.001 × 18
-    assert.equal(estimateCostUsd(TIERED, { output: 1_000_000 }, BEFORE), 12, "no prompt count: the base tier");
-  });
-
-  it("fills in unpublished cache rates: cache reads at input, cache writes at 1.25 × input", () => {
-    const rate = singleRate({ input: 3, output: 15 });
-    // 500 uncached × 3 + 200 read × 3 + 300 written × 3.75 + 10 out × 15, per 1M tokens.
-    assert.equal(estimateCostUsd(rate, { input: 1_000, cacheRead: 200, cacheWrite: 300, output: 10 }, BEFORE), 0.003375);
-  });
-
-  it("prices only the counts that were reported, and needs a prompt or answer count", () => {
-    assert.equal(estimateCostUsd(DOUBLING, { input: 1_000 }, BEFORE), 0.00075);
-    assert.equal(estimateCostUsd(DOUBLING, { output: 1_000 }, BEFORE), 0.00375);
-    assert.equal(estimateCostUsd(DOUBLING, { cacheRead: 1_000 }, BEFORE), undefined);
-    assert.equal(estimateCostUsd(DOUBLING, {}, BEFORE), undefined);
-    assert.equal(estimateCostUsd({ periods: [] }, { input: 1 }, BEFORE), undefined);
   });
 });
 

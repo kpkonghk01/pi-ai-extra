@@ -1,4 +1,5 @@
 export { explicitApiKeyAuth } from "./auth.ts";
+export type { ChatProvider, ChatProviderTraits } from "./chat-traits.ts";
 export {
   bearerAuthStreams,
   buildChatModel,
@@ -10,7 +11,6 @@ export {
 export {
   assertModelRate,
   catalogueRate,
-  estimateCostUsd,
   modelCostAt,
   ratePeriodAt,
   roundRate,
@@ -23,4 +23,6 @@ export {
   type TokenRates,
 } from "./rates.ts";
 export { helperImages, type HelperImages, type HelperImagesInput } from "./images-provider.ts";
+export { withDefaultFetch, withLiveChatModels } from "./live-models.ts";
+export { getModelListJson, keepListed, modelIdsOf, reportedAmount } from "./model-lists.ts";
 export { toPiAiUsage } from "./usage.ts";
