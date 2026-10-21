@@ -221,7 +221,7 @@ describe("turns resolve against the live list", () => {
       },
     ]);
     const registry = createProviderRegistry(chatProviders(["kie"], fake.fetch), { now: () => clock });
-    const prepare = () => prepareTurn(registry, { provider: "kie", id: kieTarget.model }, contextOf(turn(kieTarget)), undefined, { provider: "kie", model: kieTarget.model });
+    const prepare = () => prepareTurn(registry, { provider: "kie", id: kieTarget.model }, contextOf(turn(kieTarget)), undefined, { provider: "kie", model: kieTarget.model }, new AbortController().signal);
     assert.equal((await prepare()).model.id, "claude-haiku-4-5");
     clock += MODEL_LIST_TTL_MS - 1;
     assert.equal((await prepare()).model.id, "claude-haiku-4-5", "a fresh list is not read again");
@@ -242,7 +242,7 @@ describe("turns resolve against the live list", () => {
       { method: "GET", url: KIE_CLAUDE_MODELS_URL, respond: hangingResponse },
     ]);
     const registry = createProviderRegistry(chatProviders(["kie"], fake.fetch));
-    const prepared = prepareTurn(registry, { provider: "kie", id: kieTarget.model }, contextOf(turn(kieTarget)), undefined, { provider: "kie", model: kieTarget.model });
+    const prepared = prepareTurn(registry, { provider: "kie", id: kieTarget.model }, contextOf(turn(kieTarget)), undefined, { provider: "kie", model: kieTarget.model }, new AbortController().signal);
     assert.equal(await settledYet(prepared), false, "the cold turn waits for the list");
     t.mock.timers.tick(LIST_READ_TIMEOUT_MS.cold - 1);
     assert.equal(await settledYet(prepared), false);
@@ -260,7 +260,7 @@ describe("turns resolve against the live list", () => {
       { method: "GET", url: KIE_CLAUDE_MODELS_URL, respond: [() => jsonResponse({ data: [{ id: "claude-haiku-4-5" }] }), hangingResponse] },
     ]);
     const registry = createProviderRegistry(chatProviders(["kie"], fake.fetch), { now: () => clock });
-    const prepare = () => prepareTurn(registry, { provider: "kie", id: kieTarget.model }, contextOf(turn(kieTarget)), undefined, { provider: "kie", model: kieTarget.model });
+    const prepare = () => prepareTurn(registry, { provider: "kie", id: kieTarget.model }, contextOf(turn(kieTarget)), undefined, { provider: "kie", model: kieTarget.model }, new AbortController().signal);
     assert.equal((await prepare()).model.id, "claude-haiku-4-5");
     clock += MODEL_LIST_TTL_MS;
     const stale = prepare();
@@ -308,7 +308,7 @@ describe("turns resolve against the live list", () => {
       },
     ]);
     const registry = createProviderRegistry(chatProviders(["kie"], fake.fetch), { now: () => clock });
-    const prepare = () => prepareTurn(registry, { provider: "kie", id: kieTarget.model }, contextOf(turn(kieTarget)), undefined, { provider: "kie", model: kieTarget.model });
+    const prepare = () => prepareTurn(registry, { provider: "kie", id: kieTarget.model }, contextOf(turn(kieTarget)), undefined, { provider: "kie", model: kieTarget.model }, new AbortController().signal);
     assert.equal((await prepare()).model.id, "claude-haiku-4-5");
     clock += MODEL_LIST_TTL_MS;
     assert.equal((await prepare()).model.id, "claude-haiku-4-5", "the stale list answers while the slow refresh runs");

@@ -27,6 +27,11 @@ export interface ChatProviderTraits {
   reportedCostUsd(raw: Record<string, unknown>): number | undefined;
   /** Whether a turn without a reported charge is estimated from the model's rate. */
   readonly estimatesCost: boolean;
+  /**
+   * The fetch the factory was given (its `fetch` option). The chat kit sends a turn through it, with
+   * its own status-recording wrapper around it, unless the kit has a `fetch` of its own.
+   */
+  readonly fetch?: typeof globalThis.fetch | undefined;
 }
 
 /** A pi-ai `Provider` with the chat kit's traits under `chatKit`: what each provider package's factory returns. */

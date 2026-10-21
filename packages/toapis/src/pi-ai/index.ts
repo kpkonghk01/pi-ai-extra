@@ -129,6 +129,7 @@ export function createToapisProvider(options: ToapisProviderOptions): ChatProvid
       },
       reportedCostUsd: () => undefined,
       estimatesCost: true,
+      fetch: options.fetch,
     },
   };
 }

@@ -10,11 +10,13 @@ import { isModelType, type Api, type FetchFunction, type Model, type Provider, t
  *
  * The read uses the key the factory bound, and is not persisted: `refreshModels` restores nothing
  * from `context.stored`, and reads only when `context.allowNetwork` is set. A read that throws
- * keeps the previous list, and the error reaches pi-ai's `Models.refresh()` result.
+ * keeps the previous list, and the error reaches pi-ai's `Models.refresh()` result. `onPublished`
+ * runs together with the list it belongs to, so state read alongside it never gets ahead of it.
  */
 export function withLiveChatModels<TApi extends Api>(
   base: Provider<TApi>,
   readLive: (signal: AbortSignal) => Promise<readonly Model<TApi>[]>,
+  onPublished?: (models: readonly Model<TApi>[]) => void,
 ): Provider<TApi> {
   let live: readonly Model<TApi>[] | undefined;
   const chatModels = (): readonly Model<TApi>[] => live ?? base.getModels();
@@ -29,6 +31,7 @@ export function withLiveChatModels<TApi extends Api>(
       await context.publish({
         update: () => {
           live = models;
+          onPublished?.(models);
         },
       });
     },

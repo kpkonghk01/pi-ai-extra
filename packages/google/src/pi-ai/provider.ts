@@ -107,6 +107,7 @@ export function createGoogleProvider(options: GoogleProviderOptions): ChatProvid
       },
       reportedCostUsd: () => undefined,
       estimatesCost: true,
+      fetch: options.fetch,
     },
   };
 }

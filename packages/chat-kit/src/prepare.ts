@@ -44,12 +44,14 @@ export interface PreparedTurn {
   /** The answer is the arguments of a forced tool call (a response schema on Anthropic Messages). */
   schemaAsToolCall: boolean;
   pricing: TurnPricing;
+  /** The fetch the provider's factory was given, which a turn goes through unless the kit has its own. */
+  providerFetch: typeof globalThis.fetch | undefined;
   /** pi-ai's `Models.streamSimple`, in the kit's `Models` collection. */
   send(model: Model<Api>, context: Context, options: ModelsSimpleStreamOptions): AssistantMessageEventStream;
 }
 
 /** The caller's signal aborted the turn before it was sent. */
-export class TurnAborted extends Error {
+class TurnAborted extends Error {
   constructor() {
     super("The turn was aborted.");
     this.name = "TurnAborted";
@@ -63,6 +65,7 @@ export async function prepareTurn(
   context: Context,
   rawOptions: TurnOptions | undefined,
   target: TurnTarget,
+  signal: AbortSignal,
 ): Promise<PreparedTurn> {
   const validation = parseTurn(ref, context, rawOptions);
   if (!validation.ok) throw new TurnFailure("INVALID_REQUEST", `Invalid turn: ${validation.message}`);
@@ -82,7 +85,7 @@ export async function prepareTurn(
   const entry = registry.providers.get(ref.provider);
   if (!entry) throw new TurnFailure("UNKNOWN_MODEL", `No provider with the id ${JSON.stringify(ref.provider)} is registered.`);
   const startedAt = Date.now();
-  const { model, snapshot } = await untilAborted(entry.models.find(ref.id), options.signal, () => new TurnAborted());
+  const { model, snapshot } = await untilAborted(entry.models.find(ref.id), signal, () => new TurnAborted());
   const unread = snapshot.refreshError === undefined ? "" : ` (its live model list could not be read: ${snapshot.refreshError})`;
   if (!model) throw new TurnFailure("UNKNOWN_MODEL", `Model ${JSON.stringify(ref.id)} is not offered by provider ${entry.id}${unread}.`);
   const wire = wireApiFor(model.api);
@@ -110,7 +113,7 @@ export async function prepareTurn(
 
   const prepared = await untilAborted(
     Promise.all(documents.map((document, index) => loadDocument(document, kinds[index]!, wire, model))),
-    options.signal,
+    signal,
     () => new TurnAborted(),
   );
   const marker = prepared.length > 0 ? createDocumentMarker() : undefined;
@@ -131,6 +134,7 @@ export async function prepareTurn(
     options,
     schemaAsToolCall,
     pricing: { policy: entry.traits, rate: described.rate, startedAt },
+    providerFetch: entry.traits.fetch,
     send: (sent, sentContext, sentOptions) => registry.models.streamSimple(sent, sentContext, sentOptions),
   };
 }

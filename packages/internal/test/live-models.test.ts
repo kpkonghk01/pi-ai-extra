@@ -47,6 +47,32 @@ describe("withLiveChatModels", () => {
   });
 });
 
+describe("withLiveChatModels onPublished", () => {
+  it("runs with the list it belongs to, and not when the refresh was aborted after the read", async () => {
+    const published: string[][] = [];
+    const controller = new AbortController();
+    const provider = withLiveChatModels(
+      base(),
+      async () => {
+        controller.abort();
+        return [model("late")];
+      },
+      (list) => void published.push(list.map((entry) => entry.id)),
+    );
+    const models = collection();
+    models.setProvider(provider);
+    await models.refresh({ providers: ["t"], force: true, signal: controller.signal });
+    assert.equal(published.length, 0);
+    assert.deepEqual(provider.getModels().map((entry) => entry.id), ["a", "b"], "the aborted read did not replace the list");
+
+    const ok = withLiveChatModels(base(), async () => [model("c")], (list) => void published.push(list.map((entry) => entry.id)));
+    const second = collection();
+    second.setProvider(ok);
+    await second.refresh({ providers: ["t"], force: true });
+    assert.deepEqual(published, [["c"]]);
+  });
+});
+
 describe("withDefaultFetch", () => {
   it("fills in a fetch for a request without one, and leaves a request's own", () => {
     const seen: unknown[] = [];

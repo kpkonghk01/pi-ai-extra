@@ -20,7 +20,7 @@ import {
 } from "./outcome.ts";
 import { prepareTurn, type PreparedTurn, type TurnTarget } from "./prepare.ts";
 import { createProviderRegistry, type ProviderRegistry } from "./registry.ts";
-import type { ChatKit, ChatModelRef, ChatProviderModels, ChatTurnStream } from "./types.ts";
+import type { ChatKit, ChatKitOptions, ChatModelRef, ChatProviderModels, ChatTurnStream } from "./types.ts";
 
 /**
  * pi-ai retries only the initial request, before the response stream starts (408, 409, 429, 5xx
@@ -34,7 +34,7 @@ const DEFAULT_MAX_RETRIES = 2;
  * factories. Anything that is not a chat provider, or a second provider with the same pi-ai id,
  * throws a `TypeError` here.
  */
-export function createChatKit(options: Parameters<typeof parseKitOptions>[0]): ChatKit {
+export function createChatKit(options: ChatKitOptions): ChatKit {
   const { providers, fetch } = parseKitOptions(options);
   const registry = createProviderRegistry(providers);
   const streamSimple = (model: ChatModelRef, context: Context, turnOptions?: TurnOptions): ChatTurnStream =>
@@ -92,7 +92,7 @@ function startTurn(
       if (controller.signal.aborted) return finish(abortedBeforeSend(target));
       let turn: PreparedTurn;
       try {
-        turn = await prepareTurn(registry, ref, context, options === undefined ? undefined : { ...options, signal: controller.signal }, target);
+        turn = await prepareTurn(registry, ref, context, options, target, controller.signal);
       } catch (error) {
         return finish(failedFrom(target, error, controller.signal));
       }
@@ -139,26 +139,37 @@ async function streamTurn(
       }
     },
     onProviderStreamEvent: (event) => run.observer.observe(event),
-    ...(turn.wire.acceptsFetch ? { fetch: statusRecordingFetch(kitFetch, run.state) } : {}),
+    ...(turn.wire.acceptsFetch ? { fetch: statusRecordingFetch(kitFetch ?? turn.providerFetch, run.state) } : {}),
   };
 
   // With a forced tool call the answer is the tool's arguments: they become text events.
   const answers = new Map<number, string>();
+  const answerOf = (index: number, args: unknown) => answers.get(index) || JSON.stringify(args);
   const asText = (message: AssistantMessage): AssistantMessage =>
     schemaAsToolCall
       ? {
           ...message,
           content: message.content.map((block, index) =>
-            block.type === "toolCall" ? { type: "text" as const, text: answers.get(index) ?? JSON.stringify(block.arguments) } : block,
+            block.type === "toolCall" ? { type: "text" as const, text: answerOf(index, block.arguments) } : block,
           ),
         }
       : message;
+  /** The final message: the answer's text blocks only. Free text the stream never announced is not the answer. */
+  const finalContent = (message: AssistantMessage): AssistantMessage["content"] => {
+    if (!schemaAsToolCall) return message.content;
+    const content: AssistantMessage["content"] = [];
+    message.content.forEach((block, index) => {
+      if (block.type === "toolCall") content.push({ type: "text", text: answerOf(index, block.arguments) });
+      else if (block.type !== "text") content.push(block);
+    });
+    return content;
+  };
 
   for await (const event of turn.send(turn.model, turn.context, options)) {
     switch (event.type) {
       case "done":
       case "error":
-        return finish(classifyOutcome(run, event, asText(event.type === "done" ? event.message : event.error).content));
+        return finish(classifyOutcome(run, event, finalContent(event.type === "done" ? event.message : event.error)));
       case "toolcall_start":
         if (!schemaAsToolCall) stream.push(event);
         else {
@@ -176,7 +187,7 @@ async function streamTurn(
       case "toolcall_end":
         if (!schemaAsToolCall) stream.push(event);
         else {
-          const content = answers.get(event.contentIndex) ?? JSON.stringify(event.toolCall.arguments);
+          const content = answerOf(event.contentIndex, event.toolCall.arguments);
           answers.set(event.contentIndex, content);
           stream.push({ type: "text_end", contentIndex: event.contentIndex, content, partial: asText(event.partial) });
         }
@@ -191,12 +202,12 @@ async function streamTurn(
         stream.push(schemaAsToolCall ? { ...event, partial: asText(event.partial) } : event);
     }
   }
-  finish(failedBeforeSendLike(turn, "The provider stream ended without a result."));
+  finish(endedWithoutResult(turn));
 }
 
 /** The turn's own failure when pi-ai's stream ended without a final event, with the model's `api`. */
-function failedBeforeSendLike(turn: PreparedTurn, text: string): ChatFinalEvent {
-  return failedBeforeSend(turn.target, "PROVIDER_ERROR", text, turn.model.api);
+function endedWithoutResult(turn: PreparedTurn): ChatFinalEvent {
+  return failedBeforeSend(turn.target, "PROVIDER_ERROR", "The provider stream ended without a result.", turn.model.api);
 }
 
 /** Records the status of the latest provider response, when it was an error (for `ChatTurnError.status`). */

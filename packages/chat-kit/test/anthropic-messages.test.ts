@@ -100,6 +100,22 @@ describe("runTurn on Anthropic Messages", () => {
     assert.deepEqual(body.thinking, { type: "disabled" });
   });
 
+  it("keeps only the schema answer in the final message: free text before the tool call is dropped, and an empty call answers {}", async () => {
+    const respond = (json: string[]) => () =>
+      sseResponse(anthropicEvents({ blocks: [{ type: "text", text: "Sure! " }, { type: "tool_use", name: "answer", json }], stopReason: "tool_use" }));
+    for (const [json, expected] of [
+      [['{"ti', 'tle":"Hi"}'], '{"title":"Hi"}'],
+      [[""], "{}"],
+    ] as const) {
+      const { chat } = kit([{ method: "POST", url: OPENROUTER_MESSAGES_URL, respond: respond([...json]) }]);
+      const { events, message } = await runToEnd(chat, turn({ model: "anthropic/claude-sonnet-4.6", responseSchema: { name: "answer", schema: SCHEMA } }));
+      assert.equal(message.stopReason, "stop");
+      assert.deepEqual(message.content.map((block) => block.type), ["text"], "one text block: the answer");
+      assert.equal(message.content[0]?.type === "text" && message.content[0].text, expected);
+      assert.ok(!events.some((event) => event.type === "text_delta" && event.delta === "Sure! "), "free text is never streamed as the answer");
+    }
+  });
+
   it("fails a response-schema turn whose model answers without the tool call", async () => {
     const { chat } = kit([
       {

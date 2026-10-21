@@ -202,6 +202,7 @@ export function createKieProvider(options: KieProviderOptions): ChatProvider<Cha
         return credits === undefined ? undefined : roundUsd(credits * KIE_USD_PER_CREDIT);
       },
       estimatesCost: false,
+      fetch: options.fetch,
     },
   };
 }

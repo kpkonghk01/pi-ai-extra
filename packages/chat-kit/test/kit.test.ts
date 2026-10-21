@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Type, type Context, type Tool, type TranscriptContext } from "@earendil-works/pi-ai";
-import { createFakeFetch } from "@hk01/pi-ai-extra-internal/testing";
+import { createOpenRouterProvider } from "@hk01/pi-ai-extra-openrouter/pi-ai";
+import { createFakeFetch, jsonResponse } from "@hk01/pi-ai-extra-internal/testing";
 import { createChatKit, type ChatKit, type ChatToolFreeContext } from "../src/index.ts";
 import {
   chatProviders,
@@ -218,6 +219,42 @@ describe("a turn that fails before anything is sent", () => {
     assert.equal(message.provider, "?");
     assert.equal(message.model, "?");
     assert.match(message.errorMessage ?? "", /^\[\?\/\?\] /);
+  });
+});
+
+describe("turn validation and records", () => {
+  it("INVALID_REQUEST for a signal that is not an AbortSignal, instead of ignoring it", async () => {
+    const { chat } = offlineKit();
+    const message = await chat.completeSimple({ provider: "openrouter", id: "openai/gpt-4o-mini" }, contextOf(turn()), { signal: "x" } as never);
+    assert.equal(message.chatKit.error?.code, "INVALID_REQUEST");
+    assert.match(message.errorMessage ?? "", /options\.signal: must be an AbortSignal/);
+  });
+
+  it("gives every message its own zero-filled usage, and prefixes an abort with [provider/model]", async () => {
+    const { chat } = offlineKit();
+    const controller = new AbortController();
+    controller.abort();
+    const first = await chat.completeSimple({ provider: "nope", id: "m" }, contextOf(turn()));
+    const second = await chat.completeSimple({ provider: "nope", id: "m" }, contextOf(turn()));
+    assert.notEqual(first.usage, second.usage, "pi-ai may update a message's usage in place");
+    const aborted = await chat.completeSimple({ provider: "openrouter", id: "openai/gpt-4o-mini" }, contextOf(turn()), { signal: controller.signal });
+    assert.equal(aborted.stopReason, "aborted");
+    assert.equal(aborted.errorMessage, "[openrouter/openai/gpt-4o-mini] The turn was aborted.");
+  });
+
+  it("sends a turn through the factory's fetch when the kit has none", async () => {
+    const calls: string[] = [];
+    const openrouter = createOpenRouterProvider({
+      apiKey: "k",
+      fetch: async (input, init) => {
+        const url = String(input instanceof Request ? input.url : input);
+        calls.push(`${init?.method ?? "GET"} ${url}`);
+        return url.endsWith("/models") ? jsonResponse({ data: [] }) : sseResponse([completionsChunk({ content: "ok" }, "stop"), "[DONE]"]);
+      },
+    });
+    const chat = createChatKit({ providers: [openrouter] });
+    assert.equal((await outcome(chat, turn())).type, "done");
+    assert.ok(calls.includes("POST https://openrouter.ai/api/v1/chat/completions"), calls.join(", "));
   });
 });
 

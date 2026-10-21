@@ -29,14 +29,10 @@ export type ChatFinalEvent =
   | { type: "done"; reason: Extract<StopReason, "stop" | "length" | "toolUse" | "deferred">; message: ChatAssistantMessage }
   | { type: "error"; reason: Extract<StopReason, "aborted" | "error">; error: ChatAssistantMessage };
 
-const ZERO_USAGE: AssistantMessage["usage"] = {
-  input: 0,
-  output: 0,
-  cacheRead: 0,
-  cacheWrite: 0,
-  totalTokens: 0,
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
+/** A fresh zero-filled usage per message: pi-ai may update a message's usage in place. */
+function zeroUsage(): AssistantMessage["usage"] {
+  return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+}
 
 /**
  * Classifies pi-ai's final event into the turn's final event: done, aborted, or an error with
@@ -50,7 +46,8 @@ export function classifyOutcome(run: TurnRun, final: FinalStreamEvent, content: 
   const message: AssistantMessage = { ...(final.type === "done" ? final.message : final.error), content };
   if (state.transformFailure) return failure(turn.target, message, state.transformFailure.code, state.transformFailure.message, { usage });
   if (final.type === "error" && (message.stopReason === "aborted" || run.signal.aborted)) {
-    return { type: "error", reason: "aborted", error: withRecord({ ...message, stopReason: "aborted" }, usage) as ChatAssistantMessage };
+    const aborted = { ...message, stopReason: "aborted" as const, errorMessage: `[${turn.target.provider}/${turn.target.model}] The turn was aborted.` };
+    return { type: "error", reason: "aborted", error: withRecord(aborted, usage) as ChatAssistantMessage };
   }
   const blocked = observer.blocked(message);
   if (blocked) return failure(turn.target, message, "CONTENT_BLOCKED", blocked.message, { usage, rawStopReason: blocked.reason });
@@ -128,7 +125,7 @@ export function failedBeforeSend(target: TurnTarget, code: ChatTurnErrorCode, te
     api,
     provider: target.provider,
     model: target.model,
-    usage: ZERO_USAGE,
+    usage: zeroUsage(),
     stopReason: "error",
     errorMessage: `[${target.provider}/${target.model}] ${text}`,
     timestamp: Date.now(),
@@ -152,7 +149,7 @@ export function abortedBeforeSend(target: TurnTarget): ChatFinalEvent {
     api: "unknown",
     provider: target.provider,
     model: target.model,
-    usage: ZERO_USAGE,
+    usage: zeroUsage(),
     stopReason: "aborted",
     errorMessage: `[${target.provider}/${target.model}] The turn was aborted.`,
     timestamp: Date.now(),

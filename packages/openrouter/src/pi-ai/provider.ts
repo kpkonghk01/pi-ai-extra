@@ -102,11 +102,19 @@ export function createOpenRouterProvider(options: OpenRouterProviderOptions): Ch
     streamSimple: (model, context, streamOptions) => base.streamSimple(model, context, withFetch(streamOptions, fetch)),
   };
   let liveInfo = new Map<string, OpenRouterModelInfo>();
-  const provider = withLiveChatModels(explicit, async (signal) => {
-    const live = await fetchOpenRouterModels({ fetch: fetch ?? ((input, init) => globalThis.fetch(input, init)), root, installed, signal });
-    liveInfo = live.info;
-    return live.models;
-  });
+  let readInfo = liveInfo;
+  const provider = withLiveChatModels(
+    explicit,
+    async (signal) => {
+      const live = await fetchOpenRouterModels({ fetch: fetch ?? ((input, init) => globalThis.fetch(input, init)), root, installed, signal });
+      readInfo = live.info;
+      return live.models;
+    },
+    // The model list and what the live list said about its models change together.
+    () => {
+      liveInfo = readInfo;
+    },
+  );
   return {
     ...provider,
     chatKit: {
@@ -124,6 +132,7 @@ export function createOpenRouterProvider(options: OpenRouterProviderOptions): Ch
       // OpenRouter's own charge for the turn, `usage.cost`.
       reportedCostUsd: (raw) => (isRecord(raw.usage) ? reportedAmount(raw.usage.cost) : undefined),
       estimatesCost: true,
+      fetch: options.fetch,
     },
   };
 }

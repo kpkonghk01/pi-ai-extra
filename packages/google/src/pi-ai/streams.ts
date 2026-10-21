@@ -76,12 +76,15 @@ function mapFinalMessage(
 ): AssistantMessageEventStream {
   const target = createAssistantMessageEventStream();
   void (async () => {
-    for await (const event of source) {
-      if (event.type === "done") target.push({ ...event, message: map(event.message) });
-      else if (event.type === "error") target.push({ ...event, error: map(event.error) });
-      else target.push(event);
+    try {
+      for await (const event of source) {
+        if (event.type === "done") target.push({ ...event, message: map(event.message) });
+        else if (event.type === "error") target.push({ ...event, error: map(event.error) });
+        else target.push(event);
+      }
+    } finally {
+      target.end();
     }
-    target.end();
-  })();
+  })().catch(() => undefined);
   return target;
 }
