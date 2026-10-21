@@ -22,7 +22,7 @@ The consumer owns user-facing selection, server-side secret configuration, and p
 
 ## BYOK
 
-Bring Your Own Key. The consumer application supplies its provider API key at runtime from server-side secret configuration. Adapter packages do not read environment variables, persist keys, or expose keys to browser code. A multi-tenant consumer creates one chat kit per tenant, from that tenant's keys.
+Bring Your Own Key. The consumer application supplies its provider API key at runtime from server-side secret configuration. Adapter packages do not read environment variables, persist keys, or expose keys to browser code. A multi-tenant consumer creates one chat kit per tenant, from that tenant's keys; two keys for the same provider are two chat kits.
 
 ## Reference image
 
@@ -40,11 +40,7 @@ The consumer-side server package that runs one chat turn on the provider and mod
 
 ## Chat provider
 
-A pi-ai `Provider`, built by a provider package factory with its explicit key, plus the traits the chat kit needs and pi-ai has no field for: document and tool support, native structured output, which models are offered and what each reads, model rates and the provider's cost policy. It is still a pi-ai `Provider`; plain pi-ai code ignores the traits.
-
-## Provider name
-
-A consumer application's own name for a chat provider it registers with the chat kit, such as `gemini` for pi-ai's `google`. A model reference is a provider name and the provider's own model id. Two provider names may share one pi-ai provider id, each with its own key.
+A pi-ai `Provider`, built by a provider package factory with its explicit key, plus the traits the chat kit needs and pi-ai has no field for, under its `chatKit` member: document and tool support, native structured output, which models are offered and what each reads, model rates and the provider's cost policy. It is still a pi-ai `Provider`; plain pi-ai code ignores the traits. The chat kit identifies a chat provider by its pi-ai provider id, such as `google`. A name a consumer application gives a provider, such as the portal's `gemini`, is the consumer's own, and the consumer maps it before calling the kit.
 
 ## Model rate
 
