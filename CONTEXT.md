@@ -22,7 +22,7 @@ The consumer owns user-facing selection, server-side secret configuration, and p
 
 ## BYOK
 
-Bring Your Own Key. The consumer application supplies its provider API key at runtime from server-side secret configuration. Adapter packages do not read environment variables, persist keys, or expose keys to browser code.
+Bring Your Own Key. The consumer application supplies its provider API key at runtime from server-side secret configuration. Adapter packages do not read environment variables, persist keys, or expose keys to browser code. A multi-tenant consumer creates one chat kit per tenant, from that tenant's keys.
 
 ## Reference image
 
@@ -36,7 +36,15 @@ _Avoid_: Multi-Provider Module, 統一 Provider Module (the earlier browser-modu
 
 ## Chat kit
 
-The consumer-side server package that runs one chat turn on the provider and model the consumer application chose. It gives every provider the same turn features — reference documents, a required response shape, safety-block reporting and usage — so the consumer never writes per-provider code. Like the image kit, it never chooses a provider for the user and never falls back.
+The consumer-side server package that runs one chat turn on the provider and model the consumer application chose. It extends pi-ai rather than replacing it: a turn takes pi-ai's `Context` and option names, and streams pi-ai's events. Beside them it gives every provider the same extras pi-ai lacks — reference documents, a required response shape, safety-block reporting and a usage record — so the consumer never writes per-provider code. Like the image kit, it never chooses a provider for the user and never falls back.
+
+## Chat provider
+
+A pi-ai `Provider`, built by a provider package factory with its explicit key, plus the traits the chat kit needs and pi-ai has no field for: document and tool support, native structured output, which models are offered and what each reads, model rates and the provider's cost policy. It is still a pi-ai `Provider`; plain pi-ai code ignores the traits.
+
+## Provider name
+
+A consumer application's own name for a chat provider it registers with the chat kit, such as `gemini` for pi-ai's `google`. A model reference is a provider name and the provider's own model id. Two provider names may share one pi-ai provider id, each with its own key.
 
 ## Model rate
 
@@ -66,7 +74,7 @@ A versioned `.tgz` package attached to a GitHub Release. It is the consumer-inst
 
 ## Usage record
 
-The usage and billing a provider reported for one task or request: credits, USD cost, billing status, token counts and provider duration. It contains only provider-reported, validated values; absent values are omitted, never estimated or set to zero. The chat kit adds a turn's cost beside the record, marked as provider-reported or as estimated from the Model rate.
+The usage and billing a provider reported for one task or request: credits, USD cost, billing status, token counts and provider duration. It contains only provider-reported, validated values; absent values are omitted, never estimated or set to zero. The chat kit adds a turn's cost beside the record, marked as provider-reported or as estimated from the Model rate. Its token counts use pi-ai's names (`input`, `output`, `cacheRead`, `cacheWrite`, `reasoning`), but unlike pi-ai's `Usage` a count the provider did not report is absent.
 
 ## Cost estimate
 
