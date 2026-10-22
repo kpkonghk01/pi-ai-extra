@@ -196,4 +196,11 @@ chat-kit 0.3.0 is the breaking release. It peers on `@earendil-works/pi-ai` `1.2
 
 A new reseller needs a provider package release only, not a chat kit release. Consumers see thinking events and blocks, and decide whether to show them. History replay relies on pi-ai's adapters ignoring `chatKit` members; the chat kit's contract tests replay a message that has one.
 
+Amended 2026-10-22 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4583)), while implementing:
+
+- `ChatProviderTraits` gains an optional `fetch`, the factory's `fetch` option. A turn goes through it unless the kit has its own; Google's chat provider sets none, because pi-ai's Gemini adapter rejects a custom fetch.
+- A forced response-schema tool call is turned into text as follows. The call's `toolcall_*` events become `text_*` events and the call becomes one text block; free text the model wrote beside the call is dropped, so every `contentIndex` and partial message matches the final message; a call without argument deltas streams its arguments, `{}`, as one `text_delta`. A call that failed or was aborted before any delta keeps its arguments as the text block.
+- A failure or abort after the model resolved carries the model's `api` on the message; `"unknown"` is for a reference that did not resolve, and for input rejected before it was looked up.
+- `listModels()` returns copies of the models, so changing one reaches neither the next listing nor another kit.
+
 Sources: pi-ai and pi-agent-core at `v1.2.0`: `packages/ai/src/` `types.ts`, `models.ts`, `providers/model-schema.ts`, `providers/openrouter.ts`, `utils/event-stream.ts`, `api/lazy.ts`, `api/transform-messages.ts`, `api/anthropic-messages.ts`, `api/google-shared.ts` and `api/openai-completions.ts`; `packages/ai/scripts/openrouter-catalog.ts`; `packages/agent/src/types.ts`.

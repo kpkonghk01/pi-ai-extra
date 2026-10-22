@@ -10,13 +10,16 @@ import { isModelType, type Api, type Model, type Provider } from "@earendil-work
  *
  * The read uses the key the factory bound, and is not persisted: `refreshModels` restores nothing
  * from `context.stored`, and reads only when `context.allowNetwork` is set. A read that throws
- * keeps the previous list, and the error reaches pi-ai's `Models.refresh()` result. `onPublished`
- * runs together with the list it belongs to, so state read alongside it never gets ahead of it.
+ * keeps the previous list, and the error reaches pi-ai's `Models.refresh()` result.
+ *
+ * `readLive` returns the list, and may return more beside it (for example what the live list said
+ * about each model). `onPublished` gets that whole result when its list is published, so what was
+ * read alongside a list is never ahead of it: an aborted or superseded read publishes nothing.
  */
-export function withLiveChatModels<TApi extends Api>(
+export function withLiveChatModels<TApi extends Api, TRead extends { readonly models: readonly Model<TApi>[] }>(
   base: Provider<TApi>,
-  readLive: (signal: AbortSignal) => Promise<readonly Model<TApi>[]>,
-  onPublished?: (models: readonly Model<TApi>[]) => void,
+  readLive: (signal: AbortSignal) => Promise<TRead>,
+  onPublished?: (read: TRead) => void,
 ): Provider<TApi> {
   let live: readonly Model<TApi>[] | undefined;
   const chatModels = (): readonly Model<TApi>[] => live ?? base.getModels();
@@ -26,12 +29,12 @@ export function withLiveChatModels<TApi extends Api>(
     getAllModels: () => [...chatModels(), ...(base.getAllModels?.() ?? []).filter((model) => !isModelType(model, "chat"))],
     async refreshModels(context) {
       if (!context.allowNetwork || context.signal.aborted) return;
-      const models = await readLive(context.signal);
+      const read = await readLive(context.signal);
       if (context.signal.aborted) return;
       await context.publish({
         update: () => {
-          live = models;
-          onPublished?.(models);
+          live = read.models;
+          onPublished?.(read);
         },
       });
     },

@@ -86,8 +86,8 @@ export function createGoogleProvider(options: GoogleProviderOptions): ChatProvid
     api: googleChatStreams(googleGenerativeAIApi(), options.grounding === true),
     images: images.images,
   });
-  const provider = withLiveChatModels(base, (signal) =>
-    fetchGeminiModels({
+  const provider = withLiveChatModels(base, async (signal) => ({
+    models: await fetchGeminiModels({
       fetch: options.fetch ?? ((input, init) => globalThis.fetch(input, init)),
       apiKey: options.apiKey,
       baseUrl: baseUrl ?? GOOGLE_BASE_URL,
@@ -95,7 +95,7 @@ export function createGoogleProvider(options: GoogleProviderOptions): ChatProvid
       keep: (id) => options.modelIds === undefined || options.modelIds.includes(id),
       signal,
     }),
-  );
+  }));
   return {
     ...provider,
     chatKit: {

@@ -1,4 +1,5 @@
 import type { AssistantMessage, AssistantMessageEvent, StopReason } from "@earendil-works/pi-ai";
+import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { withCost } from "./cost.ts";
 import { errorText, statusFromMessage, TurnFailure } from "./errors.ts";
 import type { PreparedTurn, TurnTarget } from "./prepare.ts";
@@ -28,11 +29,6 @@ export type FinalStreamEvent = Extract<AssistantMessageEvent, { type: "done" | "
 export type ChatFinalEvent =
   | { type: "done"; reason: Extract<StopReason, "stop" | "length" | "toolUse" | "deferred">; message: ChatAssistantMessage }
   | { type: "error"; reason: Extract<StopReason, "aborted" | "error">; error: ChatAssistantMessage };
-
-/** A fresh zero-filled usage per message: pi-ai may update a message's usage in place. */
-function zeroUsage(): AssistantMessage["usage"] {
-  return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
-}
 
 /**
  * Classifies pi-ai's final event into the turn's final event: done, aborted, or an error with
@@ -122,34 +118,35 @@ function withRecord(message: AssistantMessage, usage: ChatUsage | undefined): As
 }
 
 /**
- * The lone final event of a turn that ended before the stream started (or without a result), with no
- * `start`, as pi-ai's `lazyStream` ends a setup failure. `api` is the model's when it had resolved
- * (`TurnTarget.api`), else `unknown`; `provider` and `model` come from the reference.
+ * The base of a message the kit ends itself, when pi-ai produced none: no content, a fresh zero
+ * usage, and no `start` before it, as pi-ai's `lazyStream` ends a setup failure. `api` is the
+ * model's when it had resolved (`TurnTarget.api`), else `unknown`; `provider` and `model` come from
+ * the reference.
  */
-function endedBeforeSend(target: TurnTarget, stopReason: "error" | "aborted", text: string, chatKit: ChatAssistantMessage["chatKit"]): ChatFinalEvent {
-  const message = {
+function kitMessage(target: TurnTarget, text: string): Omit<AssistantMessage, "stopReason"> {
+  return {
     role: "assistant",
     content: [],
     api: target.api ?? "unknown",
     provider: target.provider,
     model: target.model,
     usage: zeroUsage(),
-    stopReason,
     errorMessage: prefixed(target, text),
     timestamp: Date.now(),
-    chatKit,
-  } as ChatAssistantMessage;
-  return stopReason === "aborted" ? { type: "error", reason: "aborted", error: message } : { type: "error", reason: "error", error: message };
+  };
 }
 
-/** A turn the kit fails before sending anything (or whose stream gave no result). */
+/**
+ * A turn that ends without a result of pi-ai's: the kit fails it before sending anything, or the
+ * provider's stream ended without a final event.
+ */
 export function failedBeforeSend(target: TurnTarget, code: ChatTurnErrorCode, text: string): ChatFinalEvent {
-  return endedBeforeSend(target, "error", text, { error: { code } });
+  return { type: "error", reason: "error", error: { ...kitMessage(target, text), stopReason: "error", chatKit: { error: { code } } } };
 }
 
 /** The turn was aborted before anything was sent: pi-ai's `aborted`, without an error. */
 export function abortedBeforeSend(target: TurnTarget): ChatFinalEvent {
-  return endedBeforeSend(target, "aborted", ABORTED_TEXT, {});
+  return { type: "error", reason: "aborted", error: { ...kitMessage(target, ABORTED_TEXT), stopReason: "aborted", chatKit: {} } };
 }
 
 /** A failure thrown before or around the stream: the kit's own code, else aborted or a provider error. */

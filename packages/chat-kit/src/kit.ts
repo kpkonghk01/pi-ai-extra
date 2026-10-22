@@ -17,9 +17,9 @@ import {
   type TurnRun,
   type TurnState,
 } from "./outcome.ts";
-import { forcedCallAnswer } from "./schema-answer.ts";
 import { prepareTurn, type PreparedTurn, type TurnTarget } from "./prepare.ts";
 import { createProviderRegistry, type ProviderRegistry } from "./registry.ts";
+import { forcedCallAnswer, PASS_THROUGH } from "./schema-answer.ts";
 import type { ChatKit, ChatKitOptions, ChatModelRef, ChatProviderModels, ChatTurnStream } from "./types.ts";
 
 /**
@@ -142,13 +142,13 @@ async function streamTurn(
   };
 
   // With a forced tool call the answer is the tool's arguments: they become text events.
-  const answer = turn.schemaAsToolCall ? forcedCallAnswer() : undefined;
+  const answer = turn.schemaAsToolCall ? forcedCallAnswer() : PASS_THROUGH;
   for await (const event of turn.send(turn.model, turn.context, options)) {
     if (event.type === "done" || event.type === "error") {
       const { content } = event.type === "done" ? event.message : event.error;
-      return finish(classifyOutcome(run, event, answer ? answer.finalContent(content) : content));
+      return finish(classifyOutcome(run, event, answer.finalContent(content)));
     }
-    for (const out of answer ? answer.translate(event) : [event]) stream.push(out);
+    for (const out of answer.translate(event)) stream.push(out);
   }
   finish(endedWithoutResult(turn));
 }

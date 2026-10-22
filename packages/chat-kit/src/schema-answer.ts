@@ -21,6 +21,10 @@ export interface ForcedCallAnswer {
   finalContent(content: Content): Content;
 }
 
+/** The events and content of a turn without a forced call: unchanged. */
+export const PASS_THROUGH: ForcedCallAnswer = { translate: (event) => [event], finalContent: (content) => content };
+
+/** The translator for one turn that has a forced response-schema tool call (see `ForcedCallAnswer`). */
 export function forcedCallAnswer(): ForcedCallAnswer {
   /** The argument text streamed so far for each call block, by pi-ai's content index. */
   const streamed = new Map<number, string>();
@@ -28,18 +32,21 @@ export function forcedCallAnswer(): ForcedCallAnswer {
   /**
    * `content` as the consumer sees it. A call that has not ended shows only what was streamed (its
    * partial arguments are not JSON text); in the final message, a call that streamed nothing shows
-   * its arguments.
+   * its arguments (`complete`).
    */
-  const view = (content: Content, final: boolean): Content =>
+  const view = (content: Content, complete: boolean): Content =>
     content.flatMap((block, index): Content => {
       if (block.type === "text") return [];
       if (block.type !== "toolCall") return [block];
       const text = streamed.get(index);
-      return [{ type: "text", text: final ? text || JSON.stringify(block.arguments) : (text ?? "") }];
+      return [{ type: "text", text: complete ? text || JSON.stringify(block.arguments) : (text ?? "") }];
     });
 
-  /** The position of pi-ai's content `index` once the free text before it is dropped. */
-  const position = (partial: AssistantMessage, index: number): number => partial.content.slice(0, index).filter((block) => block.type !== "text").length;
+  /** The consumer's partial message for one of pi-ai's events, and where its block sits once the free text is dropped. */
+  const seen = (event: { contentIndex: number; partial: AssistantMessage }) => ({
+    contentIndex: event.partial.content.slice(0, event.contentIndex).filter((block) => block.type !== "text").length,
+    partial: { ...event.partial, content: view(event.partial.content, false) },
+  });
 
   return {
     translate(event) {
@@ -48,41 +55,29 @@ export function forcedCallAnswer(): ForcedCallAnswer {
         case "text_delta":
         case "text_end":
           return [];
-        case "toolcall_start": {
+        case "toolcall_start":
           streamed.set(event.contentIndex, "");
-          return [{ type: "text_start", contentIndex: position(event.partial, event.contentIndex), partial: { ...event.partial, content: view(event.partial.content, false) } }];
-        }
-        case "toolcall_delta": {
+          return [{ type: "text_start", ...seen(event) }];
+        case "toolcall_delta":
           streamed.set(event.contentIndex, (streamed.get(event.contentIndex) ?? "") + event.delta);
-          return [
-            {
-              type: "text_delta",
-              contentIndex: position(event.partial, event.contentIndex),
-              delta: event.delta,
-              partial: { ...event.partial, content: view(event.partial.content, false) },
-            },
-          ];
-        }
+          return [{ type: "text_delta", delta: event.delta, ...seen(event) }];
         case "toolcall_end": {
           const out: AssistantMessageEvent[] = [];
-          const contentIndex = position(event.partial, event.contentIndex);
           let answer = streamed.get(event.contentIndex) ?? "";
           if (answer === "") {
             // A call without argument deltas: its arguments are the answer.
             answer = JSON.stringify(event.toolCall.arguments);
             streamed.set(event.contentIndex, answer);
-            out.push({ type: "text_delta", contentIndex, delta: answer, partial: { ...event.partial, content: view(event.partial.content, false) } });
+            out.push({ type: "text_delta", delta: answer, ...seen(event) });
           }
-          out.push({ type: "text_end", contentIndex, content: answer, partial: { ...event.partial, content: view(event.partial.content, false) } });
+          out.push({ type: "text_end", content: answer, ...seen(event) });
           return out;
         }
         case "done":
         case "error":
           return [event];
-        default: {
-          const partial = { ...event.partial, content: view(event.partial.content, false) };
-          return [{ ...event, ...("contentIndex" in event ? { contentIndex: position(event.partial, event.contentIndex) } : {}), partial }];
-        }
+        default:
+          return [{ ...event, ..."contentIndex" in event ? { contentIndex: seen(event).contentIndex } : {}, partial: { ...event.partial, content: view(event.partial.content, false) } }];
       }
     },
     finalContent: (content) => view(content, true),

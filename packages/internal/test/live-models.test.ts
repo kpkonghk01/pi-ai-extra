@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createModels, createProvider, type Model, type ProviderStreams } from "@earendil-works/pi-ai";
-import { keepListed, withDefaultFetch, withLiveChatModels, reportedAmount } from "../src/pi-ai/index.ts";
+import { keepListed, withLiveChatModels, reportedAmount } from "../src/pi-ai/index.ts";
 import { explicitApiKeyAuth } from "../src/pi-ai/auth.ts";
 
 const model = (id: string): Model<"openai-responses"> => ({
@@ -22,7 +22,7 @@ const collection = () => createModels({ authContext: { env: async () => undefine
 
 describe("withLiveChatModels", () => {
   it("serves the base models until a read succeeds, then replaces them, so a dropped model disappears", async () => {
-    const provider = withLiveChatModels(base(), async () => [model("b"), model("c")]);
+    const provider = withLiveChatModels(base(), async () => ({ models: [model("b"), model("c")] }));
     const models = collection();
     models.setProvider(provider);
     assert.deepEqual(provider.getModels().map((entry) => entry.id), ["a", "b"]);
@@ -35,7 +35,7 @@ describe("withLiveChatModels", () => {
     let fail = false;
     const provider = withLiveChatModels(base(), async () => {
       if (fail) throw new Error("list is down");
-      return [model("c")];
+      return { models: [model("c")] };
     });
     const models = collection();
     models.setProvider(provider);
@@ -55,9 +55,9 @@ describe("withLiveChatModels onPublished", () => {
       base(),
       async () => {
         controller.abort();
-        return [model("late")];
+        return { models: [model("late")], tag: "late" };
       },
-      (list) => void published.push(list.map((entry) => entry.id)),
+      (read) => void published.push([read.tag]),
     );
     const models = collection();
     models.setProvider(provider);
@@ -65,25 +65,11 @@ describe("withLiveChatModels onPublished", () => {
     assert.equal(published.length, 0);
     assert.deepEqual(provider.getModels().map((entry) => entry.id), ["a", "b"], "the aborted read did not replace the list");
 
-    const ok = withLiveChatModels(base(), async () => [model("c")], (list) => void published.push(list.map((entry) => entry.id)));
+    const ok = withLiveChatModels(base(), async () => ({ models: [model("c")], tag: "c" }), (read) => void published.push([read.tag]));
     const second = collection();
     second.setProvider(ok);
     await second.refresh({ providers: ["t"], force: true });
-    assert.deepEqual(published, [["c"]]);
-  });
-});
-
-describe("withDefaultFetch", () => {
-  it("fills in a fetch for a request without one, and leaves a request's own", () => {
-    const seen: unknown[] = [];
-    const inner = { stream: () => undefined, streamSimple: (_m: unknown, _c: unknown, options: { fetch?: unknown }) => void seen.push(options.fetch) } as unknown as ProviderStreams;
-    const fetchA = (async () => new Response()) as typeof fetch;
-    const fetchB = (async () => new Response()) as typeof fetch;
-    const wrapped = withDefaultFetch(inner, fetchA);
-    wrapped.streamSimple({} as never, {} as never, undefined);
-    wrapped.streamSimple({} as never, {} as never, { fetch: fetchB });
-    assert.deepEqual(seen, [fetchA, fetchB]);
-    assert.equal(withDefaultFetch(inner, undefined), inner);
+    assert.deepEqual(published, [["c"]], "the hook gets everything the read returned, with its list");
   });
 });
 

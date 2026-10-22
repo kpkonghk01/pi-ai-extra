@@ -178,8 +178,8 @@ export function createKieProvider(options: KieProviderOptions): ChatProvider<Cha
     }),
   });
   const installed = base.getModels();
-  const provider = withLiveChatModels(base, (signal) =>
-    fetchKieModels({
+  const provider = withLiveChatModels(base, async (signal) => ({
+    models: await fetchKieModels({
       fetch: options.fetch ?? ((input, init) => globalThis.fetch(input, init)),
       apiKey: options.apiKey,
       responsesBaseUrl,
@@ -187,7 +187,7 @@ export function createKieProvider(options: KieProviderOptions): ChatProvider<Cha
       installed,
       signal,
     }),
-  );
+  }));
   return {
     ...provider,
     chatKit: {

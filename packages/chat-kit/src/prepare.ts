@@ -79,7 +79,7 @@ export async function prepareTurn(
   const entry = registry.providers.get(ref.provider);
   if (!entry) throw new TurnFailure("UNKNOWN_MODEL", `No provider with the id ${JSON.stringify(ref.provider)} is registered.`);
   const startedAt = Date.now();
-  const { model, snapshot } = await untilAborted(entry.models.find(ref.id), signal, () => new Error("The turn was aborted."));
+  const { model, snapshot } = await untilAborted(entry.models.find(ref.id), signal, () => signal.reason);
   const unread = snapshot.refreshError === undefined ? "" : ` (its live model list could not be read: ${snapshot.refreshError})`;
   if (!model) throw new TurnFailure("UNKNOWN_MODEL", `Model ${JSON.stringify(ref.id)} is not offered by provider ${entry.id}${unread}.`);
   target.api = model.api;
@@ -109,7 +109,7 @@ export async function prepareTurn(
   const prepared = await untilAborted(
     Promise.all(documents.map((document, index) => loadDocument(document, kinds[index]!, wire, model))),
     signal,
-    () => new Error("The turn was aborted."),
+    () => signal.reason,
   );
   const marker = prepared.length > 0 ? createDocumentMarker() : undefined;
   const schemaAsToolCall = options.responseSchema !== undefined && wire.schemaAsToolCall(model, schemaRequest);

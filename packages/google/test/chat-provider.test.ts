@@ -165,4 +165,21 @@ describe("googleChatStreams", () => {
       assert.deepEqual([result.api, result.provider, result.model], ["google-generative-ai", "google", "gemini-3.5-flash"]);
     }
   });
+
+  it("reports an aborted request as aborted, and uses a result the source completed with but never pushed", async () => {
+    const model = { id: "gemini-3.5-flash", api: "google-generative-ai", provider: "google" } as never;
+    const controller = new AbortController();
+    controller.abort();
+    const silent = { streamSimple: () => { const stream = createAssistantMessageEventStream(); stream.end(); return stream; } } as never;
+    const aborted = await googleChatStreams(silent, false).streamSimple(model, {} as never, { signal: controller.signal } as never).result();
+    assert.equal(aborted.stopReason, "aborted");
+
+    const completed = message({ stopReason: "stop", errorMessage: undefined, content: [{ type: "text", text: "hi" }] });
+    const endsWithResult = { streamSimple: () => { const stream = createAssistantMessageEventStream(); stream.end(completed); return stream; } } as never;
+    const wrapped = googleChatStreams(endsWithResult, false).streamSimple(model, {} as never, {} as never);
+    const events = [];
+    for await (const event of wrapped) events.push(event.type);
+    assert.deepEqual(events, ["done"]);
+    assert.equal((await wrapped.result()).stopReason, "stop");
+  });
 });

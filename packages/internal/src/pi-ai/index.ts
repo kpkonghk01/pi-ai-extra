@@ -26,4 +26,4 @@ export { helperImages, type HelperImages, type HelperImagesInput } from "./image
 export { withDefaultFetch } from "./default-fetch.ts";
 export { withLiveChatModels } from "./live-models.ts";
 export { getModelListJson, keepListed, modelIdsOf, reportedAmount } from "./model-lists.ts";
-export { toPiAiUsage } from "./usage.ts";
+export { toPiAiUsage, zeroUsage } from "./usage.ts";

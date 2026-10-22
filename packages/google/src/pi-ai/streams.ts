@@ -9,15 +9,18 @@ import {
   type StreamOptions,
 } from "@earendil-works/pi-ai";
 import { isRecord } from "@hk01/pi-ai-extra-internal";
+import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
 
 /**
- * pi-ai's Gemini streams with two Gemini quirks:
+ * pi-ai's Gemini streams with two Gemini quirks, and one guarantee:
  *
  * - **Grounding** (`grounding`): every request gets the Google Search and URL context tools,
  *   appended through `onPayload` after the caller's own `onPayload`.
  * - **Prompt blocks**: Gemini reports a blocked prompt only as `promptFeedback.blockReason` on a
  *   chunk without candidates, which pi-ai surfaces as a stream that ended without a finish reason.
  *   The block reason is copied to the final message's `rawStopReason` when pi-ai set none.
+ * - **A result always arrives**: a stream that ends without a final event, or throws, gets an
+ *   `error` message (`aborted` when the request's signal was aborted), so `result()` settles.
  */
 export function googleChatStreams(inner: ProviderStreams, grounding: boolean): ProviderStreams {
   return {
@@ -29,7 +32,7 @@ export function googleChatStreams(inner: ProviderStreams, grounding: boolean): P
 }
 
 function withPromptBlockReason<T extends StreamOptions | SimpleStreamOptions>(
-  model: Model<Api>,
+  requested: Model<Api>,
   options: T | undefined,
   run: (options: T) => AssistantMessageEventStream,
   grounding: boolean,
@@ -51,7 +54,7 @@ function withPromptBlockReason<T extends StreamOptions | SimpleStreamOptions>(
       await options?.onProviderStreamEvent?.(event, model);
     },
   } as T;
-  return mapFinalMessage(run(hooked), model, (message) =>
+  return mapFinalMessage(run(hooked), requested, options?.signal, (message) =>
     blockReason === undefined || message.rawStopReason !== undefined ? message : { ...message, rawStopReason: blockReason },
   );
 }
@@ -72,12 +75,14 @@ function promptBlockReason(chunk: unknown): string | undefined {
 
 /**
  * The stream with its final message (`done` or `error`) passed through `map`; every other event
- * unchanged. A source that ends without a final event, or throws, still gets one: an `error`
- * message for `model`, so `result()` settles (pi-ai's `lazyStream` awaits it).
+ * unchanged. A source that ends without a final event, or throws, still gets one, for `model`:
+ * the result the source completed with (`end(result)`), else an `error` message (`aborted` when
+ * `signal` was aborted), so `result()` settles. pi-ai's `lazyStream` awaits it.
  */
 function mapFinalMessage(
   source: AssistantMessageEventStream,
   model: Model<Api>,
+  signal: AbortSignal | undefined,
   map: (message: AssistantMessage) => AssistantMessage,
 ): AssistantMessageEventStream {
   const target = createAssistantMessageEventStream();
@@ -94,21 +99,29 @@ function mapFinalMessage(
     } catch (error) {
       failure = error;
     }
-    if (!finished) target.push({ type: "error", reason: "error", error: endedWithoutResult(model, failure) });
+    if (finished) return target.end();
+    const message = map(failure === undefined ? await completedResult(source) ?? endedWithoutResult(model, signal, undefined) : endedWithoutResult(model, signal, failure));
+    target.push(message.stopReason === "error" || message.stopReason === "aborted" ? { type: "error", reason: message.stopReason, error: message } : { type: "done", reason: message.stopReason as "stop", message });
     target.end();
   })();
   return target;
 }
 
-function endedWithoutResult(model: Model<Api>, failure: unknown): AssistantMessage {
+/** The message a source completed with through `end(result)` but never pushed as a final event, if it settled. */
+async function completedResult(source: AssistantMessageEventStream): Promise<AssistantMessage | undefined> {
+  return Promise.race([source.result(), new Promise<undefined>((resolve) => setImmediate(() => resolve(undefined)))]);
+}
+
+function endedWithoutResult(model: Model<Api>, signal: AbortSignal | undefined, failure: unknown): AssistantMessage {
+  const aborted = signal?.aborted === true;
   return {
     role: "assistant",
     content: [],
     api: model.api,
     provider: model.provider,
     model: model.id,
-    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-    stopReason: "error",
+    usage: zeroUsage(),
+    stopReason: aborted ? "aborted" : "error",
     errorMessage: failure === undefined ? "The Gemini stream ended without a result." : failure instanceof Error ? failure.message : String(failure),
     timestamp: Date.now(),
   };
