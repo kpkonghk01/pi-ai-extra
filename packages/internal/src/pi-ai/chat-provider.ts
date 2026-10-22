@@ -4,7 +4,7 @@ import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.l
 import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
 import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
 import { explicitApiKeyAuth } from "./auth.ts";
-import { withDefaultFetch } from "./live-models.ts";
+import { withDefaultFetch } from "./default-fetch.ts";
 import { assertModelRate, modelCostAt, type ModelRate } from "./rates.ts";
 import type { HelperImages } from "./images-provider.ts";
 

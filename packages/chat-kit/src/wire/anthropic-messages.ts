@@ -1,7 +1,7 @@
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { modelIdKey } from "@hk01/pi-ai-extra-internal/model-id";
 import { TurnFailure } from "../errors.ts";
-import { isRecord } from "../guards.ts";
+import { isRecord } from "@hk01/pi-ai-extra-internal/util";
 import type { ChatUsage } from "../types.ts";
 import { createUsageCapture, tokenCount, toChatUsage } from "../usage.ts";
 import { sanitizeSchemaForAnthropic } from "./anthropic-schema.ts";

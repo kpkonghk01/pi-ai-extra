@@ -23,6 +23,7 @@ export {
   type TokenRates,
 } from "./rates.ts";
 export { helperImages, type HelperImages, type HelperImagesInput } from "./images-provider.ts";
-export { withDefaultFetch, withLiveChatModels } from "./live-models.ts";
+export { withDefaultFetch } from "./default-fetch.ts";
+export { withLiveChatModels } from "./live-models.ts";
 export { getModelListJson, keepListed, modelIdsOf, reportedAmount } from "./model-lists.ts";
 export { toPiAiUsage } from "./usage.ts";

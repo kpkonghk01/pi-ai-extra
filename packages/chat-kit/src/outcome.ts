@@ -46,7 +46,7 @@ export function classifyOutcome(run: TurnRun, final: FinalStreamEvent, content: 
   const message: AssistantMessage = { ...(final.type === "done" ? final.message : final.error), content };
   if (state.transformFailure) return failure(turn.target, message, state.transformFailure.code, state.transformFailure.message, { usage });
   if (final.type === "error" && (message.stopReason === "aborted" || run.signal.aborted)) {
-    const aborted = { ...message, stopReason: "aborted" as const, errorMessage: `[${turn.target.provider}/${turn.target.model}] The turn was aborted.` };
+    const aborted = { ...message, stopReason: "aborted" as const, errorMessage: prefixed(turn.target, ABORTED_TEXT) };
     return { type: "error", reason: "aborted", error: withRecord(aborted, usage) as ChatAssistantMessage };
   }
   const blocked = observer.blocked(message);
@@ -91,6 +91,13 @@ function providerErrorOutcome(run: TurnRun, message: AssistantMessage, usage: Ch
   });
 }
 
+const ABORTED_TEXT = "The turn was aborted.";
+
+/** `text` with the turn's `[provider/model]` in front, as the reference named them. */
+function prefixed(target: TurnTarget, text: string): string {
+  return `[${target.provider}/${target.model}] ${text}`;
+}
+
 /** `message` as a failed turn: `stopReason: "error"`, `[provider/model]` in front of the text, and the error's code. */
 function failure(
   target: TurnTarget,
@@ -102,7 +109,7 @@ function failure(
   const failed: AssistantMessage = {
     ...message,
     stopReason: "error",
-    errorMessage: `[${target.provider}/${target.model}] ${text}`,
+    errorMessage: prefixed(target, text),
     ...(extra.rawStopReason === undefined ? {} : { rawStopReason: extra.rawStopReason }),
   };
   const error = { code, ...(extra.status === undefined ? {} : { status: extra.status }) };
@@ -115,23 +122,34 @@ function withRecord(message: AssistantMessage, usage: ChatUsage | undefined): As
 }
 
 /**
- * The lone `error` event of a turn the kit fails before sending anything, with no `start`, as
- * pi-ai's `lazyStream` ends a setup failure. `api` is the model's when it resolved, else `unknown`.
+ * The lone final event of a turn that ended before the stream started (or without a result), with no
+ * `start`, as pi-ai's `lazyStream` ends a setup failure. `api` is the model's when it had resolved
+ * (`TurnTarget.api`), else `unknown`; `provider` and `model` come from the reference.
  */
-export function failedBeforeSend(target: TurnTarget, code: ChatTurnErrorCode, text: string, api: Api = "unknown"): ChatFinalEvent {
-  const message: ChatAssistantMessage = {
+function endedBeforeSend(target: TurnTarget, stopReason: "error" | "aborted", text: string, chatKit: ChatAssistantMessage["chatKit"]): ChatFinalEvent {
+  const message = {
     role: "assistant",
     content: [],
-    api,
+    api: target.api ?? "unknown",
     provider: target.provider,
     model: target.model,
     usage: zeroUsage(),
-    stopReason: "error",
-    errorMessage: `[${target.provider}/${target.model}] ${text}`,
+    stopReason,
+    errorMessage: prefixed(target, text),
     timestamp: Date.now(),
-    chatKit: { error: { code } },
-  };
-  return { type: "error", reason: "error", error: message };
+    chatKit,
+  } as ChatAssistantMessage;
+  return stopReason === "aborted" ? { type: "error", reason: "aborted", error: message } : { type: "error", reason: "error", error: message };
+}
+
+/** A turn the kit fails before sending anything (or whose stream gave no result). */
+export function failedBeforeSend(target: TurnTarget, code: ChatTurnErrorCode, text: string): ChatFinalEvent {
+  return endedBeforeSend(target, "error", text, { error: { code } });
+}
+
+/** The turn was aborted before anything was sent: pi-ai's `aborted`, without an error. */
+export function abortedBeforeSend(target: TurnTarget): ChatFinalEvent {
+  return endedBeforeSend(target, "aborted", ABORTED_TEXT, {});
 }
 
 /** A failure thrown before or around the stream: the kit's own code, else aborted or a provider error. */
@@ -139,21 +157,4 @@ export function failedFrom(target: TurnTarget, error: unknown, signal: AbortSign
   if (error instanceof TurnFailure) return failedBeforeSend(target, error.code, error.message);
   if (signal.aborted) return abortedBeforeSend(target);
   return failedBeforeSend(target, "PROVIDER_ERROR", errorText(error));
-}
-
-/** The turn was aborted before anything was sent: pi-ai's `aborted`, without an error. */
-export function abortedBeforeSend(target: TurnTarget): ChatFinalEvent {
-  const message: ChatAssistantMessage = {
-    role: "assistant",
-    content: [],
-    api: "unknown",
-    provider: target.provider,
-    model: target.model,
-    usage: zeroUsage(),
-    stopReason: "aborted",
-    errorMessage: `[${target.provider}/${target.model}] The turn was aborted.`,
-    timestamp: Date.now(),
-    chatKit: {},
-  };
-  return { type: "error", reason: "aborted", error: message };
 }

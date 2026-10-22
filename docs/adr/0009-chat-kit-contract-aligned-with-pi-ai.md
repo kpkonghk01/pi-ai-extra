@@ -43,7 +43,7 @@ export interface ChatProviderTraits {
   describe(model: Model<Api>): { fileInput: boolean; tools: boolean; rate?: ModelRate | undefined }; // model level: what the model itself can do
   reportedCostUsd(raw: Record<string, unknown>): number | undefined; // the provider's own charge, in USD
   readonly estimatesCost: boolean; // a turn without a reported charge is estimated from the Model rate
-  readonly fetch?: typeof globalThis.fetch | undefined; // the factory's `fetch` option: a turn goes through it unless the kit has its own
+  readonly fetch?: typeof globalThis.fetch | undefined; // the factory's `fetch` option: a turn goes through it unless the kit has its own (not Google's: pi-ai's Gemini adapter rejects a custom fetch)
 }
 
 export function createChatKit(options: { providers: readonly ChatProvider[]; fetch?: typeof globalThis.fetch | undefined }): ChatKit;

@@ -22,13 +22,14 @@ import { isRecord } from "@hk01/pi-ai-extra-internal";
 export function googleChatStreams(inner: ProviderStreams, grounding: boolean): ProviderStreams {
   return {
     ...inner,
-    stream: (model, context, options) => withPromptBlockReason(options, (hooked) => inner.stream(model, context, hooked), grounding),
+    stream: (model, context, options) => withPromptBlockReason(model, options, (hooked) => inner.stream(model, context, hooked), grounding),
     streamSimple: (model, context, options) =>
-      withPromptBlockReason(options, (hooked) => inner.streamSimple(model, context, hooked), grounding),
+      withPromptBlockReason(model, options, (hooked) => inner.streamSimple(model, context, hooked), grounding),
   };
 }
 
 function withPromptBlockReason<T extends StreamOptions | SimpleStreamOptions>(
+  model: Model<Api>,
   options: T | undefined,
   run: (options: T) => AssistantMessageEventStream,
   grounding: boolean,
@@ -50,7 +51,7 @@ function withPromptBlockReason<T extends StreamOptions | SimpleStreamOptions>(
       await options?.onProviderStreamEvent?.(event, model);
     },
   } as T;
-  return mapFinalMessage(run(hooked), (message) =>
+  return mapFinalMessage(run(hooked), model, (message) =>
     blockReason === undefined || message.rawStopReason !== undefined ? message : { ...message, rawStopReason: blockReason },
   );
 }
@@ -69,22 +70,46 @@ function promptBlockReason(chunk: unknown): string | undefined {
   return typeof reason === "string" && reason ? reason : undefined;
 }
 
-/** The stream with its final message (`done` or `error`) passed through `map`; every other event unchanged. */
+/**
+ * The stream with its final message (`done` or `error`) passed through `map`; every other event
+ * unchanged. A source that ends without a final event, or throws, still gets one: an `error`
+ * message for `model`, so `result()` settles (pi-ai's `lazyStream` awaits it).
+ */
 function mapFinalMessage(
   source: AssistantMessageEventStream,
+  model: Model<Api>,
   map: (message: AssistantMessage) => AssistantMessage,
 ): AssistantMessageEventStream {
   const target = createAssistantMessageEventStream();
   void (async () => {
+    let finished = false;
+    let failure: unknown;
     try {
       for await (const event of source) {
         if (event.type === "done") target.push({ ...event, message: map(event.message) });
         else if (event.type === "error") target.push({ ...event, error: map(event.error) });
         else target.push(event);
+        finished ||= event.type === "done" || event.type === "error";
       }
-    } finally {
-      target.end();
+    } catch (error) {
+      failure = error;
     }
-  })().catch(() => undefined);
+    if (!finished) target.push({ type: "error", reason: "error", error: endedWithoutResult(model, failure) });
+    target.end();
+  })();
   return target;
+}
+
+function endedWithoutResult(model: Model<Api>, failure: unknown): AssistantMessage {
+  return {
+    role: "assistant",
+    content: [],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason: "error",
+    errorMessage: failure === undefined ? "The Gemini stream ended without a result." : failure instanceof Error ? failure.message : String(failure),
+    timestamp: Date.now(),
+  };
 }

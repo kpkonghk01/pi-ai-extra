@@ -44,7 +44,7 @@ function kit(routes: FakeRoute[]) {
   return { chat: testKit(["kie"], wireFetch(fake)), fake };
 }
 
-describe("runTurn on OpenAI Responses (KIE Codex)", () => {
+describe("streamSimple on OpenAI Responses (KIE Codex)", () => {
   it("sends the response schema as a strict text.format and keeps credits_consumed in raw usage", async () => {
     const usage = {
       input_tokens: 30,

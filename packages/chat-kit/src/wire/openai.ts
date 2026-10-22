@@ -1,4 +1,4 @@
-import { isRecord } from "../guards.ts";
+import { isRecord } from "@hk01/pi-ai-extra-internal/util";
 import type { ChatUsage } from "../types.ts";
 import { tokenCount, toChatUsage } from "../usage.ts";
 import type { BlockedTurn } from "./types.ts";

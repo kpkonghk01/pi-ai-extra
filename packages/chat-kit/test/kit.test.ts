@@ -242,6 +242,43 @@ describe("turn validation and records", () => {
     assert.equal(aborted.errorMessage, "[openrouter/openai/gpt-4o-mini] The turn was aborted.");
   });
 
+  it("carries the model's api on a failure or abort after the model resolved, and \"unknown\" before", async () => {
+    const { chat } = offlineKit();
+    const unsupported = await failure(turn({ provider: "kie", model: "claude-sonnet-4-6", tools: [LOOKUP] }));
+    assert.equal(unsupported.message.api, "anthropic-messages");
+    const controller = new AbortController();
+    const slow = {
+      name: "slow.md",
+      mimeType: "text/markdown",
+      load: async (): Promise<Uint8Array> => {
+        controller.abort();
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return new Uint8Array();
+      },
+    };
+    const aborted = await chat.completeSimple({ provider: "openrouter", id: "openai/gpt-4o-mini" }, contextOf(turn()), { documents: [slow], signal: controller.signal });
+    assert.equal(aborted.stopReason, "aborted");
+    assert.equal(aborted.api, "openai-completions", "the model had resolved when the abort came");
+    assert.equal((await failure(turn({ provider: "nope" }))).message.api, "unknown");
+  });
+
+  it("lists models as copies: changing a listed model changes neither the next listing nor another kit's", async () => {
+    const first = testKit(["kie"], createFakeFetch([]).fetch);
+    const [listed] = await first.listModels();
+    assert.ok(listed && "models" in listed);
+    const model = listed.models.find((entry) => entry.id === "claude-sonnet-4-6")!;
+    const before = JSON.stringify(model);
+    model.input.push("file" as never);
+    model.cost.input = 999;
+    (model.chatKit.rate as unknown as { periods: { input: number }[] }).periods[0]!.input = 999;
+    const again = (await first.listModels())[0];
+    const other = (await testKit(["kie"], createFakeFetch([]).fetch).listModels())[0];
+    for (const entry of [again, other]) {
+      assert.ok(entry && "models" in entry);
+      assert.equal(JSON.stringify(entry.models.find((candidate) => candidate.id === "claude-sonnet-4-6")), before);
+    }
+  });
+
   it("sends a turn through the factory's fetch when the kit has none", async () => {
     const calls: string[] = [];
     const openrouter = createOpenRouterProvider({

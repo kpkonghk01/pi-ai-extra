@@ -1,6 +1,6 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { dataUrl } from "../documents.ts";
-import { isRecord } from "../guards.ts";
+import { isRecord } from "@hk01/pi-ai-extra-internal/util";
 import { createUsageCapture } from "../usage.ts";
 import { encodeDocument, placeByUrl, replaceDocumentMarker, textOfType, type DocumentEncoder } from "./document-parts.ts";
 import { COMPLETIONS_USAGE_FIELDS, CONTENT_FILTER_BLOCK, openAIUsage } from "./openai.ts";

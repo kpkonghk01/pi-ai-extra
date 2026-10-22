@@ -142,4 +142,27 @@ describe("googleChatStreams", () => {
     assert.equal(result.rawStopReason, "SAFETY");
     assert.deepEqual((sent.payload as { config: { tools: unknown } }).config.tools, [{ googleSearch: {} }, { urlContext: {} }]);
   });
+
+  it("settles result() with an error message when the inner stream ends without a final event, or throws", async () => {
+    const endsEarly = { stream: () => createAssistantMessageEventStream(), streamSimple: () => { const stream = createAssistantMessageEventStream(); stream.end(); return stream; } } as never;
+    const throwing = {
+      streamSimple: () => ({
+        async *[Symbol.asyncIterator]() {
+          yield { type: "start", partial: message() };
+          throw new Error("socket closed");
+        },
+        result: () => new Promise(() => undefined),
+      }),
+    } as never;
+    const model = { id: "gemini-3.5-flash", api: "google-generative-ai", provider: "google" } as never;
+    for (const [inner, expected] of [[endsEarly, /ended without a result/], [throwing, /socket closed/]] as const) {
+      const result = await Promise.race([
+        googleChatStreams(inner, false).streamSimple(model, {} as never, {} as never).result(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("result() never settled")), 1_000).unref()),
+      ]);
+      assert.equal(result.stopReason, "error");
+      assert.match(result.errorMessage ?? "", expected);
+      assert.deepEqual([result.api, result.provider, result.model], ["google-generative-ai", "google", "gemini-3.5-flash"]);
+    }
+  });
 });

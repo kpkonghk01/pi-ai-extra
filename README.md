@@ -1,12 +1,13 @@
 # pi-ai-extra
 
-Server-only extensions to [`@earendil-works/pi-ai`](https://www.npmjs.com/package/@earendil-works/pi-ai) for KIE, ToAPIs and Gemini image generation, plus KIE, ToAPIs and Gemini chat providers. Three independently installable provider packages, delivered as GitHub Release `.tgz` files (no npm registry), for Node.js 24.22.1 or later:
+Server-only extensions to [`@earendil-works/pi-ai`](https://www.npmjs.com/package/@earendil-works/pi-ai) for KIE, ToAPIs and Gemini image generation, plus KIE, ToAPIs and Gemini chat providers. Four independently installable provider packages, delivered as GitHub Release `.tgz` files (no npm registry), for Node.js 24.22.1 or later:
 
 | Package | Image models | Chat (pi-ai `Models`) |
 | --- | --- | --- |
 | `@hk01/pi-ai-extra-kie` | Grok Imagine Image 2.0 (text-to-image, image edit), GPT Image 2 (text-to-image, image-to-image), Nano Banana 2 | Codex (OpenAI Responses), Claude (Anthropic Messages) |
 | `@hk01/pi-ai-extra-toapis` | Gemini 3.1 Flash Image (preview), GPT Image 2, GPT Image 2.5 Flare / Sunburst, Seedream 5.0 Pro | Codex (OpenAI Responses), Claude (Anthropic Messages) |
 | `@hk01/pi-ai-extra-google` | Gemini 3.1 Flash Image, Gemini 3 Pro Image | Gemini (pi-ai's Gemini adapter and catalogue, explicit key) |
+| `@hk01/pi-ai-extra-openrouter` | None (pi-ai already serves OpenRouter's image generation) | OpenAI Completions, Anthropic Messages (pi-ai's OpenRouter provider, explicit key, live model list) |
 
 Each package has two entry points:
 
@@ -15,7 +16,7 @@ Each package has two entry points:
 | `@hk01/pi-ai-extra-<provider>` | CommonJS **and** ESM | `generate<Provider>Image()`, model catalogue, task lookup, errors | No |
 | `@hk01/pi-ai-extra-<provider>/pi-ai` | ESM only | pi-ai `Provider` factory serving the chat and image models | Yes (`@earendil-works/pi-ai@1.2.0`, optional peer) |
 
-The `/pi-ai` subpath is ESM-only because pi-ai itself is ESM-only; a CommonJS server that does not use pi-ai can `require()` the main entry.
+The `/pi-ai` subpath is ESM-only because pi-ai itself is ESM-only; a CommonJS server that does not use pi-ai can `require()` the main entry. `@hk01/pi-ai-extra-openrouter` has only the `/pi-ai` entry, because pi-ai already serves OpenRouter's images and there is no helper for a main entry to hold ([ADR 0004](docs/adr/0004-dual-format-helper-esm-pi-ai-subpath.md)).
 
 A fourth package, [`@hk01/pi-ai-extra-image-kit`](packages/image-kit/README.md), is the image client for Google AI Studio apps built on the three provider packages (their peer dependencies): model families derived from the installed catalogues through an app-owned, route-scoped catalogue policy, request validation, NDJSON streaming, a browser reader and React UI (model selector, error panel). Only its `/server` entry imports the provider packages; its `/browser` and `/react` entries run in the browser and never hold keys or provider code ([ADR 0006](docs/adr/0006-image-kit-package.md), [ADR 0007](docs/adr/0007-catalogue-policy-model-selection.md)).
 
@@ -270,7 +271,7 @@ KIE adds `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `gpt-6-sol`
 
 ### Upgrading to KIE/ToAPIs 0.5 and Google 0.6
 
-The `/pi-ai` factories (`createKieProvider`, `createToapisProvider`, `createGoogleProvider`) now return a chat provider: a pi-ai `Provider` with a `chatKit` member (what the provider takes, which models it offers, model rates and its cost policy) and a live model list as `refreshModels`, which replaces the chat models, so `models.refresh()` reads it for any pi-ai consumer. Plain pi-ai code ignores `chatKit`. The change is additive: new `fetch` option on all three (it serves chat requests and the model list; a request's own `fetch` wins), and `grounding` on Google (Google Search and URL context on every chat request, and a prompt Gemini blocks ends with its block reason as `rawStopReason`). The rate types and `ChatProvider` / `ChatProviderTraits` are exported by each `/pi-ai` entry. `@hk01/pi-ai-extra-openrouter` 0.1.0 is new: `createOpenRouterProvider({ apiKey, baseUrl?, fetch? })` extends pi-ai's `openrouterProvider()` with an explicit key and a live list, and has a `/pi-ai` entry only.
+The `/pi-ai` factories (`createKieProvider`, `createToapisProvider`, `createGoogleProvider`) now return a chat provider: a pi-ai `Provider` with a `chatKit` member (what the provider takes, which models it offers, model rates and its cost policy) and a live model list as `refreshModels`, which replaces the chat models, so `models.refresh()` reads it for any pi-ai consumer. Plain pi-ai code ignores `chatKit`. The change is additive: new `fetch` option on all three (it serves the model list, and on KIE and ToAPIs chat requests too, where a request's own `fetch` wins; Google's chat requests always use the global fetch, because pi-ai's Gemini adapter rejects a custom one), and `grounding` on Google (Google Search and URL context on every chat request, and a prompt Gemini blocks ends with its block reason as `rawStopReason`). The rate types and `ChatProvider` / `ChatProviderTraits` are exported by each `/pi-ai` entry. `@hk01/pi-ai-extra-openrouter` 0.1.0 is new: `createOpenRouterProvider({ apiKey, baseUrl?, fetch? })` extends pi-ai's `openrouterProvider()` with an explicit key and a live list, and has a `/pi-ai` entry only.
 
 ### Upgrading from KIE/ToAPIs 0.2 and Google 0.3
 

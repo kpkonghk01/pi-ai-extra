@@ -1,5 +1,5 @@
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
-import { isRecord } from "../guards.ts";
+import { isRecord } from "@hk01/pi-ai-extra-internal/util";
 import type { ChatDocument, ChatUsage } from "../types.ts";
 import { sumReported, tokenCount, toChatUsage } from "../usage.ts";
 import { encodeDocument, replaceDocumentMarker, textOfUntypedPart, type DocumentEncoder } from "./document-parts.ts";

@@ -1,4 +1,4 @@
-import { isModelType, type Api, type FetchFunction, type Model, type Provider, type ProviderStreams } from "@earendil-works/pi-ai";
+import { isModelType, type Api, type Model, type Provider } from "@earendil-works/pi-ai";
 
 /**
  * The provider with a live chat model list: each `refreshModels` reads it with `readLive` and
@@ -35,15 +35,5 @@ export function withLiveChatModels<TApi extends Api>(
         },
       });
     },
-  };
-}
-
-/** Streams that send with `fetch` unless the request brings its own (`StreamOptions.fetch`). */
-export function withDefaultFetch(inner: ProviderStreams, fetch: FetchFunction | undefined): ProviderStreams {
-  if (fetch === undefined) return inner;
-  return {
-    ...inner,
-    stream: (model, context, options) => inner.stream(model, context, { ...options, fetch: options?.fetch ?? fetch }),
-    streamSimple: (model, context, options) => inner.streamSimple(model, context, { ...options, fetch: options?.fetch ?? fetch }),
   };
 }

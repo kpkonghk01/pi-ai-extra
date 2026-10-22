@@ -18,6 +18,7 @@ import {
   type TurnRun,
   type TurnState,
 } from "./outcome.ts";
+import { forcedCallAnswer } from "./schema-answer.ts";
 import { prepareTurn, type PreparedTurn, type TurnTarget } from "./prepare.ts";
 import { createProviderRegistry, type ProviderRegistry } from "./registry.ts";
 import type { ChatKit, ChatKitOptions, ChatModelRef, ChatProviderModels, ChatTurnStream } from "./types.ts";
@@ -116,7 +117,6 @@ async function streamTurn(
   finish: (final: ChatFinalEvent) => void,
 ): Promise<void> {
   const run: TurnRun = { turn, observer: turn.wire.createObserver(), state: { transformFailure: undefined, httpStatus: undefined }, signal };
-  const { schemaAsToolCall } = turn;
   const { temperature, maxTokens, reasoning, sessionId, toolChoice, maxRetries } = turn.options;
   const options: ModelsSimpleStreamOptions = {
     signal,
@@ -143,71 +143,20 @@ async function streamTurn(
   };
 
   // With a forced tool call the answer is the tool's arguments: they become text events.
-  const answers = new Map<number, string>();
-  const answerOf = (index: number, args: unknown) => answers.get(index) || JSON.stringify(args);
-  const asText = (message: AssistantMessage): AssistantMessage =>
-    schemaAsToolCall
-      ? {
-          ...message,
-          content: message.content.map((block, index) =>
-            block.type === "toolCall" ? { type: "text" as const, text: answerOf(index, block.arguments) } : block,
-          ),
-        }
-      : message;
-  /** The final message: the answer's text blocks only. Free text the stream never announced is not the answer. */
-  const finalContent = (message: AssistantMessage): AssistantMessage["content"] => {
-    if (!schemaAsToolCall) return message.content;
-    const content: AssistantMessage["content"] = [];
-    message.content.forEach((block, index) => {
-      if (block.type === "toolCall") content.push({ type: "text", text: answerOf(index, block.arguments) });
-      else if (block.type !== "text") content.push(block);
-    });
-    return content;
-  };
-
+  const answer = turn.schemaAsToolCall ? forcedCallAnswer() : undefined;
   for await (const event of turn.send(turn.model, turn.context, options)) {
-    switch (event.type) {
-      case "done":
-      case "error":
-        return finish(classifyOutcome(run, event, finalContent(event.type === "done" ? event.message : event.error)));
-      case "toolcall_start":
-        if (!schemaAsToolCall) stream.push(event);
-        else {
-          answers.set(event.contentIndex, "");
-          stream.push({ type: "text_start", contentIndex: event.contentIndex, partial: asText(event.partial) });
-        }
-        break;
-      case "toolcall_delta":
-        if (!schemaAsToolCall) stream.push(event);
-        else {
-          answers.set(event.contentIndex, (answers.get(event.contentIndex) ?? "") + event.delta);
-          stream.push({ type: "text_delta", contentIndex: event.contentIndex, delta: event.delta, partial: asText(event.partial) });
-        }
-        break;
-      case "toolcall_end":
-        if (!schemaAsToolCall) stream.push(event);
-        else {
-          const content = answerOf(event.contentIndex, event.toolCall.arguments);
-          answers.set(event.contentIndex, content);
-          stream.push({ type: "text_end", contentIndex: event.contentIndex, content, partial: asText(event.partial) });
-        }
-        break;
-      case "text_start":
-      case "text_delta":
-      case "text_end":
-        // With a forced tool call, free text is never passed off as the schema answer.
-        if (!schemaAsToolCall) stream.push(event);
-        break;
-      default:
-        stream.push(schemaAsToolCall ? { ...event, partial: asText(event.partial) } : event);
+    if (event.type === "done" || event.type === "error") {
+      const { content } = event.type === "done" ? event.message : event.error;
+      return finish(classifyOutcome(run, event, answer ? answer.finalContent(content) : content));
     }
+    for (const out of answer ? answer.translate(event) : [event]) stream.push(out);
   }
   finish(endedWithoutResult(turn));
 }
 
 /** The turn's own failure when pi-ai's stream ended without a final event, with the model's `api`. */
 function endedWithoutResult(turn: PreparedTurn): ChatFinalEvent {
-  return failedBeforeSend(turn.target, "PROVIDER_ERROR", "The provider stream ended without a result.", turn.model.api);
+  return failedBeforeSend(turn.target, "PROVIDER_ERROR", "The provider stream ended without a result.");
 }
 
 /** Records the status of the latest provider response, when it was an error (for `ChatTurnError.status`). */

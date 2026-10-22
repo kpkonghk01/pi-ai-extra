@@ -18,7 +18,7 @@ function kit(routes: FakeRoute[]) {
   return { chat, fake };
 }
 
-describe("runTurn on Anthropic Messages", () => {
+describe("streamSimple on Anthropic Messages", () => {
   it("sends documents as document/image blocks with a cache breakpoint on the last document, keeping pi-ai's own", async () => {
     const pdf = testDocument("brief.pdf", "application/pdf", "%PDF-1.7", { url: "https://cdn.example.com/brief.pdf" });
     const notes = testDocument("notes.txt", "text/plain", "Remember the brand voice.");

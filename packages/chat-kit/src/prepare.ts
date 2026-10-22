@@ -29,6 +29,8 @@ import { targetsOpenRouter } from "./wire/openrouter.ts";
 export interface TurnTarget {
   provider: string;
   model: string;
+  /** The model's API, set once the model has resolved: a failure after that carries it on its message. */
+  api?: Api;
 }
 
 /** A turn that passed every check, with its documents loaded: ready to send. */
@@ -48,14 +50,6 @@ export interface PreparedTurn {
   providerFetch: typeof globalThis.fetch | undefined;
   /** pi-ai's `Models.streamSimple`, in the kit's `Models` collection. */
   send(model: Model<Api>, context: Context, options: ModelsSimpleStreamOptions): AssistantMessageEventStream;
-}
-
-/** The caller's signal aborted the turn before it was sent. */
-class TurnAborted extends Error {
-  constructor() {
-    super("The turn was aborted.");
-    this.name = "TurnAborted";
-  }
 }
 
 /** Everything checked before any document is loaded or any request is sent. */
@@ -85,9 +79,10 @@ export async function prepareTurn(
   const entry = registry.providers.get(ref.provider);
   if (!entry) throw new TurnFailure("UNKNOWN_MODEL", `No provider with the id ${JSON.stringify(ref.provider)} is registered.`);
   const startedAt = Date.now();
-  const { model, snapshot } = await untilAborted(entry.models.find(ref.id), signal, () => new TurnAborted());
+  const { model, snapshot } = await untilAborted(entry.models.find(ref.id), signal, () => new Error("The turn was aborted."));
   const unread = snapshot.refreshError === undefined ? "" : ` (its live model list could not be read: ${snapshot.refreshError})`;
   if (!model) throw new TurnFailure("UNKNOWN_MODEL", `Model ${JSON.stringify(ref.id)} is not offered by provider ${entry.id}${unread}.`);
+  target.api = model.api;
   const wire = wireApiFor(model.api);
   if (!wire) throw new TurnFailure("UNSUPPORTED", `chat-kit does not support the ${JSON.stringify(model.api)} API of this model.`);
   const described = entry.traits.describe(model);
@@ -114,7 +109,7 @@ export async function prepareTurn(
   const prepared = await untilAborted(
     Promise.all(documents.map((document, index) => loadDocument(document, kinds[index]!, wire, model))),
     signal,
-    () => new TurnAborted(),
+    () => new Error("The turn was aborted."),
   );
   const marker = prepared.length > 0 ? createDocumentMarker() : undefined;
   const schemaAsToolCall = options.responseSchema !== undefined && wire.schemaAsToolCall(model, schemaRequest);

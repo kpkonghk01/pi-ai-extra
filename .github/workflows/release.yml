@@ -129,6 +129,7 @@ jobs:
             # Registers every chat provider with an offline fetch: no live list can be read, so every
             # provider uses its installed catalogue or definitions, and an unknown model fails
             # before any turn request.
+            # Written in the consumer directory: ESM resolves the packages' imports relative to the script's own location.
             cat > ./smoke.mjs <<'SMOKE'
           const { createChatKit } = await import(process.env.PACKAGE_NAME);
           const fetch = async () => { throw new Error("offline"); };
@@ -143,7 +144,7 @@ jobs:
           const message = await chat.completeSimple({ provider: "kie", id: "no-such-model" }, { messages: [{ role: "user", content: "hi", timestamp: 1 }] });
           if (message.stopReason !== "error" || message.chatKit.error?.code !== "UNKNOWN_MODEL") throw new Error(`ESM entry is broken: ${JSON.stringify(message)}`);
           SMOKE
-              node ./smoke.mjs
+            node ./smoke.mjs
           elif [ "$PACKAGE_NAME" = "@hk01/pi-ai-extra-openrouter" ]; then
             npm install --no-audit --no-fund "$tarball" @earendil-works/pi-ai@1.2.0
             node -e 'try { require(`${process.env.PACKAGE_NAME}/pi-ai`); } catch (error) { if (error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED") process.exit(0); throw error; } throw new Error("openrouter has no CommonJS entry");'

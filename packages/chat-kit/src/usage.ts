@@ -1,4 +1,4 @@
-import { isRecord } from "./guards.ts";
+import { isRecord } from "@hk01/pi-ai-extra-internal/util";
 import type { ChatUsage } from "./types.ts";
 
 /** A token count as the provider reported it: a non-negative integer, otherwise not reported. */

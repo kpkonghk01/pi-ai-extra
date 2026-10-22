@@ -101,18 +101,18 @@ export function createOpenRouterProvider(options: OpenRouterProviderOptions): Ch
     stream: (model, context, streamOptions) => base.stream(model, context, withFetch(streamOptions, fetch)),
     streamSimple: (model, context, streamOptions) => base.streamSimple(model, context, withFetch(streamOptions, fetch)),
   };
+  // What the live list said about its models, by the list it came with: published together with it.
+  const infoByList = new WeakMap<readonly unknown[], Map<string, OpenRouterModelInfo>>();
   let liveInfo = new Map<string, OpenRouterModelInfo>();
-  let readInfo = liveInfo;
   const provider = withLiveChatModels(
     explicit,
     async (signal) => {
       const live = await fetchOpenRouterModels({ fetch: fetch ?? ((input, init) => globalThis.fetch(input, init)), root, installed, signal });
-      readInfo = live.info;
+      infoByList.set(live.models, live.info);
       return live.models;
     },
-    // The model list and what the live list said about its models change together.
-    () => {
-      liveInfo = readInfo;
+    (models) => {
+      liveInfo = infoByList.get(models) ?? liveInfo;
     },
   );
   return {

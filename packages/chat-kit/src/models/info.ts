@@ -11,7 +11,8 @@ export function chatModel(model: Model<Api>, traits: ChatProviderTraits): ChatMo
   const described = traits.describe(model);
   const wire = wireApiFor(model.api);
   return {
-    ...model,
+    // A copy: `input`, `cost` and `compat` are shared with pi-ai's catalogue and other kits.
+    ...structuredClone(model),
     chatKit: {
       fileInput: described.fileInput,
       fileDocuments: wire !== undefined && traits.takes.fileDocuments && described.fileInput && model.input.includes("image"),
@@ -20,7 +21,7 @@ export function chatModel(model: Model<Api>, traits: ChatProviderTraits): ChatMo
         wire !== undefined &&
         wire.unsupported(model, { responseSchema: PROBE_SCHEMA, reasoning: undefined, nativeStructuredOutput: traits.takes.nativeStructuredOutput }) ===
           undefined,
-      ...(described.rate === undefined ? {} : { rate: described.rate }),
+      ...(described.rate === undefined ? {} : { rate: structuredClone(described.rate) }),
     },
   };
 }

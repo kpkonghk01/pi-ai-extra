@@ -59,7 +59,7 @@ function okStream() {
   ]);
 }
 
-describe("runTurn on OpenAI Completions (OpenRouter)", () => {
+describe("streamSimple on OpenAI Completions (OpenRouter)", () => {
   let savedKey: string | undefined;
   beforeEach(() => {
     savedKey = process.env.OPENROUTER_API_KEY;

@@ -13,7 +13,7 @@ const SCHEMA = { type: "object", properties: { tags: { type: "array", items: { t
  * pi-ai's Gemini adapter rejects a custom fetch, so these tests replace the global fetch the
  * Gemini SDK calls, and restore it afterwards.
  */
-describe("runTurn on Gemini", () => {
+describe("streamSimple on Gemini", () => {
   let realFetch: typeof globalThis.fetch;
   let savedKey: string | undefined;
   beforeEach(() => {

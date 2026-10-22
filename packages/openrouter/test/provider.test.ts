@@ -117,6 +117,33 @@ describe("createOpenRouterProvider", () => {
     );
   });
 
+  it("applies what a live read said about its models only when that list is published: an aborted refresh changes nothing", async () => {
+    const controller = new AbortController();
+    let abortOnRead = true;
+    const fake = createFakeFetch([
+      {
+        method: "GET",
+        url: MODELS_URL,
+        respond: () => {
+          if (abortOnRead) controller.abort();
+          return jsonResponse(LIST);
+        },
+      },
+    ]);
+    const openrouter = createOpenRouterProvider({ apiKey: "k", fetch: fake.fetch });
+    const models = createModels({ authContext: { env: async () => undefined, fileExists: async () => false } });
+    models.setProvider(openrouter);
+    const installed = openrouter.getModels().map((model) => model.id);
+    await models.refresh({ providers: ["openrouter"], force: true, signal: controller.signal });
+    assert.deepEqual(openrouter.getModels().map((model) => model.id), installed, "the aborted read published nothing");
+    const sonnet = openrouter.getModels().find((model) => model.id === "anthropic/claude-sonnet-4.6")!;
+    assert.equal(openrouter.chatKit.describe(sonnet).fileInput, false, "still the catalogue's account of the model");
+    abortOnRead = false;
+    await models.refresh({ providers: ["openrouter"], force: true });
+    const reader = openrouter.getModels().find((model) => model.id === "acme/reader")!;
+    assert.equal(openrouter.chatKit.describe(reader).fileInput, true, "the published list brings its own info");
+  });
+
   it("describes installed models from pi-ai's catalogue: tools yes, files no, the catalogue price", () => {
     const openrouter = createOpenRouterProvider({ apiKey: "k" });
     const sonnet = openrouter.getModels().find((model) => model.id === "anthropic/claude-sonnet-4.6")!;
