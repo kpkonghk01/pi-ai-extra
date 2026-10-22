@@ -1,6 +1,6 @@
 # pi-ai-extra
 
-Server-only extensions to [`@earendil-works/pi-ai`](https://www.npmjs.com/package/@earendil-works/pi-ai) for KIE, ToAPIs and Gemini image generation, plus KIE, ToAPIs and Gemini chat providers. Three independently installable provider packages, delivered as GitHub Release `.tgz` files (no npm registry), for Node.js 22.19 or later:
+Server-only extensions to [`@earendil-works/pi-ai`](https://www.npmjs.com/package/@earendil-works/pi-ai) for KIE, ToAPIs and Gemini image generation, plus KIE, ToAPIs and Gemini chat providers. Three independently installable provider packages, delivered as GitHub Release `.tgz` files (no npm registry), for Node.js 24.22.1 or later:
 
 | Package | Image models | Chat (pi-ai `Models`) |
 | --- | --- | --- |
