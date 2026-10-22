@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { createFakeFetch, type FakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import type { ChatKit } from "../src/index.ts";
-import { brokenSseResponse, collect, jsonBody, outcome,
+import { brokenSseResponse, jsonBody, outcome,
   outcomeOf,
   runToEnd, sseResponse, testDocument, textOf, turn, wireFetch , testKit } from "./helpers.ts";
 
@@ -200,7 +200,7 @@ describe("streamSimple on Gemini", () => {
           ]),
       },
     ]);
-    const { events, message } = await runToEnd(chat, turn({ provider: "google", model: "gemini-3.5-flash" }));
+    const { message } = await runToEnd(chat, turn({ provider: "google", model: "gemini-3.5-flash" }));
     const last = outcomeOf(message);
     assert.equal(last.type === "failed" && last.error.code, "PROVIDER_ERROR");
     assert.equal(last.type === "failed" && last.error.reason, "RECITATION");

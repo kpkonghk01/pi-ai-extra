@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createFakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
-import { collect, jsonBody, outcome,
+import { jsonBody, outcome,
   outcomeOf,
   runToEnd, sseResponse, textOf, turn, wireFetch , testKit } from "./helpers.ts";
 

@@ -1,4 +1,4 @@
-import type { Api, AssistantMessage, AssistantMessageEvent, StopReason } from "@earendil-works/pi-ai";
+import type { AssistantMessage, AssistantMessageEvent, StopReason } from "@earendil-works/pi-ai";
 import { withCost } from "./cost.ts";
 import { errorText, statusFromMessage, TurnFailure } from "./errors.ts";
 import type { PreparedTurn, TurnTarget } from "./prepare.ts";

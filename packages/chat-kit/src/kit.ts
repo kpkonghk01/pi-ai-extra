@@ -1,6 +1,5 @@
 import {
   createAssistantMessageEventStream,
-  type AssistantMessage,
   type AssistantMessageEvent,
   type Context,
   type ModelsSimpleStreamOptions,

@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { createFakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import { anthropicSchemaUnsupported } from "../src/wire/anthropic-messages.ts";
-import { anthropicEvents, collect, jsonBody, outcome,
+import { anthropicEvents, jsonBody, outcome,
   outcomeOf,
   runToEnd, sseResponse, testDocument, textOf, turn, wireFetch , testKit } from "./helpers.ts";
 
@@ -211,7 +211,7 @@ describe("streamSimple on Anthropic Messages", () => {
           ),
       },
     ]);
-    const { events, message } = await runToEnd(chat, turn({ model: "anthropic/claude-sonnet-4.6", responseSchema: { name: "answer", schema: SCHEMA } }));
+    const { message } = await runToEnd(chat, turn({ model: "anthropic/claude-sonnet-4.6", responseSchema: { name: "answer", schema: SCHEMA } }));
     const last = outcomeOf(message);
     assert.equal(last.type, "failed");
     if (last.type !== "failed") return;
@@ -260,7 +260,7 @@ describe("streamSimple on Anthropic Messages", () => {
         respond: () => sseResponse(anthropicEvents({ blocks: [{ type: "text", text: "ok" }], stopReason: "end_turn" })),
       },
     ]);
-    const { events, message } = await runToEnd(chat, turn({ provider: "kie", model: "claude-sonnet-4-6", documents: [notes] }));
+    const { message } = await runToEnd(chat, turn({ provider: "kie", model: "claude-sonnet-4-6", documents: [notes] }));
     assert.equal(outcomeOf(message).type, "done");
     const body = jsonBody(fake.calls[0]?.body);
     const messages = body.messages as { content: unknown }[];

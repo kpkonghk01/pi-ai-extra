@@ -5,7 +5,6 @@ import { createChatKit } from "../src/index.ts";
 import { createFakeFetch, jsonResponse, PNG_BYTES, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import {
   brokenSseResponse,
-  collect,
   completionsChunk,
   completionsUsageChunk,
   jsonBody,
@@ -154,7 +153,7 @@ describe("streamSimple on OpenAI Completions (OpenRouter)", () => {
     const png = testDocument("logo.png", "image/png", PNG_BYTES);
     const notes = testDocument("notes.md", "text/markdown; charset=utf-8", "# Notes\nBe brief.");
     const { chat, fake } = kit([{ method: "POST", url: COMPLETIONS_URL, respond: okStream }]);
-    const { events, message } = await runToEnd(chat, turn({
+    const { message } = await runToEnd(chat, turn({
           documents: [pdf, png, notes],
           history: [
             { role: "user", text: "First question" },
@@ -267,7 +266,7 @@ describe("streamSimple on OpenAI Completions (OpenRouter)", () => {
         respond: [() => jsonResponse({ error: { message: "overloaded" } }, 503, { "retry-after-ms": "1" }), okStream],
       },
     ]);
-    const { events, message } = await runToEnd(chat, turn());
+    const { message } = await runToEnd(chat, turn());
     assert.equal(outcomeOf(message).type, "done");
     assert.equal(fake.calls.length, 2);
     assert.deepEqual(
@@ -313,7 +312,7 @@ describe("streamSimple on OpenAI Completions (OpenRouter)", () => {
         respond: () => jsonResponse({ error: { message: "No endpoints support response_format" } }, 404),
       },
     ]);
-    const { events, message } = await runToEnd(chat, turn({ responseSchema: { name: "answer", schema: SCHEMA } }));
+    const { message } = await runToEnd(chat, turn({ responseSchema: { name: "answer", schema: SCHEMA } }));
     assert.equal(fake.calls.length, 1);
     const last = outcomeOf(message);
     assert.equal(last.type, "failed");
