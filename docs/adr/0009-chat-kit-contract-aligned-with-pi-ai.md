@@ -185,6 +185,14 @@ Each gap can close without breaking callers, as a new optional option, a widened
 
 chat-kit 0.3.0 is the breaking release. It peers on `@earendil-works/pi-ai` `1.2.0` exactly, and on the provider packages optionally: google `>=0.6.0`, openrouter `>=0.1.0`, kie and toapis `>=0.5.0`, all `<1.0.0`. A package manager warns about an older provider package, and the chat kit's `TypeError` at registration stops it. google 0.6.0, kie 0.5.0 and toapis 0.5.0 are additive. openrouter 0.1.0 is new, released from `openrouter-vX.Y.Z`, with pi-ai as a required exact peer and only a `/pi-ai` entry, an exception recorded in the ADR 0002 and ADR 0004 amendments.
 
+Amended 2026-10-22 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4583)), while implementing:
+
+- `ChatProviderTraits` gains an optional `fetch`, the factory's `fetch` option. A turn goes through it unless the kit has its own; Google's chat provider sets none, because pi-ai's Gemini adapter rejects a custom fetch.
+- A forced response-schema tool call is turned into text as follows. The call's `toolcall_*` events become `text_*` events and the call becomes one text block; free text the model wrote beside the call is dropped, so every `contentIndex` and partial message matches the final message; a call with no argument text (a real one sends an empty `partial_json`) streams its arguments, `{}`, as a `text_delta` before its `text_end`. A call that failed or was aborted before any argument text keeps its arguments as the text block. Two forced calls give two text blocks.
+- A failure or abort after the model resolved carries the model's `api` on the message; `"unknown"` is for a reference that did not resolve, and for input rejected before it was looked up.
+- The Google chat provider's streams always end with a result: a stream that ends without a final event, or throws, gets the result it completed with, else an `error` message (`aborted` when the request's signal was aborted) that keeps the content streamed so far. pi-ai's `lazyStream` awaits `result()`, so the wrapper must not leave it pending.
+- `listModels()` returns copies of the models, so changing one reaches neither the next listing nor another kit.
+
 ## Considered options
 
 - **Keep 0.2.0's types, and map them to pi-ai in each consumer.** Rejected: every planned use would write the same mapping.
@@ -195,12 +203,5 @@ chat-kit 0.3.0 is the breaking release. It peers on `@earendil-works/pi-ai` `1.2
 ## Consequences
 
 A new reseller needs a provider package release only, not a chat kit release. Consumers see thinking events and blocks, and decide whether to show them. History replay relies on pi-ai's adapters ignoring `chatKit` members; the chat kit's contract tests replay a message that has one.
-
-Amended 2026-10-22 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4583)), while implementing:
-
-- `ChatProviderTraits` gains an optional `fetch`, the factory's `fetch` option. A turn goes through it unless the kit has its own; Google's chat provider sets none, because pi-ai's Gemini adapter rejects a custom fetch.
-- A forced response-schema tool call is turned into text as follows. The call's `toolcall_*` events become `text_*` events and the call becomes one text block; free text the model wrote beside the call is dropped, so every `contentIndex` and partial message matches the final message; a call without argument deltas streams its arguments, `{}`, as one `text_delta`. A call that failed or was aborted before any delta keeps its arguments as the text block.
-- A failure or abort after the model resolved carries the model's `api` on the message; `"unknown"` is for a reference that did not resolve, and for input rejected before it was looked up.
-- `listModels()` returns copies of the models, so changing one reaches neither the next listing nor another kit.
 
 Sources: pi-ai and pi-agent-core at `v1.2.0`: `packages/ai/src/` `types.ts`, `models.ts`, `providers/model-schema.ts`, `providers/openrouter.ts`, `utils/event-stream.ts`, `api/lazy.ts`, `api/transform-messages.ts`, `api/anthropic-messages.ts`, `api/google-shared.ts` and `api/openai-completions.ts`; `packages/ai/scripts/openrouter-catalog.ts`; `packages/agent/src/types.ts`.

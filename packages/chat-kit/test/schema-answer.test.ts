@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AssistantMessage, AssistantMessageEvent } from "@earendil-works/pi-ai";
-import { forcedCallAnswer } from "../src/schema-answer.ts";
+import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
+import { forcedCallAnswer, PASS_THROUGH } from "../src/schema-answer.ts";
 
 type Block = AssistantMessage["content"][number];
 
@@ -11,7 +12,7 @@ const message = (content: Block[]): AssistantMessage => ({
   api: "anthropic-messages",
   provider: "kie",
   model: "claude-sonnet-4-6",
-  usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+  usage: zeroUsage(),
   stopReason: "stop",
   timestamp: 1,
 });
@@ -86,5 +87,11 @@ describe("forcedCallAnswer", () => {
     const answerText = (content: Block[]) => (answer.finalContent(content).find((block) => block.type === "text") as { text: string }).text;
     assert.equal(answerText([thinking("a"), text("b"), call({ x: 1 })]), '{"ti', "the streamed text wins over the arguments");
     assert.equal(answerText([call({ x: 1 })]), '{"x":1}', "a call nothing was streamed for answers with its arguments");
+  });
+
+  it("passes a turn without a forced call through unchanged: the same events, and the same content", () => {
+    for (const event of piAiEvents(['{"a":1}'], { a: 1 })) assert.deepEqual(PASS_THROUGH.translate(event), [event]);
+    const content = [thinking("hmm"), text("Sure! "), call({ a: 1 })];
+    assert.equal(PASS_THROUGH.finalContent(content), content);
   });
 });

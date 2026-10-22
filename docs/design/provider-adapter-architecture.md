@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This repository centralises the KIE, ToAPIs and Gemini image integrations, and the KIE/ToAPIs chat integrations, that multiple AI Studio applications would otherwise implement independently. The detailed delivery and acceptance criteria live in [DATA-4513](https://hk01-digital.atlassian.net/browse/DATA-4513); downstream application adoption lives in [DATA-4512](https://hk01-digital.atlassian.net/browse/DATA-4512).
+This repository centralises the KIE, ToAPIs and Gemini image integrations, and the KIE, ToAPIs, Gemini and OpenRouter chat integrations, that multiple AI Studio applications would otherwise implement independently. The detailed delivery and acceptance criteria live in [DATA-4513](https://hk01-digital.atlassian.net/browse/DATA-4513); downstream application adoption lives in [DATA-4512](https://hk01-digital.atlassian.net/browse/DATA-4512).
 
 ## Package map
 

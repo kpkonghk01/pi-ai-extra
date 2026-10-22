@@ -12,7 +12,8 @@ type Content = AssistantMessage["content"];
  *   `contentIndex` and partial message is renumbered to match the final message;
  * - an empty call (no argument deltas) streams its arguments, `{}`, as one `text_delta`.
  *
- * One translator per turn: it remembers the argument text streamed so far, by pi-ai's content index.
+ * One translator per turn (`forcedCallAnswer()`): it remembers the argument text streamed so far, by
+ * pi-ai's content index. A turn without a forced call shares the stateless `PASS_THROUGH`.
  */
 export interface ForcedCallAnswer {
   /** The events the consumer sees for one of pi-ai's events (none for free text). */
@@ -21,7 +22,7 @@ export interface ForcedCallAnswer {
   finalContent(content: Content): Content;
 }
 
-/** The events and content of a turn without a forced call: unchanged. */
+/** The translator of a turn without a forced call: events and content unchanged. Stateless, so one is shared. */
 export const PASS_THROUGH: ForcedCallAnswer = { translate: (event) => [event], finalContent: (content) => content };
 
 /** The translator for one turn that has a forced response-schema tool call (see `ForcedCallAnswer`). */
@@ -42,10 +43,13 @@ export function forcedCallAnswer(): ForcedCallAnswer {
       return [{ type: "text", text: complete ? text || JSON.stringify(block.arguments) : (text ?? "") }];
     });
 
-  /** The consumer's partial message for one of pi-ai's events, and where its block sits once the free text is dropped. */
-  const seen = (event: { contentIndex: number; partial: AssistantMessage }) => ({
+  /** The partial message the consumer sees for one of pi-ai's events. */
+  const partialOf = (partial: AssistantMessage): AssistantMessage => ({ ...partial, content: view(partial.content, false) });
+
+  /** `partialOf` the event's partial, and where the event's block sits once the free text is dropped. */
+  const consumerView = (event: { contentIndex: number; partial: AssistantMessage }) => ({
     contentIndex: event.partial.content.slice(0, event.contentIndex).filter((block) => block.type !== "text").length,
-    partial: { ...event.partial, content: view(event.partial.content, false) },
+    partial: partialOf(event.partial),
   });
 
   return {
@@ -57,27 +61,28 @@ export function forcedCallAnswer(): ForcedCallAnswer {
           return [];
         case "toolcall_start":
           streamed.set(event.contentIndex, "");
-          return [{ type: "text_start", ...seen(event) }];
+          return [{ type: "text_start", ...consumerView(event) }];
         case "toolcall_delta":
           streamed.set(event.contentIndex, (streamed.get(event.contentIndex) ?? "") + event.delta);
-          return [{ type: "text_delta", delta: event.delta, ...seen(event) }];
+          return [{ type: "text_delta", delta: event.delta, ...consumerView(event) }];
         case "toolcall_end": {
           const out: AssistantMessageEvent[] = [];
+          const shown = consumerView(event);
           let answer = streamed.get(event.contentIndex) ?? "";
           if (answer === "") {
             // A call without argument deltas: its arguments are the answer.
             answer = JSON.stringify(event.toolCall.arguments);
             streamed.set(event.contentIndex, answer);
-            out.push({ type: "text_delta", delta: answer, ...seen(event) });
+            out.push({ type: "text_delta", delta: answer, ...shown });
           }
-          out.push({ type: "text_end", content: answer, ...seen(event) });
+          out.push({ type: "text_end", content: answer, ...shown });
           return out;
         }
         case "done":
         case "error":
           return [event];
         default:
-          return [{ ...event, ..."contentIndex" in event ? { contentIndex: seen(event).contentIndex } : {}, partial: { ...event.partial, content: view(event.partial.content, false) } }];
+          return [{ ...event, ...("contentIndex" in event ? consumerView(event) : { partial: partialOf(event.partial) }) }];
       }
     },
     finalContent: (content) => view(content, true),

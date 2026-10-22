@@ -9,9 +9,9 @@ import { errorText, TurnFailure } from "./errors.ts";
 import { parseKitOptions, type TurnOptions } from "./input.ts";
 import { chatModel } from "./models/info.ts";
 import {
-  abortedBeforeSend,
+  kitAborted,
   classifyOutcome,
-  failedBeforeSend,
+  kitFailed,
   failedFrom,
   type ChatFinalEvent,
   type TurnRun,
@@ -89,7 +89,7 @@ function startTurn(
   };
   void (async () => {
     try {
-      if (controller.signal.aborted) return finish(abortedBeforeSend(target));
+      if (controller.signal.aborted) return finish(kitAborted(target));
       let turn: PreparedTurn;
       try {
         turn = await prepareTurn(registry, ref, context, options, target, controller.signal);
@@ -155,7 +155,7 @@ async function streamTurn(
 
 /** The turn's own failure when pi-ai's stream ended without a final event, with the model's `api`. */
 function endedWithoutResult(turn: PreparedTurn): ChatFinalEvent {
-  return failedBeforeSend(turn.target, "PROVIDER_ERROR", "The provider stream ended without a result.");
+  return kitFailed(turn.target, "PROVIDER_ERROR", "The provider stream ended without a result.");
 }
 
 /** Records the status of the latest provider response, when it was an error (for `ChatTurnError.status`). */

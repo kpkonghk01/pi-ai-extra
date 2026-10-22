@@ -102,15 +102,18 @@ function failure(
   text: string,
   extra: { usage?: ChatUsage | undefined; rawStopReason?: string | undefined; status?: number | undefined },
 ): ChatFinalEvent {
-  const failed: AssistantMessage = {
-    ...message,
-    stopReason: "error",
-    errorMessage: prefixed(target, text),
-    ...(extra.rawStopReason === undefined ? {} : { rawStopReason: extra.rawStopReason }),
-  };
   const error = { code, ...(extra.status === undefined ? {} : { status: extra.status }) };
-  const record = { ...(extra.usage === undefined ? {} : { usage: extra.usage }), error };
-  return { type: "error", reason: "error", error: { ...failed, chatKit: record } as ChatAssistantMessage };
+  return {
+    type: "error",
+    reason: "error",
+    error: {
+      ...message,
+      stopReason: "error",
+      errorMessage: prefixed(target, text),
+      ...(extra.rawStopReason === undefined ? {} : { rawStopReason: extra.rawStopReason }),
+      chatKit: { ...(extra.usage === undefined ? {} : { usage: extra.usage }), error },
+    },
+  };
 }
 
 function withRecord(message: AssistantMessage, usage: ChatUsage | undefined): AssistantMessage & { chatKit: { usage?: ChatUsage } } {
@@ -123,7 +126,7 @@ function withRecord(message: AssistantMessage, usage: ChatUsage | undefined): As
  * model's when it had resolved (`TurnTarget.api`), else `unknown`; `provider` and `model` come from
  * the reference.
  */
-function kitMessage(target: TurnTarget, text: string): Omit<AssistantMessage, "stopReason"> {
+function kitMessageBase(target: TurnTarget, text: string): Omit<AssistantMessage, "stopReason"> {
   return {
     role: "assistant",
     content: [],
@@ -137,21 +140,21 @@ function kitMessage(target: TurnTarget, text: string): Omit<AssistantMessage, "s
 }
 
 /**
- * A turn that ends without a result of pi-ai's: the kit fails it before sending anything, or the
- * provider's stream ended without a final event.
+ * A turn the kit ends itself with an error, with no result of pi-ai's: it failed before anything was
+ * sent, or the provider's stream ended without a final event.
  */
-export function failedBeforeSend(target: TurnTarget, code: ChatTurnErrorCode, text: string): ChatFinalEvent {
-  return { type: "error", reason: "error", error: { ...kitMessage(target, text), stopReason: "error", chatKit: { error: { code } } } };
+export function kitFailed(target: TurnTarget, code: ChatTurnErrorCode, text: string): ChatFinalEvent {
+  return { type: "error", reason: "error", error: { ...kitMessageBase(target, text), stopReason: "error", chatKit: { error: { code } } } };
 }
 
-/** The turn was aborted before anything was sent: pi-ai's `aborted`, without an error. */
-export function abortedBeforeSend(target: TurnTarget): ChatFinalEvent {
-  return { type: "error", reason: "aborted", error: { ...kitMessage(target, ABORTED_TEXT), stopReason: "aborted", chatKit: {} } };
+/** A turn the kit ends itself because its signal aborted, with no result of pi-ai's: pi-ai's `aborted`, without an error. */
+export function kitAborted(target: TurnTarget): ChatFinalEvent {
+  return { type: "error", reason: "aborted", error: { ...kitMessageBase(target, ABORTED_TEXT), stopReason: "aborted", chatKit: {} } };
 }
 
 /** A failure thrown before or around the stream: the kit's own code, else aborted or a provider error. */
 export function failedFrom(target: TurnTarget, error: unknown, signal: AbortSignal): ChatFinalEvent {
-  if (error instanceof TurnFailure) return failedBeforeSend(target, error.code, error.message);
-  if (signal.aborted) return abortedBeforeSend(target);
-  return failedBeforeSend(target, "PROVIDER_ERROR", errorText(error));
+  if (error instanceof TurnFailure) return kitFailed(target, error.code, error.message);
+  if (signal.aborted) return kitAborted(target);
+  return kitFailed(target, "PROVIDER_ERROR", errorText(error));
 }

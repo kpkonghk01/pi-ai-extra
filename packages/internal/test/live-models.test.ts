@@ -57,7 +57,7 @@ describe("withLiveChatModels onPublished", () => {
         controller.abort();
         return { models: [model("late")], tag: "late" };
       },
-      (read) => void published.push([read.tag]),
+      (read) => void published.push([read.tag, ...read.models.map((entry) => entry.id)]),
     );
     const models = collection();
     models.setProvider(provider);
@@ -65,11 +65,11 @@ describe("withLiveChatModels onPublished", () => {
     assert.equal(published.length, 0);
     assert.deepEqual(provider.getModels().map((entry) => entry.id), ["a", "b"], "the aborted read did not replace the list");
 
-    const ok = withLiveChatModels(base(), async () => ({ models: [model("c")], tag: "c" }), (read) => void published.push([read.tag]));
+    const ok = withLiveChatModels(base(), async () => ({ models: [model("c")], tag: "c" }), (read) => void published.push([read.tag, ...read.models.map((entry) => entry.id)]));
     const second = collection();
     second.setProvider(ok);
     await second.refresh({ providers: ["t"], force: true });
-    assert.deepEqual(published, [["c"]], "the hook gets everything the read returned, with its list");
+    assert.deepEqual(published, [["c", "c"]], "the hook gets everything the read returned, with the list it published");
   });
 });
 

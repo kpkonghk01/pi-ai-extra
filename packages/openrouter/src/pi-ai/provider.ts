@@ -106,8 +106,8 @@ export function createOpenRouterProvider(options: OpenRouterProviderOptions): Ch
   const provider = withLiveChatModels(
     explicit,
     (signal) => fetchOpenRouterModels({ fetch: fetch ?? ((input, init) => globalThis.fetch(input, init)), root, installed, signal }),
-    (live) => {
-      liveInfo = live.info;
+    (read) => {
+      liveInfo = read.info;
     },
   );
   return {

@@ -1,6 +1,7 @@
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { jsonResponse, type FakeFetch } from "@hk01/pi-ai-extra-internal/testing";
 import type { AssistantMessage, AssistantMessageEvent, Context, Message, ThinkingLevel, Tool } from "@earendil-works/pi-ai";
+import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { createGoogleProvider } from "@hk01/pi-ai-extra-google/pi-ai";
 import { createKieProvider } from "@hk01/pi-ai-extra-kie/pi-ai";
 import { createOpenRouterProvider } from "@hk01/pi-ai-extra-openrouter/pi-ai";
@@ -189,8 +190,6 @@ export function turn(overrides: Partial<TestTurn> = {}): TestTurn {
   };
 }
 
-const ZERO_USAGE = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
-
 /** pi-ai's `Context` for a test turn. */
 export function contextOf(input: TestTurn): Context {
   const messages: Message[] = input.history.map((entry) =>
@@ -202,7 +201,7 @@ export function contextOf(input: TestTurn): Context {
           api: "openai-completions",
           provider: input.provider,
           model: input.model,
-          usage: ZERO_USAGE,
+          usage: zeroUsage(),
           stopReason: "stop",
           timestamp: 1,
         },

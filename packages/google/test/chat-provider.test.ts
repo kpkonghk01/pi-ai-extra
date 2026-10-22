@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createAssistantMessageEventStream, createModels } from "@earendil-works/pi-ai";
+import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { createFakeFetch, jsonResponse } from "@hk01/pi-ai-extra-internal/testing";
 import { createGoogleProvider, isOfferedGeminiId } from "../src/pi-ai/index.ts";
 import { googleChatStreams, withGroundingTools } from "../src/pi-ai/streams.ts";
@@ -103,7 +104,7 @@ describe("googleChatStreams", () => {
     api: "google-generative-ai",
     provider: "google",
     model: "m",
-    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    usage: zeroUsage(),
     stopReason: "error" as const,
     errorMessage: "Google stream ended without a finish reason",
     timestamp: 1,
@@ -166,20 +167,73 @@ describe("googleChatStreams", () => {
     }
   });
 
-  it("reports an aborted request as aborted, and uses a result the source completed with but never pushed", async () => {
-    const model = { id: "gemini-3.5-flash", api: "google-generative-ai", provider: "google" } as never;
+  const model = { id: "gemini-3.5-flash", api: "google-generative-ai", provider: "google" } as never;
+  const silent = { streamSimple: () => { const stream = createAssistantMessageEventStream(); stream.end(); return stream; } } as never;
+
+  it("reports an aborted request as aborted when the stream ended without a final event", async () => {
     const controller = new AbortController();
     controller.abort();
-    const silent = { streamSimple: () => { const stream = createAssistantMessageEventStream(); stream.end(); return stream; } } as never;
     const aborted = await googleChatStreams(silent, false).streamSimple(model, {} as never, { signal: controller.signal } as never).result();
     assert.equal(aborted.stopReason, "aborted");
+  });
 
-    const completed = message({ stopReason: "stop", errorMessage: undefined, content: [{ type: "text", text: "hi" }] });
-    const endsWithResult = { streamSimple: () => { const stream = createAssistantMessageEventStream(); stream.end(completed); return stream; } } as never;
-    const wrapped = googleChatStreams(endsWithResult, false).streamSimple(model, {} as never, {} as never);
-    const events = [];
-    for await (const event of wrapped) events.push(event.type);
-    assert.deepEqual(events, ["done"]);
-    assert.equal((await wrapped.result()).stopReason, "stop");
+  it("uses a result the source completed with through end(result), with the done reason it carries", async () => {
+    for (const stopReason of ["stop", "length", "toolUse"] as const) {
+      const completed = message({ stopReason, errorMessage: undefined, content: [{ type: "text", text: "hi" }] });
+      const endsWithResult = { streamSimple: () => { const stream = createAssistantMessageEventStream(); stream.end(completed); return stream; } } as never;
+      const wrapped = googleChatStreams(endsWithResult, false).streamSimple(model, {} as never, {} as never);
+      const events = [];
+      for await (const event of wrapped) events.push(event.type === "done" ? `done:${event.reason}` : event.type);
+      assert.deepEqual(events, [`done:${stopReason}`]);
+      assert.equal((await wrapped.result()).stopReason, stopReason);
+    }
+  });
+
+  it("ends a result that is not a final one (pending) as an error, not as a done with a lying reason", async () => {
+    const pending = message({ stopReason: "pending", errorMessage: undefined });
+    const endsPending = { streamSimple: () => { const stream = createAssistantMessageEventStream(); stream.end(pending); return stream; } } as never;
+    const wrapped = googleChatStreams(endsPending, false).streamSimple(model, {} as never, {} as never);
+    const types: string[] = [];
+    for await (const event of wrapped) types.push(event.type);
+    assert.deepEqual(types, ["error"]);
+    const result = await wrapped.result();
+    assert.equal(result.stopReason, "error");
+    assert.match(result.errorMessage ?? "", /pending/);
+  });
+
+  it("settles with an error for a source that has no result() at all, without an unhandled rejection", async () => {
+    const bare = {
+      streamSimple: () => ({
+        async *[Symbol.asyncIterator]() {
+          yield { type: "start", partial: message() };
+        },
+      }),
+    } as never;
+    const result = await Promise.race([
+      googleChatStreams(bare, false).streamSimple(model, {} as never, {} as never).result(),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("result() never settled")), 1_000).unref()),
+    ]);
+    assert.equal(result.stopReason, "error");
+    assert.match(result.errorMessage ?? "", /ended without a result/);
+  });
+
+  it("keeps the content streamed so far on the error it adds, and treats a thrown undefined as a failure", async () => {
+    const partial = message({ content: [{ type: "text", text: "Hel" }], stopReason: "stop", errorMessage: undefined });
+    const dies = (thrown: unknown) =>
+      ({
+        streamSimple: () => ({
+          async *[Symbol.asyncIterator]() {
+            yield { type: "text_delta", contentIndex: 0, delta: "Hel", partial };
+            throw thrown;
+          },
+          result: () => new Promise(() => undefined),
+        }),
+      }) as never;
+    const withText = await googleChatStreams(dies(new Error("reset")), false).streamSimple(model, {} as never, {} as never).result();
+    assert.deepEqual(withText.content, [{ type: "text", text: "Hel" }]);
+    assert.equal(withText.errorMessage, "reset");
+    const thrownUndefined = await googleChatStreams(dies(undefined), false).streamSimple(model, {} as never, {} as never).result();
+    assert.equal(thrownUndefined.stopReason, "error");
+    assert.notEqual(thrownUndefined.errorMessage, "The Gemini stream ended without a result.", "a thrown undefined is still a failure, not an early end");
   });
 });

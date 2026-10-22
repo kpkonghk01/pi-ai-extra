@@ -19,8 +19,9 @@ import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
  * - **Prompt blocks**: Gemini reports a blocked prompt only as `promptFeedback.blockReason` on a
  *   chunk without candidates, which pi-ai surfaces as a stream that ended without a finish reason.
  *   The block reason is copied to the final message's `rawStopReason` when pi-ai set none.
- * - **A result always arrives**: a stream that ends without a final event, or throws, gets an
- *   `error` message (`aborted` when the request's signal was aborted), so `result()` settles.
+ * - **A result always arrives**: a stream that ends without a final event, or throws, gets one: the
+ *   result it completed with through `end(result)`, else an `error` message (`aborted` when the
+ *   request's signal was aborted) that keeps the content streamed so far, so `result()` settles.
  */
 export function googleChatStreams(inner: ProviderStreams, grounding: boolean): ProviderStreams {
   return {
@@ -73,56 +74,88 @@ function promptBlockReason(chunk: unknown): string | undefined {
   return typeof reason === "string" && reason ? reason : undefined;
 }
 
+/** How a source that gave no final event ended: it threw (`error` is whatever it threw, even `undefined`), or it just ended. */
+type EndedEarly = { threw: true; error: unknown } | { threw: false };
+
 /**
  * The stream with its final message (`done` or `error`) passed through `map`; every other event
- * unchanged. A source that ends without a final event, or throws, still gets one, for `model`:
- * the result the source completed with (`end(result)`), else an `error` message (`aborted` when
- * `signal` was aborted), so `result()` settles. pi-ai's `lazyStream` awaits it.
+ * unchanged. A source that ends without a final event, or throws, still gets one, for `requested`: the
+ * result the source completed with through `end(result)`, else an `error` message (`aborted` when
+ * `signal` was aborted) that keeps the content streamed so far. So `result()` always settles,
+ * which pi-ai's `lazyStream` relies on.
  */
 function mapFinalMessage(
   source: AssistantMessageEventStream,
-  model: Model<Api>,
+  requested: Model<Api>,
   signal: AbortSignal | undefined,
   map: (message: AssistantMessage) => AssistantMessage,
 ): AssistantMessageEventStream {
   const target = createAssistantMessageEventStream();
   void (async () => {
     let finished = false;
-    let failure: unknown;
+    let streamed: AssistantMessage["content"] = [];
+    let ended: EndedEarly = { threw: false };
     try {
       for await (const event of source) {
         if (event.type === "done") target.push({ ...event, message: map(event.message) });
         else if (event.type === "error") target.push({ ...event, error: map(event.error) });
-        else target.push(event);
+        else {
+          target.push(event);
+          streamed = event.partial.content;
+        }
         finished ||= event.type === "done" || event.type === "error";
       }
     } catch (error) {
-      failure = error;
+      ended = { threw: true, error };
     }
-    if (finished) return target.end();
-    const message = map(failure === undefined ? await completedResult(source) ?? endedWithoutResult(model, signal, undefined) : endedWithoutResult(model, signal, failure));
-    target.push(message.stopReason === "error" || message.stopReason === "aborted" ? { type: "error", reason: message.stopReason, error: message } : { type: "done", reason: message.stopReason as "stop", message });
+    if (!finished) {
+      const result = ended.threw ? undefined : await completedResult(source);
+      pushFinal(target, map(result ?? endedWithoutResult(requested, signal, ended, streamed)));
+    }
     target.end();
   })();
   return target;
 }
 
-/** The message a source completed with through `end(result)` but never pushed as a final event, if it settled. */
+/** The final event for `message`, which must be a final one: `done` for a stop, length or tool use, else `error` or `aborted`. */
+function pushFinal(target: AssistantMessageEventStream, message: AssistantMessage): void {
+  const { stopReason } = message;
+  if (stopReason === "stop" || stopReason === "length" || stopReason === "toolUse" || stopReason === "deferred") {
+    target.push({ type: "done", reason: stopReason, message });
+  } else if (stopReason === "aborted") {
+    target.push({ type: "error", reason: stopReason, error: message });
+  } else {
+    // "error", or "pending", which is not a final state: ending the turn on it is an error.
+    const error = stopReason === "error" ? message : { ...message, stopReason: "error" as const, errorMessage: `The Gemini stream ended with a ${stopReason} result.` };
+    target.push({ type: "error", reason: "error", error });
+  }
+}
+
+/**
+ * The message a source completed with through `end(result)` but never pushed as a final event, if it
+ * did so by the next macrotask. A source that has no `result()` (pi-ai's `lazyStream` tolerates one)
+ * has none.
+ */
 async function completedResult(source: AssistantMessageEventStream): Promise<AssistantMessage | undefined> {
+  if (typeof source.result !== "function") return undefined;
   return Promise.race([source.result(), new Promise<undefined>((resolve) => setImmediate(() => resolve(undefined)))]);
 }
 
-function endedWithoutResult(model: Model<Api>, signal: AbortSignal | undefined, failure: unknown): AssistantMessage {
-  const aborted = signal?.aborted === true;
+function endedWithoutResult(
+  model: Model<Api>,
+  signal: AbortSignal | undefined,
+  ended: EndedEarly,
+  streamed: AssistantMessage["content"],
+): AssistantMessage {
   return {
     role: "assistant",
-    content: [],
+    content: streamed,
     api: model.api,
     provider: model.provider,
     model: model.id,
     usage: zeroUsage(),
-    stopReason: aborted ? "aborted" : "error",
-    errorMessage: failure === undefined ? "The Gemini stream ended without a result." : failure instanceof Error ? failure.message : String(failure),
+    stopReason: signal?.aborted === true ? "aborted" : "error",
+    errorMessage: !ended.threw ? "The Gemini stream ended without a result." : ended.error instanceof Error ? ended.error.message : String(ended.error),
     timestamp: Date.now(),
   };
 }
