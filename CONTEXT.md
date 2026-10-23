@@ -42,6 +42,18 @@ The consumer-side server package that registers the providers a consumer applica
 
 The pi-ai `Provider` a provider adapter's factory builds with an explicit key, carrying under its `chatKit` member the traits the chat kit needs and pi-ai has no field for: document and tool support, native structured output, which models are offered and what each reads, model rates and the provider's cost policy. It is still a pi-ai `Provider`; plain pi-ai code ignores the traits. The chat kit identifies a chat provider by its pi-ai provider id, such as `google`. A name a consumer application gives a provider, such as the portal's `gemini`, is the consumer's own, and the consumer maps it before calling the kit.
 
+## Gem
+
+A consumer application's configured assistant: its instructions, reference files and settings. A Gem is the consumer's own concept (like a Cost estimate or a Catalogue policy). The chat kit has no Gem type: a consumer's code (a Gem helper) turns a Gem into a chat turn.
+
+## Gem turn
+
+One chat turn of a Gem, as the chat kit sees it: a context with no tools and, optionally, a required response shape (a response schema). The chat kit's first overload takes it.
+
+## Agent turn
+
+One chat turn whose context may carry tools, with their tool calls and tool results, and which has no response schema: tools and a response schema are mutually exclusive. The chat kit's second overload takes it. A turn with neither tools nor a response schema is both kinds. A context typed without tools, such as a pi-ai `TranscriptContext`, which keeps its tools in its system messages, resolves to the first overload, so the kit checks the rule at run time as well.
+
 ## Model rate
 
 A provider's published per-token price for one chat model: input, output and cached-input tokens. Applied to a request's reported token counts, it gives an estimated cost when the provider reports no cost of its own. Unlike a cost estimate, it is published provider data, not an application's own price table. A rate may be scheduled to change on an announced date; a request is priced at the rate in force when it was made. A cache rate the provider does not publish is derived when a request is priced; it is not part of the published rate. A model whose rate is not published has no rate — never a zero rate.

@@ -1,4 +1,4 @@
-import { isRecord } from "./guards.ts";
+import { isRecord } from "@hk01/pi-ai-extra-internal/util";
 import type { ChatUsage } from "./types.ts";
 
 /** A token count as the provider reported it: a non-negative integer, otherwise not reported. */
@@ -14,8 +14,8 @@ export function sumReported(...counts: readonly (number | undefined)[]): number 
 
 /** The counts one wire API read from its provider's raw usage record; undefined means not reported. */
 export interface ReportedCounts {
-  /** Every prompt token: cache reads and writes included, and Gemini's tool-use prompt tokens. */
-  input?: number | undefined;
+  /** The whole prompt: cache reads and writes included, and Gemini's tool-use prompt tokens. */
+  prompt?: number | undefined;
   /** Every generated token, reasoning included. */
   output?: number | undefined;
   /** The provider's own total, when it reports one. Never computed. */
@@ -28,17 +28,19 @@ export interface ReportedCounts {
 /**
  * The turn's `ChatUsage`, from what the provider reported and nothing else (ADR 0005): a count it
  * did not report is omitted, never estimated or set to zero, and `totalTokens` is only the
- * provider's own total. Any reported count, or a cost or credit in `raw`, makes a usage record,
- * which keeps `raw`. With neither, the turn carries no usage, just as a usage block with an
- * unexpected shape is dropped rather than failing a finished turn.
+ * provider's own total. `input` is derived, the reported prompt count minus the reported cache
+ * counts, and left out when negative. Any reported count, or a cost or credit in `raw`, makes a
+ * usage record, which keeps `raw`. With neither, the turn carries no usage, just as a usage block
+ * with an unexpected shape is dropped rather than failing a finished turn.
  */
 export function toChatUsage(counts: ReportedCounts, raw: Record<string, unknown>): ChatUsage | undefined {
+  const input = counts.prompt === undefined ? undefined : counts.prompt - (counts.cacheRead ?? 0) - (counts.cacheWrite ?? 0);
   const reported = {
-    ...(counts.input === undefined ? {} : { inputTokens: counts.input }),
-    ...(counts.output === undefined ? {} : { outputTokens: counts.output }),
-    ...(counts.cacheRead === undefined ? {} : { cachedInputTokens: counts.cacheRead }),
-    ...(counts.cacheWrite === undefined ? {} : { cacheWriteTokens: counts.cacheWrite }),
-    ...(counts.reasoning === undefined ? {} : { reasoningTokens: counts.reasoning }),
+    ...(input === undefined || input < 0 ? {} : { input }),
+    ...(counts.output === undefined ? {} : { output: counts.output }),
+    ...(counts.cacheRead === undefined ? {} : { cacheRead: counts.cacheRead }),
+    ...(counts.cacheWrite === undefined ? {} : { cacheWrite: counts.cacheWrite }),
+    ...(counts.reasoning === undefined ? {} : { reasoning: counts.reasoning }),
     ...(counts.total === undefined ? {} : { totalTokens: counts.total }),
   };
   if (Object.keys(reported).length === 0 && !reportsBilling(raw)) return undefined;

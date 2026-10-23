@@ -3,10 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
     "./pi-ai": "./src/pi-ai/index.ts",
     "./rates": "./src/pi-ai/rates.ts",
+    "./model-id": "./src/model-id.ts",
+    "./util": "./src/util.ts",
     "./testing": "./src/testing/index.ts"
   },
   "scripts": {

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { createFakeFetch, type FakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
-import { createChatKit } from "../src/index.ts";
-import { brokenSseResponse, collect, jsonBody, lastEvent, sseResponse, testDocument, textOf, turn, wireFetch } from "./helpers.ts";
+import type { ChatKit } from "../src/index.ts";
+import { brokenSseResponse, jsonBody, outcome,
+  outcomeOf,
+  runToEnd, sseResponse, testDocument, textOf, turn, wireFetch , testKit } from "./helpers.ts";
 
 const STREAM_URL = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-3\.5-flash:streamGenerateContent\b/;
 const SCHEMA = { type: "object", properties: { tags: { type: "array", items: { type: "string" }, maxItems: 3 } } };
@@ -11,7 +13,7 @@ const SCHEMA = { type: "object", properties: { tags: { type: "array", items: { t
  * pi-ai's Gemini adapter rejects a custom fetch, so these tests replace the global fetch the
  * Gemini SDK calls, and restore it afterwards.
  */
-describe("runTurn on Gemini", () => {
+describe("streamSimple on Gemini", () => {
   let realFetch: typeof globalThis.fetch;
   let savedKey: string | undefined;
   beforeEach(() => {
@@ -25,11 +27,11 @@ describe("runTurn on Gemini", () => {
     else process.env.GEMINI_API_KEY = savedKey;
   });
 
-  function kit(routes: FakeRoute[], grounding = false): { chat: ReturnType<typeof createChatKit>; fake: FakeFetch } {
+  function kit(routes: FakeRoute[], grounding = false): { chat: ChatKit; fake: FakeFetch } {
     const fake = createFakeFetch(routes);
     globalThis.fetch = fake.fetch as typeof globalThis.fetch;
     // The kit's own fetch serves only the model list here; the turn goes through the global fetch.
-    return { chat: createChatKit({ providers: [{ name: "gemini", provider: "google", apiKey: "gemini-key", grounding }], fetch: wireFetch(fake) }), fake };
+    return { chat: testKit(["google"], wireFetch(fake), { grounding, keys: { google: "gemini-key" } }), fake };
   }
 
   it("streams text with grounding, a sanitized response schema and documents by URL or inline", async () => {
@@ -52,18 +54,14 @@ describe("runTurn on Gemini", () => {
       ],
       true,
     );
-    const events = await collect(
-      chat.runTurn(
-        turn({ provider: "gemini", model: "gemini-3.5-flash", documents: [pdf, big], responseSchema: { name: "tags", schema: SCHEMA } }),
-      ),
-    );
+    const { events, message } = await runToEnd(chat, turn({ provider: "google", model: "gemini-3.5-flash", documents: [pdf, big], responseSchema: { name: "tags", schema: SCHEMA } }),);
     assert.equal(textOf(events), '{"tags":["a"]}');
-    assert.deepEqual(lastEvent(events), {
+    assert.deepEqual(outcomeOf(message), {
       type: "done",
       usage: {
-        inputTokens: 50,
-        outputTokens: 6,
-        cachedInputTokens: 40,
+        input: 10,
+        output: 6,
+        cacheRead: 40,
         totalTokens: 56,
         // gemini-3.5-flash has no entry in the Gemini rate table: pi-ai's list price (1.5 in, 9 out,
         // 0.15 cached per 1M): 10 × 1.5 + 40 × 0.15 + 6 × 9 = 75 per 1M tokens.
@@ -102,19 +100,17 @@ describe("runTurn on Gemini", () => {
           ]),
       },
     ]);
-    const last = lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash" }))));
+    const last = await outcome(chat, turn({ provider: "google", model: "gemini-3.5-flash" }));
     assert.equal(last.type, "failed");
     if (last.type !== "failed") return;
     assert.deepEqual(last.error, {
       code: "CONTENT_BLOCKED",
-      provider: "gemini",
-      model: "gemini-3.5-flash",
-      message: "[gemini/gemini-3.5-flash] Gemini blocked the prompt (PROHIBITED_CONTENT).",
+      message: "[google/gemini-3.5-flash] Gemini blocked the prompt (PROHIBITED_CONTENT).",
       reason: "PROHIBITED_CONTENT",
     });
     // Gemini leaves zero-valued counters out, so a blocked prompt reports no answer count, and none is set.
     assert.deepEqual(last.usage, {
-      inputTokens: 12,
+      input: 12,
       totalTokens: 12,
       costUsd: 0.000018,
       costSource: "estimated",
@@ -122,7 +118,7 @@ describe("runTurn on Gemini", () => {
     });
   });
 
-  it("keeps the prompt count of a stream that breaks before any answer count, without an outputTokens", async () => {
+  it("keeps the prompt count of a stream that breaks before any answer count, without an output", async () => {
     const usageMetadata = { promptTokenCount: 5, totalTokenCount: 5 };
     const { chat } = kit([
       {
@@ -132,16 +128,16 @@ describe("runTurn on Gemini", () => {
           brokenSseResponse([JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "Hal" }] } }], usageMetadata })]),
       },
     ]);
-    const events = await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash" })));
+    const { events, message } = await runToEnd(chat, turn({ provider: "google", model: "gemini-3.5-flash" }));
     assert.equal(textOf(events), "Hal");
-    const last = lastEvent(events);
+    const last = outcomeOf(message);
     assert.equal(last.type, "failed");
     if (last.type !== "failed") return;
     assert.equal(last.error.code, "PROVIDER_ERROR");
-    assert.deepEqual(last.usage, { inputTokens: 5, totalTokens: 5, costUsd: 0.0000075, costSource: "estimated", raw: { usageMetadata } });
+    assert.deepEqual(last.usage, { input: 5, totalTokens: 5, costUsd: 0.0000075, costSource: "estimated", raw: { usageMetadata } });
   });
 
-  it("counts a grounded turn's tool-use prompt tokens in inputTokens", async () => {
+  it("counts a grounded turn's tool-use prompt tokens in input", async () => {
     const usageMetadata = {
       promptTokenCount: 40,
       toolUsePromptTokenCount: 300,
@@ -165,12 +161,12 @@ describe("runTurn on Gemini", () => {
       ],
       true,
     );
-    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash" })))), {
+    assert.deepEqual(await outcome(chat, turn({ provider: "google", model: "gemini-3.5-flash" })), {
       type: "done",
       usage: {
-        inputTokens: 340,
-        outputTokens: 20,
-        reasoningTokens: 8,
+        input: 340,
+        output: 20,
+        reasoning: 8,
         totalTokens: 360,
         costUsd: 0.00069,
         costSource: "estimated",
@@ -186,11 +182,11 @@ describe("runTurn on Gemini", () => {
       ]);
     const usageMetadata = { promptTokenCount: 8, candidatesTokenCount: 2, totalTokenCount: 10 };
     const { chat } = kit([{ method: "POST", url: STREAM_URL, respond: [answer({ usageMetadata }), answer({})] }]);
-    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash" })))), {
+    assert.deepEqual(await outcome(chat, turn({ provider: "google", model: "gemini-3.5-flash" })), {
       type: "done",
-      usage: { inputTokens: 8, outputTokens: 2, totalTokens: 10, costUsd: 0.00003, costSource: "estimated", raw: { usageMetadata } },
+      usage: { input: 8, output: 2, totalTokens: 10, costUsd: 0.00003, costSource: "estimated", raw: { usageMetadata } },
     });
-    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash" })))), { type: "done" });
+    assert.deepEqual(await outcome(chat, turn({ provider: "google", model: "gemini-3.5-flash" })), { type: "done" });
   });
 
   it("reports RECITATION as PROVIDER_ERROR, not as a content block", async () => {
@@ -204,8 +200,8 @@ describe("runTurn on Gemini", () => {
           ]),
       },
     ]);
-    const events = await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash" })));
-    const last = lastEvent(events);
+    const { message } = await runToEnd(chat, turn({ provider: "google", model: "gemini-3.5-flash" }));
+    const last = outcomeOf(message);
     assert.equal(last.type === "failed" && last.error.code, "PROVIDER_ERROR");
     assert.equal(last.type === "failed" && last.error.reason, "RECITATION");
     assert.equal(last.type === "failed" && last.usage, undefined, "no usage was reported");
@@ -224,26 +220,22 @@ describe("runTurn on Gemini", () => {
 
   it("ends a free-form answer cut off at MAX_TOKENS with done and truncated, keeping its text", async () => {
     const { chat } = kit([{ method: "POST", url: STREAM_URL, respond: maxTokensStop(["The first", " half"]) }]);
-    const events = await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash" })));
+    const { events, message } = await runToEnd(chat, turn({ provider: "google", model: "gemini-3.5-flash" }));
     assert.equal(textOf(events), "The first half");
-    const last = lastEvent(events);
+    const last = outcomeOf(message);
     assert.equal(last.type === "done" && last.truncated, true);
-    assert.equal(last.type === "done" && last.usage?.outputTokens, 32);
+    assert.equal(last.type === "done" && last.usage?.output, 32);
   });
 
   it("fails a response-schema answer cut off at MAX_TOKENS, with the raw stop reason", async () => {
     const { chat } = kit([{ method: "POST", url: STREAM_URL, respond: maxTokensStop(['{"tags":', '["a",']) }]);
-    const last = lastEvent(
-      await collect(
-        chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash", responseSchema: { name: "tags", schema: SCHEMA } })),
-      ),
-    );
+    const last = await outcome(chat, turn({ provider: "google", model: "gemini-3.5-flash", responseSchema: { name: "tags", schema: SCHEMA } }));
     assert.equal(last.type, "failed");
     if (last.type !== "failed") return;
     assert.equal(last.error.code, "PROVIDER_ERROR");
     assert.equal(last.error.reason, "MAX_TOKENS");
-    assert.match(last.error.message, /^\[gemini\/gemini-3\.5-flash\] The answer hit the output-token limit/);
-    assert.equal(last.usage?.outputTokens, 32);
+    assert.match(last.error.message, /^\[google\/gemini-3\.5-flash\] The answer hit the output-token limit/);
+    assert.equal(last.usage?.output, 32);
   });
 
   it("reports a candidate SAFETY stop after partial text as CONTENT_BLOCKED", async () => {
@@ -261,9 +253,9 @@ describe("runTurn on Gemini", () => {
           ]),
       },
     ]);
-    const events = await collect(chat.runTurn(turn({ provider: "gemini", model: "gemini-3.5-flash" })));
+    const { events, message } = await runToEnd(chat, turn({ provider: "google", model: "gemini-3.5-flash" }));
     assert.equal(textOf(events), "Once");
-    const last = lastEvent(events);
+    const last = outcomeOf(message);
     assert.equal(last.type === "failed" && last.error.code, "CONTENT_BLOCKED");
     assert.equal(last.type === "failed" && last.error.reason, "SAFETY");
   });

@@ -43,6 +43,7 @@ export interface ChatProviderTraits {
   describe(model: Model<Api>): { fileInput: boolean; tools: boolean; rate?: ModelRate | undefined }; // model level: what the model itself can do
   reportedCostUsd(raw: Record<string, unknown>): number | undefined; // the provider's own charge, in USD
   readonly estimatesCost: boolean; // a turn without a reported charge is estimated from the Model rate
+  readonly fetch?: typeof globalThis.fetch | undefined; // the factory's `fetch` option: a turn goes through it unless the kit has its own (not Google's: pi-ai's Gemini adapter rejects a custom fetch)
 }
 
 export function createChatKit(options: { providers: readonly ChatProvider[]; fetch?: typeof globalThis.fetch | undefined }): ChatKit;
@@ -61,7 +62,7 @@ These types are defined once in the internal package and exported by each provid
 - **Google factory.** It wraps its streams to add the grounding tools through `onPayload`, and copies `promptFeedback.blockReason` to `rawStopReason`.
 - **Live lists.** A live list is the provider's `refreshModels`, so `models.refresh()` reads it for any pi-ai consumer. It replaces the list, so a model the provider drops disappears. pi-ai's `createProvider({ fetchModels })` would merge over the baseline instead, and never remove a model. The chat kit keeps ADR 0008's freshness rules.
 - **Registration.** The chat kit registers each provider by `provider.id`, in one pi-ai `Models` collection with an empty auth context. pi-ai's `setProvider()` silently replaces a provider with the same id, so the chat kit throws a `TypeError` on a duplicate id instead. It also throws one for a provider without `chatKit`. Keys, base URLs and grounding go to the factories, so the chat kit never handles a key (ADR 0003); an optional helper that takes the consumer's own factory table could be added later without a break.
-- **Per tenant.** Two keys for the same provider are two kits, because a chat provider binds one key, ADR 0003's attribution and no-fallback boundary. A kit holds no timers between calls, so it needs no `dispose()`.
+- **Per tenant.** Two keys for the same provider are two kits, because a chat provider binds one key, ADR 0003's attribution and no-fallback boundary. A kit has no timers of its own between calls, so it needs no `dispose()`: a model-list read (the background refresh of a stale list, or a first read whose caller stopped waiting) may run for up to 15 s after a call, under an unref'd deadline timer.
 - **Per wire API, the chat kit keeps** documents, the response schema, reading usage from the provider's own record, blocked classification, HTTP status capture and the always-thinking Claude rule. The estimate from the Model rate uses pi-ai's `calculateCost`; OpenRouter's `require_parameters` goes through `compat.openRouterRouting`.
 - **What remains of DATA-4580**, none of it public: the key-gated smoke script (now also checking tool calls), the "Adding a reseller" checklist, moving each provider's quirk code from the internal package into its own package, and later a generic reseller factory.
 
@@ -88,8 +89,8 @@ export type ChatToolFreeContext = Omit<Context, "tools"> & { tools?: undefined }
 
 - **Calls.** They mirror pi-ai's `Models.streamSimple()` and `completeSimple()`; `completeSimple()` is `streamSimple(...).result()`. The names `stream()` and `complete()` stay free for a later variant with per-API options. Every optional option member also accepts `undefined`, because consumers may compile with `exactOptionalPropertyTypes`.
 - **Reference and context.** A pi-ai `Model` is a valid reference; the chat kit resolves it against its own model list, and parsing a string such as `"google/gemini-3.5-flash"` is the consumer's job. `context` is pi-ai's `Context`, unextended. Documents open the first user message, so provider prompt caching covers them. `ChatDocument` and `ChatResponseSchema` are unchanged from 0.2.0.
-- **Which overload.** The first takes a tool-free context and an optional schema, so a Gem helper that returns a `ChatToolFreeContext` also covers a schema that may be absent (`responseSchema: maybeSchema`). The second takes tools and no schema. A pi-ai `TranscriptContext` carries its tools in a system message's `toolsAdded`, not in `tools`, so it satisfies `ChatToolFreeContext` and a pi-agent-core `StreamFn` adapter resolves to the first overload. The runtime check catches what the types cannot: it reads the normalized transcript, and a turn with both tools and a schema, from such a context or an untyped caller, gets `INVALID_REQUEST` before anything is sent. An empty `tools` array counts as none.
-- **Tools.** Tools, tool calls and tool results pass through to pi-ai. Before sending, the chat kit refuses tools with `UNSUPPORTED` when `takes.tools` or `describe(model).tools` is false. `toolChoice` is pi-ai's `"auto" | "none"`. The response schema keeps 0.2.0's rules. On Anthropic Messages without native structured output it is still a forced tool call. The chat kit turns that call into `text_*` events, a text block and `stopReason: "stop"`.
+- **Which overload.** The first takes a tool-free context and an optional schema, so a function that builds a Gem's turn and returns a `ChatToolFreeContext` also covers a schema that may be absent (`responseSchema: maybeSchema`). The second takes tools and no schema. A pi-ai `TranscriptContext` carries its tools in a system message's `toolsAdded`, not in `tools`, so it satisfies `ChatToolFreeContext` and a pi-agent-core `StreamFn` adapter resolves to the first overload. The runtime check catches what the types cannot: it reads the normalized transcript, and a turn with both tools and a schema, from such a context or an untyped caller, gets `INVALID_REQUEST` before anything is sent. An empty `tools` array counts as none. The check also counts tool calls and tool results in the conversation (2026-10-23 amendment), which no type can see.
+- **Tools.** Tools, tool calls and tool results pass through to pi-ai. Before sending, the chat kit refuses a turn that carries tools, tool calls or tool results with `UNSUPPORTED` when `takes.tools` or `describe(model).tools` is false. `toolChoice` is pi-ai's `"auto" | "none"`. The response schema keeps 0.2.0's rules. On Anthropic Messages without native structured output it is still a forced tool call. The chat kit turns that call into `text_*` events, a text block and `stopReason: "stop"`.
 - **Settings.** Without `reasoning`, thinking is off where the model allows it, as in pi-ai. `maxRetries` defaults to 2 and retries only before the stream starts. `cacheRetention` is fixed at `"short"`, because the estimate from the Model rate prices an unpublished cache-write rate as a 5-minute write.
 
 ### 3. Output and errors
@@ -110,7 +111,7 @@ Events are pi-ai's, passed through, except that a forced schema tool call become
 | --- | --- | --- |
 | `UNKNOWN_MODEL` | No provider has that id, or the model is not offered | No |
 | `UNSUPPORTED` | The model or provider cannot take the turn's documents, images, tools, schema or settings | No |
-| `INVALID_REQUEST` | Malformed input, both tools and a schema, or a document whose `load()` failed | No |
+| `INVALID_REQUEST` | Malformed input, a schema together with tools (or with tool calls or tool results), or a document whose `load()` failed | No |
 | `CONTENT_BLOCKED` | A safety system blocked the prompt or the answer; `rawStopReason` is the provider's value | Yes |
 | `PROVIDER_ERROR` | The provider failed | Yes |
 
@@ -155,7 +156,7 @@ export type ChatProviderModels =
   | { provider: ProviderId; error: string };
 ```
 
-Everything else is pi-ai's own `Model`: `id`, `name`, `api`, `input`, `contextWindow`, `maxTokens` and `reasoning`. Thinking levels come from pi-ai's `getSupportedThinkingLevels(model)`. `Model.cost` stays pi-ai's, with zeros for a model without a rate.
+Everything else is pi-ai's own `Model`: `id`, `name`, `api`, `input`, `contextWindow`, `maxTokens` and `reasoning`. Thinking levels come from pi-ai's `getSupportedThinkingLevels(model)`. `Model.cost` stays pi-ai's: the rate period in force when the provider was created, with zeros for a model without a rate. It goes stale in a long-running process after a scheduled change, so a consumer reads the price from `chatKit.rate`, which the kit also prices each turn from.
 
 ### 6. Migration
 
@@ -183,6 +184,22 @@ Each gap can close without breaking callers, as a new optional option, a widened
 ### 8. Versioning
 
 chat-kit 0.3.0 is the breaking release. It peers on `@earendil-works/pi-ai` `1.2.0` exactly, and on the provider packages optionally: google `>=0.6.0`, openrouter `>=0.1.0`, kie and toapis `>=0.5.0`, all `<1.0.0`. A package manager warns about an older provider package, and the chat kit's `TypeError` at registration stops it. google 0.6.0, kie 0.5.0 and toapis 0.5.0 are additive. openrouter 0.1.0 is new, released from `openrouter-vX.Y.Z`, with pi-ai as a required exact peer and only a `/pi-ai` entry, an exception recorded in the ADR 0002 and ADR 0004 amendments.
+
+Amended 2026-10-22 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4583)), while implementing:
+
+- `ChatProviderTraits` gains an optional `fetch`, the factory's `fetch` option. A turn goes through it unless the kit has its own; Google's chat provider sets none, because pi-ai's Gemini adapter rejects a custom fetch.
+- A forced response-schema tool call is turned into text as follows. The call's `toolcall_*` events become `text_*` events and the call becomes one text block; free text the model wrote beside the call is dropped, so every `contentIndex` and partial message matches the final message; a call with no argument text (a real one sends an empty `partial_json`) streams its arguments, `{}`, as a `text_delta` before its `text_end`. A call that failed or was aborted before any argument text keeps its arguments as the text block. Two forced calls give two text blocks.
+- A failure or abort after the model resolved carries the model's `api` on the message; `"unknown"` is for a reference that did not resolve, and for input rejected before it was looked up.
+- The Google chat provider's streams always end with a result: a stream that ends without a final event, or throws, gets the result it completed with, else an `error` message (`aborted` when the request's signal was aborted) that keeps the content streamed so far. pi-ai's `lazyStream` awaits `result()`, so the wrapper must not leave it pending.
+- `listModels()` returns copies of the models, so changing one reaches neither the next listing nor another kit.
+
+Amended 2026-10-23 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4583)), before release:
+
+- A turn on the OpenAI Completions or Responses API sends `OpenAI-Organization` and `OpenAI-Project` as `null`, which drops the headers the OpenAI SDK would add from `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`: ADR 0003 has the packages read no environment variables, and the SDKs underneath should not add ambient configuration either. The SDKs' other environment settings are not suppressed: pi-ai creates the clients, and pinning the key's header against `OPENAI_CUSTOM_HEADERS` or `ANTHROPIC_CUSTOM_HEADERS` (which can replace it) would need the kit to pass the key. The README lists what still takes effect.
+- A context that carries tool calls or tool results counts as using tools. A provider that takes none, or a model that does not, refuses it with `UNSUPPORTED`, even when the context declares no tools. A response schema over such a context is `INVALID_REQUEST`, as it is over declared tools: the history belongs to an agent turn, and a Gem turn's schema would meet tool blocks the request does not declare.
+- The kit adds its document cache breakpoint on Anthropic Messages only while the request has fewer than Anthropic's four.
+- A Google model reports `tools` for `gemini-*` and `gemma-4-*` ids, and `fileInput` (PDFs) for `gemini-*` only, because those are what Google documents on the Gemini API: function calling for Gemini and Gemma 4 ([Gemma on the Gemini API](https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api)), PDF input for Gemini ([document processing](https://ai.google.dev/gemini-api/docs/document-processing)). The kit reports `fileInput` for a `gemini-*` model that also reads images. Any other id takes neither until Google documents it. A turn that needs what the model is not documented to take is refused.
+- Checked live on 2026-10-23, through the kit with a real key, in one run per case: `gemma-4-26b-a4b-it` and `gemma-4-31b-it` apply a response schema (an `enum` forced an answer no prompt would give, and a required field the prompt never mentioned was filled), and `gemma-4-26b-a4b-it` calls a tool (`gemma-4-31b-it` was not run for tools; its tools rest on Google's page). Google's Gemma page does not mention structured output ([structured output](https://ai.google.dev/gemini-api/docs/structured-output) names Gemini models only), so this check is the only evidence for Gemma 4. The kit does not gate `responseSchema` by model on Google: it is on for every Google id, and nothing covers Gemma 3 or other families. The check should move into the key-gated smoke script of DATA-4580.
 
 ## Considered options
 

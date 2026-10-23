@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This repository centralises the KIE, ToAPIs and Gemini image integrations, and the KIE/ToAPIs chat integrations, that multiple AI Studio applications would otherwise implement independently. The detailed delivery and acceptance criteria live in [DATA-4513](https://hk01-digital.atlassian.net/browse/DATA-4513); downstream application adoption lives in [DATA-4512](https://hk01-digital.atlassian.net/browse/DATA-4512).
+This repository centralises the KIE, ToAPIs and Gemini image integrations, and the KIE, ToAPIs, Gemini and OpenRouter chat integrations, that multiple AI Studio applications would otherwise implement independently. The detailed delivery and acceptance criteria live in [DATA-4513](https://hk01-digital.atlassian.net/browse/DATA-4513); downstream application adoption lives in [DATA-4512](https://hk01-digital.atlassian.net/browse/DATA-4512).
 
 ## Package map
 
@@ -74,6 +74,7 @@ There is no provider fallback, model fallback, cross-provider upload fallback, o
 | KIE | Grok Imagine Image 2.0 text/edit; GPT Image 2 text/image; Nano Banana 2 | Codex via OpenAI Responses (`/openai/v1`); Claude via Anthropic Messages (`/anthropic`, Bearer) | `creditsConsumed`, `costTime` |
 | ToAPIs | Gemini 3.1 Flash Image (preview); GPT Image 2; GPT Image 2.5 Flare/Sunburst; Seedream 5.0 Pro | Codex via OpenAI Responses; Claude via Anthropic Messages | `billing`, token `usage` |
 | Google | Gemini 3.1 Flash Image; Gemini 3 Pro Image | Gemini via pi-ai's Gemini adapter and catalogue (explicit key) | `usageMetadata` |
+| OpenRouter | None (pi-ai already serves OpenRouter's image generation) | OpenAI Completions and Anthropic Messages via pi-ai's OpenRouter provider (explicit key, live model list) | `usage` with `cost` |
 
 Wokey is intentionally excluded from the first release because of the observed image-generation failure rate.
 

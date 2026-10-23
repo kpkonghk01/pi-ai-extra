@@ -3,7 +3,10 @@ import { abortedError } from "./abort.ts";
 import { contextError, type OperationContext } from "./context.ts";
 import { isPiAiExtraError, type PiAiExtraError, type PiAiExtraErrorCode, type PiAiExtraOperation } from "./errors.ts";
 import { withRetry, type RetryPolicy } from "./retry.ts";
+import { isRecord } from "./util.ts";
 import { formatZodIssues } from "./validation.ts";
+
+export { isRecord };
 
 const RESPONSE_BODY_LIMIT = 2_000;
 
@@ -177,10 +180,6 @@ export function safeStringify(value: unknown): string {
   } catch {
     return String(value);
   }
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** Host and path only; query strings may carry task ids but never credentials, and are omitted for brevity. */

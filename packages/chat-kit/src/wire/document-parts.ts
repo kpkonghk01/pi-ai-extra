@@ -1,7 +1,7 @@
 import type { ChatDocument } from "../types.ts";
 import { renderTextDocument, type DocumentPlacement, type PreparedDocument } from "../documents.ts";
 import { TurnFailure } from "../errors.ts";
-import { isRecord } from "../guards.ts";
+import { isRecord } from "@hk01/pi-ai-extra-internal/util";
 
 /** A PDF or image document, as a wire API's part builder sees it. */
 export type FileDocument = Extract<PreparedDocument, { kind: "pdf" | "image" }>;

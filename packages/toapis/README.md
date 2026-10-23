@@ -1,9 +1,9 @@
 # @hk01/pi-ai-extra-toapis
 
-Server-only extension to `@earendil-works/pi-ai`: Gemini 3.1 Flash Image (`gemini-3.1-flash-image-preview`), GPT Image 2 (`gpt-image-2`), GPT Image 2.5 (`gpt-image-2.5-flare`, `gpt-image-2.5-sunburst`) and Seedream 5.0 Pro (`doubao-seedream-5-0-pro`).
+Server-only extension to `@earendil-works/pi-ai`: ToAPIs chat (Codex and Claude, a chat provider with a live model list) and image generation. Image models: Gemini 3.1 Flash Image (`gemini-3.1-flash-image-preview`), GPT Image 2 (`gpt-image-2`), GPT Image 2.5 (`gpt-image-2.5-flare`, `gpt-image-2.5-sunburst`) and Seedream 5.0 Pro (`doubao-seedream-5-0-pro`).
 
 - Main entry (CommonJS and ESM): `generateToapisImage()`, `getToapisTask()`, `TOAPIS_IMAGE_MODELS`, `PiAiExtraError` / `isPiAiExtraError`.
-- `/pi-ai` subpath (ESM only, needs `@earendil-works/pi-ai@1.2.0`): `createToapisProvider()`, one pi-ai `Provider` serving the chat models and `TOAPIS_IMAGE_MODELS` (image settings in `imageSettings`).
+- `/pi-ai` subpath (ESM only, needs `@earendil-works/pi-ai@1.2.0`): `createToapisProvider()`, one chat provider (a pi-ai `Provider` with the chat kit's `chatKit` traits and a live model list) serving the chat models and `TOAPIS_IMAGE_MODELS` (image settings in `imageSettings`).
 
 Chat: Codex on OpenAI Responses (`https://toapis.com/v1`) and Claude on Anthropic Messages (`https://toapis.com`), each with ToAPIs' published `rate` (USD per 1M tokens). Usage: `billing` (status, decimal-string credits/cost) and token `usage`; billing can be `pending` at completion, so re-read with `getToapisTask` and record one value per task id. `clientBusinessId` is sent as `client_business_id`.
 
@@ -21,6 +21,6 @@ const result = await generateToapisImage({
 const { dataUrl } = result.images[0]!;
 ```
 
-API keys are always explicit arguments; the package never reads environment variables and must not be imported into browser code. There is no provider, model or storage fallback, and reference images over a model's limit are rejected, never dropped.
+API keys are always explicit arguments; the package never reads a key or setting of its own from environment variables (the SDKs underneath read a few; the [root README](https://github.com/kpkonghk01/pi-ai-extra#chat-providers-and-createchatkit) lists them, and says which of them the chat kit suppresses; this package alone suppresses none) and must not be imported into browser code. There is no provider, model or storage fallback, and reference images over a model's limit are rejected, never dropped.
 
 Install the pinned GitHub Release asset (`toapis-vX.Y.Z`). The full guide covers options, errors, usage/billing, pi-ai integration and Google AI Studio setup: https://github.com/kpkonghk01/pi-ai-extra#readme

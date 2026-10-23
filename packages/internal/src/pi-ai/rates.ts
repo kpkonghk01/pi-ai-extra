@@ -40,16 +40,6 @@ export interface ModelRate {
   periods: readonly RatePeriod[];
 }
 
-/** The token counts a provider reported for one request, as the chat kit reads them. */
-interface PricedCounts {
-  /** Every prompt token: cache reads and writes included. */
-  input?: number | undefined;
-  /** Every generated token, reasoning included. */
-  output?: number | undefined;
-  cacheRead?: number | undefined;
-  cacheWrite?: number | undefined;
-}
-
 /** An unpublished cache-write rate as a multiple of the input rate; `toModelCost` explains it. */
 const UNPUBLISHED_CACHE_WRITE_FACTOR = 1.25;
 
@@ -72,12 +62,6 @@ export function ratePeriodAt(rate: ModelRate, at: Date | number): RatePeriod | u
     if (period.from === undefined || startOfDay(period.from) <= time) current = period;
   }
   return current;
-}
-
-/** The rates a request pays in a period: its large-prompt tier when the prompt is over the tier's threshold. */
-function ratesForPrompt(period: RatePeriod, promptTokens: number | undefined): TokenRates {
-  const tier = period.largePrompt;
-  return tier !== undefined && promptTokens !== undefined && promptTokens > tier.overPromptTokens ? tier : period;
 }
 
 /**
@@ -146,26 +130,6 @@ function publishedOf(rates: { input: number; output: number; cacheRead: number; 
     ...(rates.cacheRead > 0 ? { cacheRead: rates.cacheRead } : {}),
     ...(rates.cacheWrite > 0 ? { cacheWrite: rates.cacheWrite } : {}),
   };
-}
-
-/**
- * Estimated USD cost of one request from the period in force at `at`, applied to the counts the
- * provider reported: the large-prompt tier is chosen by the prompt count, cached and cache-write
- * tokens are charged at their (filled-in) rates and the rest of the prompt at the input rate;
- * reasoning is part of the output. A count the provider did not report adds nothing. Undefined
- * when the schedule has no period, or when neither a prompt nor an answer count was reported.
- */
-export function estimateCostUsd(rate: ModelRate, counts: PricedCounts, at: Date | number): number | undefined {
-  if (counts.input === undefined && counts.output === undefined) return undefined;
-  const period = ratePeriodAt(rate, at);
-  if (period === undefined) return undefined;
-  const rates = toModelCost(ratesForPrompt(period, counts.input));
-  const cacheRead = counts.cacheRead ?? 0;
-  const cacheWrite = counts.cacheWrite ?? 0;
-  const uncached = Math.max(0, (counts.input ?? 0) - cacheRead - cacheWrite);
-  const perMillion =
-    uncached * rates.input + cacheRead * rates.cacheRead + cacheWrite * rates.cacheWrite + (counts.output ?? 0) * rates.output;
-  return roundUsd(perMillion / 1_000_000);
 }
 
 /**

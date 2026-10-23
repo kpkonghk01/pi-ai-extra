@@ -47,7 +47,6 @@ function plan(overrides: Partial<PayloadPlan> = {}): PayloadPlan {
     marker: MARKER,
     documents: [TEXT_DOC, PDF_BY_URL, PNG_INLINE],
     responseSchema: undefined,
-    grounding: false,
     targetsOpenRouter: false,
     nativeStructuredOutput: false,
     ...overrides,
@@ -88,16 +87,16 @@ describe("Gemini payload transform", () => {
     assert.deepEqual({ ...input, config: { ...input.config, abortSignal: undefined } }, snapshot);
   });
 
-  it("adds the sanitized response schema and the grounding tools", () => {
+  it("adds the sanitized response schema, and leaves grounding to the Google provider", () => {
     const next = transformGooglePayload(
       payload(),
-      plan({ marker: undefined, documents: [], responseSchema: { name: "x", schema: { ...SCHEMA, maxItems: 2 } }, grounding: true }),
+      plan({ marker: undefined, documents: [], responseSchema: { name: "x", schema: { ...SCHEMA, maxItems: 2 } } }),
     ) as {
       config: Record<string, unknown>;
     };
     assert.equal(next.config.responseMimeType, "application/json");
     assert.deepEqual(next.config.responseJsonSchema, SCHEMA);
-    assert.deepEqual(next.config.tools, [{ functionDeclarations: [] }, { googleSearch: {} }, { urlContext: {} }]);
+    assert.deepEqual(next.config.tools, [{ functionDeclarations: [] }]);
     assert.equal(next.config.systemInstruction, "Be brief.");
   });
 
@@ -209,13 +208,13 @@ describe("OpenAI Completions payload transform", () => {
     assert.deepEqual(next.plugins, [{ id: "web" }, { id: "file-parser", pdf: { engine: "native" } }]);
   });
 
-  it("adds a strict response_format and asks OpenRouter for endpoints that honour it", () => {
+  it("adds a strict response_format, leaving the routing preferences to the model's compat", () => {
     const next = transformOpenAICompletionsPayload(
       { ...payload(), provider: { order: ["openai"] } },
       plan({ marker: undefined, documents: [], responseSchema: { name: "answer", schema: SCHEMA } }),
     ) as Record<string, unknown>;
     assert.deepEqual(next.response_format, { type: "json_schema", json_schema: { name: "answer", schema: SCHEMA, strict: true } });
-    assert.deepEqual(next.provider, { order: ["openai"], require_parameters: true });
+    assert.deepEqual(next.provider, { order: ["openai"] });
   });
 
   it("fails when the marker is missing or merged into a plain-text message", () => {
@@ -292,6 +291,30 @@ describe("Anthropic Messages payload transform", () => {
       plan({ documents: [TEXT_DOC] }),
     );
     assert.ok(!JSON.stringify(uncached).includes("cache_control"));
+  });
+
+  it("adds its document breakpoint only while the request has fewer than Anthropic's four", () => {
+    const withTool = { ...payload(), tools: [{ name: "lookup", input_schema: { type: "object" }, cache_control: cache }] };
+    // system + last tool + last user message = 3, so the documents' breakpoint is the fourth.
+    const four = transformAnthropicPayload(withTool, plan({ documents: [TEXT_DOC] })) as ReturnType<typeof payload>;
+    assert.equal(JSON.stringify(four).split("cache_control").length - 1, 4);
+    // A request that already has four (a future pi-ai breakpoint) gets none from the kit: a fifth is a 400.
+    const full = { ...withTool, messages: [{ role: "user", content: [{ type: "text", text: MARKER }, { type: "text", text: "Q", cache_control: cache }] }, { role: "assistant", content: [{ type: "text", text: "A" }] }, { role: "user", content: [{ type: "text", text: "Q2", cache_control: cache }] }] };
+    assert.equal(JSON.stringify(full).split("cache_control").length - 1, 4);
+    const capped = transformAnthropicPayload(full, plan({ documents: [TEXT_DOC] }));
+    assert.equal(JSON.stringify(capped).split("cache_control").length - 1, 4, "no fifth breakpoint");
+  });
+
+  it("reuses the breakpoint pi-ai put on a tool when the system prompt has none", () => {
+    const toolTtl = { type: "ephemeral", ttl: "1h" };
+    const onlyTool = {
+      ...payload(),
+      system: [{ type: "text", text: "S" }],
+      tools: [{ name: "lookup", input_schema: { type: "object" }, cache_control: toolTtl }],
+      messages: [{ role: "user", content: [{ type: "text", text: MARKER }, { type: "text", text: "Q" }] }],
+    };
+    const next = transformAnthropicPayload(onlyTool, plan({ documents: [TEXT_DOC] })) as ReturnType<typeof payload>;
+    assert.deepEqual(next.messages[0]?.content[0], { type: "text", text: TEXT_PART, cache_control: toolTtl });
   });
 
   it("forces one tool call for the response schema", () => {

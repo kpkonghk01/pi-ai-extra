@@ -1,9 +1,9 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { dataUrl } from "../documents.ts";
-import { isRecord } from "../guards.ts";
+import { isRecord } from "@hk01/pi-ai-extra-internal/util";
 import { createUsageCapture } from "../usage.ts";
 import { encodeDocument, placeByUrl, replaceDocumentMarker, textOfType, type DocumentEncoder } from "./document-parts.ts";
-import { COMPLETIONS_USAGE_FIELDS, CONTENT_FILTER_BLOCK, openAIUsage } from "./openai.ts";
+import { COMPLETIONS_USAGE_FIELDS, CONTENT_FILTER_BLOCK, OPENAI_AMBIENT_HEADERS, openAIUsage } from "./openai.ts";
 import { withFileParser } from "./openrouter.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
@@ -21,10 +21,9 @@ const COMPLETIONS_PARTS: DocumentEncoder<CompletionsPart, string> = {
 /**
  * OpenAI Chat Completions (OpenRouter, the only provider of the kit on this API): documents replace
  * the marker part (`file` for PDFs, `image_url` for images), the file-parser plugin is always
- * pinned to `native`, and the
- * response schema becomes a strict `response_format`. With a schema, OpenRouter is asked to route
- * only to endpoints that honour it (`provider.require_parameters`), so an endpoint that would
- * ignore the schema fails instead.
+ * pinned to `native`, and the response schema becomes a strict `response_format`. With a schema,
+ * OpenRouter is asked to route only to endpoints that honour it: the turn's model carries
+ * `compat.openRouterRouting.require_parameters` (`prepareTurn`), which pi-ai sends as `provider`.
  */
 export function transformOpenAICompletionsPayload(payload: unknown, plan: PayloadPlan): unknown {
   if (!isRecord(payload)) return payload;
@@ -38,7 +37,6 @@ export function transformOpenAICompletionsPayload(payload: unknown, plan: Payloa
       type: "json_schema",
       json_schema: { name: plan.responseSchema.name, schema: plan.responseSchema.schema, strict: true },
     };
-    next.provider = { ...(isRecord(payload.provider) ? payload.provider : {}), require_parameters: true };
   }
   return next;
 }
@@ -65,6 +63,7 @@ export function createOpenAICompletionsObserver(): StreamObserver {
 export const OPENAI_COMPLETIONS_WIRE_API: WireApi = {
   api: "openai-completions",
   acceptsFetch: true,
+  suppressedHeaders: OPENAI_AMBIENT_HEADERS,
   schemaAsToolCall: () => false,
   placeDocument: placeByUrl,
   unsupported: () => undefined,

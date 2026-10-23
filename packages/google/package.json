@@ -1,7 +1,7 @@
 {
   "name": "@hk01/pi-ai-extra-google",
-  "version": "0.5.0",
-  "description": "Gemini image helper (Nano Banana 2.1, Gemini 3.1 Flash Image, Gemini 3 Pro Image) and pi-ai chat/image adapters",
+  "version": "0.6.0",
+  "description": "Gemini image helper (Nano Banana 2.1, Gemini 3.1 Flash Image, Gemini 3 Pro Image) and a pi-ai chat provider (Gemini) with image models, a live model list and the chat kit's traits",
   "license": "UNLICENSED",
   "type": "module",
   "main": "./dist/index.cjs",
