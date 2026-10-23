@@ -37,16 +37,18 @@ function cacheableBlocks(payload: Record<string, unknown>): unknown[] {
   ];
 }
 
+/** The blocks of the request that carry a cache breakpoint. */
+function breakpointBlocks(payload: Record<string, unknown>): Record<string, unknown>[] {
+  return cacheableBlocks(payload).filter((block): block is Record<string, unknown> => isRecord(block) && isRecord(block.cache_control));
+}
+
 /**
  * pi-ai's own prompt-cache breakpoint, if it set one: with `cacheRetention` other than `"none"` it
- * marks the system prompt, the last tool and the last block of the last user message. Reusing that
- * object keeps its TTL and stays off when caching is off.
+ * marks the system prompt, the last tool (where the provider supports it) and the last block of the
+ * last user message. Reusing that object keeps its TTL and stays off when caching is off.
  */
 function findCacheControl(payload: Record<string, unknown>): unknown {
-  for (const block of cacheableBlocks(payload)) {
-    if (isRecord(block) && isRecord(block.cache_control)) return block.cache_control;
-  }
-  return undefined;
+  return breakpointBlocks(payload)[0]?.cache_control;
 }
 
 /** Anthropic allows at most four cache breakpoints in one request; a fifth is a 400. */
@@ -54,7 +56,7 @@ const MAX_CACHE_BREAKPOINTS = 4;
 
 /** How many cache breakpoints the request already has. */
 function countCacheBreakpoints(payload: Record<string, unknown>): number {
-  return cacheableBlocks(payload).filter((block) => isRecord(block) && isRecord(block.cache_control)).length;
+  return breakpointBlocks(payload).length;
 }
 
 function thinkingEnabled(thinking: unknown): boolean {

@@ -84,10 +84,18 @@ describe("Google chat provider: chatKit traits", () => {
     const described = chatKit.describe(flash);
     assert.deepEqual([described.fileInput, described.tools], [true, true]);
     assert.equal(described.rate?.periods[0]?.input, 0.75);
-    const gemma = { ...flash, id: "gemma-4-27b" };
-    // Google documents function calling and images for Gemma 4 on the Gemini API, and no PDF input.
-    assert.deepEqual([chatKit.describe(gemma).tools, chatKit.describe(gemma).fileInput], [true, false], "Gemma takes tools; its PDF input is undocumented");
-    assert.equal(chatKit.describe({ ...flash, id: "learnlm-2" }).tools, false, "an id Google documents no tool support for is off");
+    // Google documents function calling and images for Gemma 4 on the Gemini API, and PDF input for Gemini only.
+    const gemma4 = { ...flash, id: "gemma-4-26b-a4b-it" };
+    assert.deepEqual([chatKit.describe(gemma4).tools, chatKit.describe(gemma4).fileInput], [true, false], "Gemma 4 takes tools; its PDF input is not documented");
+    // Off until documented: Gemma 3 is not on Google's Gemma-on-the-Gemini-API page, and unknown families are not assumed.
+    for (const id of ["gemma-3-27b-it", "gemma-3n-e4b-it", "learnlm-2"]) {
+      assert.deepEqual([chatKit.describe({ ...flash, id }).tools, chatKit.describe({ ...flash, id }).fileInput], [false, false], id);
+    }
+  });
+
+  it("sets no fetch trait: pi-ai's Gemini adapter rejects a custom fetch, so a turn cannot use one", () => {
+    const { chatKit } = createGoogleProvider({ apiKey: "k", fetch: async () => new Response("{}") });
+    assert.equal("fetch" in chatKit, false);
   });
 });
 

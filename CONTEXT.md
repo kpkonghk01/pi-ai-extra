@@ -44,15 +44,15 @@ The pi-ai `Provider` a provider adapter's factory builds with an explicit key, c
 
 ## Gem
 
-A consumer application's configured assistant: its instructions, reference files and settings. The chat kit knows nothing about Gems; a Gem helper in the consumer turns one into a chat turn.
+A consumer application's configured assistant: its instructions, reference files and settings. A Gem is the consumer's own concept (like a Cost estimate or a Catalogue policy); the chat kit holds none, and a consumer's code turns a Gem into a chat turn.
 
 ## Gem turn
 
-One chat turn of a Gem: a context with no tools, and, optionally, a required response shape (a response schema). The chat kit's first call form takes it.
+One chat turn of a Gem, as the chat kit sees it: a context with no tools and, optionally, a required response shape (a response schema). The chat kit's first overload takes it.
 
 ## Agent turn
 
-One chat turn whose context may carry tools, with their tool calls and tool results, and has no response schema: tools and a response schema are mutually exclusive. The chat kit's second call form takes it. A turn with neither tools nor a response schema is both kinds, and either call form takes it.
+One chat turn whose context may carry tools, with their tool calls and tool results, and which has no response schema: tools and a response schema are mutually exclusive. The chat kit's second overload takes it. A turn with neither tools nor a response schema is both kinds, and which overload accepts it depends on the context's type.
 
 ## Model rate
 

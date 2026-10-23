@@ -116,6 +116,35 @@ describe("streamSimple on Anthropic Messages", () => {
     }
   });
 
+  it("gives two forced calls two text blocks, one answer each, in the events and in the final message", async () => {
+    const { chat } = kit([
+      {
+        method: "POST",
+        url: OPENROUTER_MESSAGES_URL,
+        respond: () =>
+          sseResponse(
+            anthropicEvents({
+              blocks: [
+                { type: "tool_use", name: "answer", json: ['{"a":1}'] },
+                { type: "tool_use", name: "answer", json: ['{"b":2}'] },
+              ],
+              stopReason: "tool_use",
+            }),
+          ),
+      },
+    ]);
+    const { events, message } = await runToEnd(chat, turn({ model: "anthropic/claude-sonnet-4.6", responseSchema: { name: "answer", schema: SCHEMA } }));
+    assert.equal(message.stopReason, "stop");
+    assert.deepEqual(message.content.map((block) => (block.type === "text" ? block.text : block.type)), ['{"a":1}', '{"b":2}']);
+    assert.deepEqual(
+      events.flatMap((event) => (event.type === "text_end" ? [[event.contentIndex, event.content]] : [])),
+      [
+        [0, '{"a":1}'],
+        [1, '{"b":2}'],
+      ],
+    );
+  });
+
   it("fails a response-schema turn whose model answers without the tool call", async () => {
     const { chat } = kit([
       {

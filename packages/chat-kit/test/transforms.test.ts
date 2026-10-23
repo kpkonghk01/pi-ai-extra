@@ -305,6 +305,18 @@ describe("Anthropic Messages payload transform", () => {
     assert.equal(JSON.stringify(capped).split("cache_control").length - 1, 4, "no fifth breakpoint");
   });
 
+  it("reuses the breakpoint pi-ai put on a tool when the system prompt has none", () => {
+    const toolTtl = { type: "ephemeral", ttl: "1h" };
+    const onlyTool = {
+      ...payload(),
+      system: [{ type: "text", text: "S" }],
+      tools: [{ name: "lookup", input_schema: { type: "object" }, cache_control: toolTtl }],
+      messages: [{ role: "user", content: [{ type: "text", text: MARKER }, { type: "text", text: "Q" }] }],
+    };
+    const next = transformAnthropicPayload(onlyTool, plan({ documents: [TEXT_DOC] })) as ReturnType<typeof payload>;
+    assert.deepEqual(next.messages[0]?.content[0], { type: "text", text: TEXT_PART, cache_control: toolTtl });
+  });
+
   it("forces one tool call for the response schema", () => {
     const next = transformAnthropicPayload(
       payload(),

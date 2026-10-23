@@ -329,3 +329,20 @@ export function outcomeOf(message: ChatAssistantMessage): Outcome {
 export async function outcome(chat: ChatKit, input: TestTurn, signal?: AbortSignal): Promise<Outcome> {
   return outcomeOf((await runToEnd(chat, input, signal)).message);
 }
+
+/** Runs `run` with the environment variables set (or, for `undefined`, deleted), and restores them afterwards. */
+export async function withEnv<T>(env: Record<string, string | undefined>, run: () => Promise<T>): Promise<T> {
+  const saved = Object.fromEntries(Object.keys(env).map((name) => [name, process.env[name]]));
+  const apply = (values: Record<string, string | undefined>) => {
+    for (const [name, value] of Object.entries(values)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  };
+  apply(env);
+  try {
+    return await run();
+  } finally {
+    apply(saved);
+  }
+}

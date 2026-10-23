@@ -18,6 +18,7 @@ import {
   textOf,
   turn,
   testKit,
+  withEnv,
   wireFetch,
 } from "./helpers.ts";
 
@@ -69,23 +70,15 @@ describe("streamSimple on OpenAI Completions (OpenRouter)", () => {
     else process.env.OPENROUTER_API_KEY = savedKey;
   });
 
-  it("sends no OpenAI organisation or project header from the environment, to OpenRouter or anyone else", async () => {
-    const saved = [process.env.OPENAI_ORG_ID, process.env.OPENAI_PROJECT_ID];
-    process.env.OPENAI_ORG_ID = "org-from-env";
-    process.env.OPENAI_PROJECT_ID = "proj-from-env";
-    try {
+  it("sends no OpenAI organisation or project header from the environment", async () => {
+    await withEnv({ OPENAI_ORG_ID: "org-from-env", OPENAI_PROJECT_ID: "proj-from-env" }, async () => {
       const { chat, fake } = kit([{ method: "POST", url: COMPLETIONS_URL, respond: okStream }]);
       assert.equal((await outcome(chat, turn())).type, "done");
       const headers = fake.calls.find((call) => call.method === "POST")?.headers ?? {};
       assert.equal(headers["openai-organization"], undefined);
       assert.equal(headers["openai-project"], undefined);
       assert.equal(headers.authorization, "Bearer explicit-or-key");
-    } finally {
-      for (const [name, value] of [["OPENAI_ORG_ID", saved[0]], ["OPENAI_PROJECT_ID", saved[1]]] as const) {
-        if (value === undefined) delete process.env[name];
-        else process.env[name] = value;
-      }
-    }
+    });
   });
 
   it("streams text and reports usage with the provider's raw record (cost), using only the explicit key", async () => {

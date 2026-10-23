@@ -57,8 +57,9 @@ export interface GoogleProviderOptions {
  *   blocks ends with its `promptFeedback.blockReason` as `rawStopReason` (`googleChatStreams`).
  * - `chatKit`: Gemini takes PDF and image documents and tools; the chat kit offers its plain
  *   text chat models (`isOfferedGeminiId`). A `gemini-*` model reads PDFs when it reads images and
- *   takes tools; a `gemma-*` model takes tools too (Google documents function calling for Gemma 4
- *   on the Gemini API) but not PDFs, which Google documents only for Gemini. It is priced from the Gemini rate table, else
+ *   takes tools. A `gemma-4*` model takes tools too (Google documents function calling for Gemma 4
+ *   on the Gemini API), but no PDFs: Google documents PDF input for Gemini models only. Any other
+ *   id takes neither, until Google documents it. A model is priced from the Gemini rate table, else
  *   pi-ai's list price. Gemini reports no charge, so every turn is estimated.
  *
  * It also serves `GOOGLE_IMAGE_MODELS` (`models.getModelOfType("image", "google", id)`),
@@ -105,9 +106,9 @@ export function createGoogleProvider(options: GoogleProviderOptions): ChatProvid
       offers: (model) => (model.type ?? "chat") === "chat" && isOfferedGeminiId(model.id),
       describe: (model) => {
         const rate = googleChatRate(model.id);
-        // Off until documented: function calling for Gemini and Gemma, PDF input for Gemini only.
+        // Off until documented: function calling for Gemini and Gemma 4, PDF input for Gemini.
         const gemini = model.id.startsWith("gemini-");
-        const tools = gemini || model.id.startsWith("gemma-");
+        const tools = gemini || model.id.startsWith("gemma-4");
         return { fileInput: gemini && model.input.includes("image"), tools, ...(rate === undefined ? {} : { rate }) };
       },
       reportedCostUsd: () => undefined,
