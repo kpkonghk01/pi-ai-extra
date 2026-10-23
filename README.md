@@ -24,7 +24,7 @@ The chat kit, [`@hk01/pi-ai-extra-chat-kit`](#chat-kit), runs one chat turn the 
 
 Non-negotiable behaviour (see [ADR 0003](docs/adr/0003-explicit-provider-execution.md)):
 
-- API keys are passed explicitly from server-side configuration. The packages never read environment variables and must not be bundled into browser code.
+- API keys are passed explicitly from server-side configuration. The packages never read a key or any setting of their own from environment variables (the SDKs underneath read a few more: see [Chat providers](#chat-providers-and-createchatkit)), and must not be bundled into browser code.
 - No provider fallback, model fallback or cross-provider upload. A failure is reported with its `{ provider, model }`.
 - Reference-image limits are validated before any request; images are never dropped.
 
@@ -173,7 +173,7 @@ const output = await models.generateImages(
 
 pi-ai 1.2 keeps chat and image models in one `Models` collection, so each package exports one factory, `create<Provider>Provider()`, which registers its chat models and its image catalogue (`KIE_IMAGE_MODELS`, `TOAPIS_IMAGE_MODELS`, `GOOGLE_IMAGE_MODELS`) under one provider id (`kie`, `toapis`, `google`) with one explicit key. `getModels()` and `getModel()` return chat models only; look image models up with `getModelOfType("image", provider, id)` or `getModelsOfType("image", provider)`, and run them with `models.generateImages()`. Image helper settings (for example a poll cadence, KIE `uploadBaseUrl` or ToAPIs `clientBusinessId`) go in the factory's `imageSettings`; the image host is set there, independently of the chat base URL. Image options go in `ImagesOptions.metadata` using the helper option names and are validated strictly; unknown keys fail the request rather than being ignored. pi-ai's `ImagesContext` has no system prompt and `ImagesOptions` no temperature, so Google's `temperature` and `systemInstruction` also go in `metadata`.
 
-`createGoogleProvider({ apiKey, modelIds?, baseUrl?, imageSettings? })` serves pi-ai's own Gemini adapter and model catalogue (`GOOGLE_CHAT_MODEL_IDS`), but authenticates only with the explicit key: unlike pi-ai's `googleProvider()`, it never reads `GEMINI_API_KEY`. `modelIds` restricts the chat list; unknown ids throw. A model in the Gemini rate table (`GEMINI_CHAT_RATES`, see [Chat rates](#chat-rates)) gets its `cost` from that schedule; every other model keeps pi-ai's list price.
+`createGoogleProvider({ apiKey, modelIds?, baseUrl?, imageSettings?, grounding?, fetch? })` serves pi-ai's own Gemini adapter and model catalogue (`GOOGLE_CHAT_MODEL_IDS`), but authenticates only with the explicit key: unlike pi-ai's `googleProvider()`, it never reads `GEMINI_API_KEY`. `modelIds` restricts the chat list; unknown ids throw. A model in the Gemini rate table (`GEMINI_CHAT_RATES`, see [Chat rates](#chat-rates)) gets its `cost` from that schedule; every other model keeps pi-ai's list price.
 
 KIE and ToAPIs chat models use pi-ai's own OpenAI Responses and Anthropic Messages adapters. Capability metadata (context window, thinking levels) is copied from pi-ai's catalogue when the id, or `ChatModelDefinition.catalogueId`, matches; KIE's dashed Codex ids (`gpt-5-6-sol`) point at pi-ai's dotted ones (`gpt-5.6-sol`). Prices are never copied from pi-ai's catalogue, because KIE and ToAPIs prices differ from list prices.
 
@@ -182,7 +182,7 @@ KIE and ToAPIs chat models use pi-ai's own OpenAI Responses and Anthropic Messag
 Every chat model has a **rate**: its provider's published per-token prices, in USD per 1M tokens, as a dated schedule (the glossary's [Model rate](CONTEXT.md#model-rate)). A model whose rate is not published has no rate, never a zero rate.
 
 ```ts
-import type { ModelRate } from "@hk01/pi-ai-extra-kie/pi-ai"; // also exported by the ToAPIs and Google /pi-ai entries and the chat kit
+import type { ModelRate } from "@hk01/pi-ai-extra-kie/pi-ai"; // also exported by every provider's /pi-ai entry and the chat kit
 
 const rate: ModelRate = {
   periods: [
@@ -317,8 +317,15 @@ Pass `cacheRetention` explicitly: when it is omitted, pi-ai falls back to the `P
 
 ```sh
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.3.0/hk01-pi-ai-extra-chat-kit-0.3.0.tgz
-pnpm add @earendil-works/pi-ai@1.2.0   # peer, with the provider packages you use (google 0.6+, openrouter 0.1+, kie and toapis 0.5+)
+pnpm add @earendil-works/pi-ai@1.2.0   # peer
+# and the provider packages you register (each its own release asset, see Install above):
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.6.0/hk01-pi-ai-extra-google-0.6.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.1.0/hk01-pi-ai-extra-openrouter-0.1.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.5.0/hk01-pi-ai-extra-kie-0.5.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.5.0/hk01-pi-ai-extra-toapis-0.5.0.tgz
 ```
+
+The chat kit and the provider `/pi-ai` entries are ESM-only. A TypeScript project that resolves with `module: NodeNext` needs `"type": "module"` in its `package.json` to import them (with `moduleResolution: Bundler`, as Next.js projects use, nothing is needed); `require()` of them fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
 
 ### Chat providers and `createChatKit`
 
@@ -347,8 +354,8 @@ const chat = createChatKit({
 | `createToapisProvider` | `toapis` | `baseUrl`, `models`, `fetch` | Not yet | Not yet |
 
 - The kit knows a provider by its pi-ai id (`provider.id`). A name a consumer gives a provider (for example the portal's `gemini` for `google`) is the consumer's own: it maps the name before calling the kit, and keeps its own table from configuration to factories.
-- Every key goes to a factory, so the kit never handles one. Each provider resolves only the key its factory bound: the kit registers them in a pi-ai `Models` collection with an empty auth context, so nothing reads `GEMINI_API_KEY`, `OPENROUTER_API_KEY` or any other environment variable.
-- **One kit per tenant.** A chat provider binds one key, so two keys for the same provider are two kits. A multi-tenant service creates a kit per tenant; a kit holds no timers between calls, so it needs no `dispose()`.
+- Every key goes to a factory, so the kit never handles one. Each provider resolves only the key its factory bound: the kit registers them in a pi-ai `Models` collection with an empty auth context, so none of the kit's providers reads `GEMINI_API_KEY`, `OPENROUTER_API_KEY` or any other key from the environment. Settings the SDKs underneath read from the environment are not the kit's to change, with one exception: the OpenAI SDK would send `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` to OpenRouter, KIE and ToAPIs, so the kit suppresses those two headers. `GOOGLE_GENAI_USE_VERTEXAI` (it switches Gemini to a Vertex path) and `GOOGLE_API_KEY` (a warning when it and `GEMINI_API_KEY` are both set) still reach the Gemini SDK: keep them out of the server's environment.
+- **One kit per tenant.** A chat provider binds one key, so two keys for the same provider are two kits. A multi-tenant service creates a kit per tenant; a kit starts nothing that outlives a call, so it needs no `dispose()`: the only timer is the deadline of a model-list read, which is unref'd, so it never keeps a process alive.
 - `createChatKit` throws a `TypeError` for a value that is not a chat provider (no `chatKit` traits, for example a provider from an older package), for two providers with the same id, and for an invalid `fetch`.
 - `fetch` (optional) is for tests or instrumentation: every turn's requests use it instead of the provider's own, except Gemini's, whose pi-ai adapter rejects a custom fetch. Model lists use each factory's `fetch` option.
 
@@ -434,7 +441,7 @@ What each listed model says about itself, under `model.chatKit`:
 | `fileDocuments` | Whether a turn may send it both PDF and image documents: the provider takes them (not KIE or ToAPIs yet) and the model reads both natively. A model without file input is `false`, since a PDF never goes to a paid parser. A model from pi-ai's OpenRouter catalogue (the live list unreadable) is `false` too |
 | `tools` | Whether a turn may send it `Context.tools`: the provider takes tools (not KIE or ToAPIs yet) and the model does (OpenRouter: `supported_parameters` has `tools`) |
 | `responseSchema` | Whether a turn without `reasoning` may carry a `responseSchema`. With a reasoning level, a schema may still be `UNSUPPORTED` (Anthropic Messages without native structured output) |
-| `rate` | The model's dated rate schedule (`ModelRate`), or absent when the model has none: never a zero rate |
+| `rate` | The model's dated rate schedule (`ModelRate`), or absent when the model has none: never a zero rate. Read the price from here, not from the model's `cost`: pi-ai's `Model.cost` is the period in force when the provider was created, so a long-running process shows a stale price after a scheduled change (Gemini 3.x Flash doubles on 2027-01-01), while the kit prices each turn from the schedule at the time it starts |
 
 ### Documents
 
@@ -453,7 +460,7 @@ Documents never enter pi-ai messages as parts the adapters would drop. A unique 
 
 ### Prompt layout and caching
 
-The request is ordered: system prompt, documents, the rest of the conversation. The documents open the first user message of the context, so the prompt is identical across turns, and across sessions with the same documents, up to the end of the documents. Keep each document's `url` stable for that to hold. The kit passes `cacheRetention: "short"`. On Anthropic Messages it adds one cache breakpoint on the last document block, beside pi-ai's own on the system prompt and the last user message (three of Anthropic's four). Gemini caches implicitly.
+The request is ordered: system prompt, documents, the rest of the conversation. The documents open the first user message of the context, so the prompt is identical across turns, and across sessions with the same documents, up to the end of the documents. Keep each document's `url` stable for that to hold. The kit passes `cacheRetention: "short"`. On Anthropic Messages it adds one cache breakpoint on the last document block, beside pi-ai's own on the system prompt and the last user message, and on the last tool when there are tools (so up to Anthropic's limit of four). The kit adds its own only while the request has fewer than four, so a breakpoint pi-ai adds later cannot push the request over the limit. Gemini caches implicitly.
 
 ### Response schema
 

@@ -89,7 +89,7 @@ export async function prepareTurn(
   // From the installed list, a model reads only what the installed catalogue says it reads.
   const installedNote = snapshot.source === "installed" ? unread : "";
 
-  if (tools.length > 0) checkTools(entry, model, described.tools);
+  if (tools.length > 0 || hasToolHistory(context.messages)) checkTools(entry, model, described.tools);
   if (!model.input.includes("image") && hasImages(context.messages)) {
     throw new TurnFailure(
       "UNSUPPORTED",
@@ -137,9 +137,14 @@ export async function prepareTurn(
 /** Tools pass through to pi-ai only where the provider takes them (verified live) and the model does. */
 function checkTools(entry: RegisteredProvider, model: Model<Api>, modelTakesTools: boolean): void {
   if (!entry.traits.takes.tools) {
-    throw new TurnFailure("UNSUPPORTED", `Provider ${entry.id} does not take tools yet (not verified live), so this turn's tools cannot be sent.`);
+    throw new TurnFailure("UNSUPPORTED", `Provider ${entry.id} does not take tools yet (not verified live), so this turn's tools, tool calls or tool results cannot be sent.`);
   }
   if (!modelTakesTools) throw new TurnFailure("UNSUPPORTED", `Model ${model.id} does not take tools.`);
+}
+
+/** Whether the conversation holds tool calls or tool results: a provider that takes no tools cannot take those either. */
+function hasToolHistory(messages: readonly Message[]): boolean {
+  return messages.some((message) => message.role === "toolResult" || (message.role === "assistant" && message.content.some((block) => block.type === "toolCall")));
 }
 
 /**

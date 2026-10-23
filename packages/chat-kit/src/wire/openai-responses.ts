@@ -3,7 +3,7 @@ import { dataUrl } from "../documents.ts";
 import { isRecord } from "@hk01/pi-ai-extra-internal/util";
 import { createUsageCapture } from "../usage.ts";
 import { encodeDocument, placeByUrl, replaceDocumentMarker, textOfType, type DocumentEncoder } from "./document-parts.ts";
-import { CONTENT_FILTER_BLOCK, openAIUsage, RESPONSES_USAGE_FIELDS } from "./openai.ts";
+import { CONTENT_FILTER_BLOCK, OPENAI_AMBIENT_HEADERS, openAIUsage, RESPONSES_USAGE_FIELDS } from "./openai.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
 type ResponsesPart = Record<string, unknown>;
@@ -82,6 +82,7 @@ export function createOpenAIResponsesObserver(): StreamObserver {
 export const OPENAI_RESPONSES_WIRE_API: WireApi = {
   api: "openai-responses",
   acceptsFetch: true,
+  suppressedHeaders: OPENAI_AMBIENT_HEADERS,
   schemaAsToolCall: () => false,
   placeDocument: placeByUrl,
   unsupported: () => undefined,

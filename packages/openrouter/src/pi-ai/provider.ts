@@ -11,8 +11,9 @@ import { isRecord, withoutTrailingSlash } from "@hk01/pi-ai-extra-internal/util"
 import { fetchOpenRouterModels, type OpenRouterApi, type OpenRouterModelInfo } from "./live-models.ts";
 
 /** OpenRouter's API root; pi-ai's models use `<root>/v1`. */
-export const OPENROUTER_API_ROOT = "https://openrouter.ai/api";
+const OPENROUTER_API_ROOT = "https://openrouter.ai/api";
 
+/** Options of `createOpenRouterProvider`. */
 export interface OpenRouterProviderOptions {
   /** OpenRouter API key from server-side secret configuration. */
   apiKey: string;

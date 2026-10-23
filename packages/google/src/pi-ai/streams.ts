@@ -26,13 +26,13 @@ import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
 export function googleChatStreams(inner: ProviderStreams, grounding: boolean): ProviderStreams {
   return {
     ...inner,
-    stream: (model, context, options) => withPromptBlockReason(model, options, (hooked) => inner.stream(model, context, hooked), grounding),
+    stream: (model, context, options) => withGeminiQuirks(model, options, (hooked) => inner.stream(model, context, hooked), grounding),
     streamSimple: (model, context, options) =>
-      withPromptBlockReason(model, options, (hooked) => inner.streamSimple(model, context, hooked), grounding),
+      withGeminiQuirks(model, options, (hooked) => inner.streamSimple(model, context, hooked), grounding),
   };
 }
 
-function withPromptBlockReason<T extends StreamOptions | SimpleStreamOptions>(
+function withGeminiQuirks<T extends StreamOptions | SimpleStreamOptions>(
   requested: Model<Api>,
   options: T | undefined,
   run: (options: T) => AssistantMessageEventStream,

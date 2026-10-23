@@ -11,6 +11,7 @@ import type {
 import type { ChatProvider } from "@hk01/pi-ai-extra-internal/pi-ai";
 import type { ModelRate } from "@hk01/pi-ai-extra-internal/rates";
 
+/** What `createChatKit` registers: the chat providers, and a fetch for tests or instrumentation. */
 export interface ChatKitOptions {
   /**
    * The chat providers the consumer built with the provider packages' factories, each bound to
@@ -25,6 +26,7 @@ export interface ChatKitOptions {
   fetch?: typeof globalThis.fetch | undefined;
 }
 
+/** Options of `ChatKit.listModels`. */
 export interface ChatListModelsOptions {
   /** Stops waiting: `listModels` rejects with the signal's reason. A refresh already started still completes. */
   signal?: AbortSignal | undefined;
@@ -51,6 +53,10 @@ export type ChatSchemaStreamOptions = ChatBaseOptions & Optional<{ responseSchem
 /** pi-ai's `Context` without tools, which a response schema needs. */
 export type ChatToolFreeContext = Omit<Context, "tools"> & { tools?: undefined };
 
+/**
+ * The chat kit: one interface for calling LLMs, over the chat providers it was created with. A turn
+ * runs on exactly the provider and model its reference names, never on another (ADR 0003).
+ */
 export interface ChatKit {
   /**
    * Runs one turn on exactly the provider and model `model` names: a Gem turn, from a tool-free
@@ -104,6 +110,7 @@ export type ChatAssistantMessage = AssistantMessage &
  */
 export type ChatTurnErrorCode = "CONTENT_BLOCKED" | "PROVIDER_ERROR" | "UNSUPPORTED" | "UNKNOWN_MODEL" | "INVALID_REQUEST";
 
+/** The chat kit's account of a failed turn, on the final message as `chatKit.error`. */
 export interface ChatTurnError {
   code: ChatTurnErrorCode;
   /** HTTP status of the provider's error response, when there was one. */
@@ -156,6 +163,7 @@ export interface ChatUsage {
 /** A pi-ai `Model` with what the chat kit adds under `chatKit`. It is also a `ChatModelRef`. */
 export type ChatModel = Model<Api> & { chatKit: ChatModelTraits };
 
+/** What the chat kit adds to a listed pi-ai `Model`, under `chatKit`. */
 export interface ChatModelTraits {
   /** The model reads PDFs natively (pi-ai's `input` has only text and image). */
   fileInput: boolean;
@@ -173,7 +181,11 @@ export interface ChatModelTraits {
    * still be `UNSUPPORTED` (Anthropic Messages without native structured output).
    */
   responseSchema: boolean;
-  /** The model's dated rate schedule, in USD per 1M tokens. Absent when it has none, never a zero rate. */
+  /**
+   * The model's dated rate schedule, in USD per 1M tokens. Absent when it has none, never a zero rate.
+   * Read prices from here, not from `Model.cost`: that is the period in force when the provider was
+   * created, and goes stale in a long-running process after a scheduled change.
+   */
   rate?: ModelRate | undefined;
 }
 

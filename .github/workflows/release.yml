@@ -102,7 +102,10 @@ jobs:
           # The kits' provider peers are not on a registry: pack them for the smoke test only (not released).
           if [ "$PACKAGE_NAME" = "@hk01/pi-ai-extra-image-kit" ] || [ "$PACKAGE_NAME" = "@hk01/pi-ai-extra-chat-kit" ]; then
             mkdir -p smoke-peers
-            for peer in google kie toapis openrouter; do
+            # The image kit peers on the three image providers only; the chat kit also takes openrouter.
+            peers="google kie toapis"
+            if [ "$PACKAGE_NAME" = "@hk01/pi-ai-extra-chat-kit" ]; then peers="$peers openrouter"; fi
+            for peer in $peers; do
               pnpm --filter "@hk01/pi-ai-extra-$peer" pack --pack-destination ./smoke-peers
             done
             ls -l smoke-peers

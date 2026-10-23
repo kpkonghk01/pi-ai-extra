@@ -41,6 +41,21 @@ function findCacheControl(payload: Record<string, unknown>): unknown {
   return undefined;
 }
 
+/** Anthropic allows at most four cache breakpoints in one request; a fifth is a 400. */
+const MAX_CACHE_BREAKPOINTS = 4;
+
+/** How many cache breakpoints the request already has: on its system blocks, message blocks and tools. */
+function countCacheBreakpoints(payload: Record<string, unknown>): number {
+  const blocks = [
+    ...(Array.isArray(payload.system) ? payload.system : []),
+    ...(Array.isArray(payload.tools) ? payload.tools : []),
+    ...(Array.isArray(payload.messages)
+      ? payload.messages.flatMap((message) => (isRecord(message) && Array.isArray(message.content) ? message.content : []))
+      : []),
+  ];
+  return blocks.filter((block) => isRecord(block) && isRecord(block.cache_control)).length;
+}
+
 function thinkingEnabled(thinking: unknown): boolean {
   return isRecord(thinking) && thinking.type !== "disabled";
 }
@@ -66,7 +81,7 @@ export function transformAnthropicPayload(payload: unknown, plan: PayloadPlan): 
     const replacement = plan.documents.map((document) => encodeDocument(document, ANTHROPIC_BLOCKS));
     const cacheControl = findCacheControl(payload);
     const last = replacement.length - 1;
-    if (cacheControl !== undefined && last >= 0) replacement[last] = { ...replacement[last], cache_control: cacheControl };
+    if (cacheControl !== undefined && last >= 0 && countCacheBreakpoints(payload) < MAX_CACHE_BREAKPOINTS) replacement[last] = { ...replacement[last], cache_control: cacheControl };
     next.messages = replaceDocumentMarker(payload.messages, plan.marker, replacement, { partsKey: "content", textOf: textOfType("text") });
   }
   if (plan.responseSchema && plan.nativeStructuredOutput) {

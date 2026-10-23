@@ -293,6 +293,18 @@ describe("Anthropic Messages payload transform", () => {
     assert.ok(!JSON.stringify(uncached).includes("cache_control"));
   });
 
+  it("adds its document breakpoint only while the request has fewer than Anthropic's four", () => {
+    const withTool = { ...payload(), tools: [{ name: "lookup", input_schema: { type: "object" }, cache_control: cache }] };
+    // system + last tool + last user message = 3, so the documents' breakpoint is the fourth.
+    const four = transformAnthropicPayload(withTool, plan({ documents: [TEXT_DOC] })) as ReturnType<typeof payload>;
+    assert.equal(JSON.stringify(four).split("cache_control").length - 1, 4);
+    // A request that already has four (a future pi-ai breakpoint) gets none from the kit: a fifth is a 400.
+    const full = { ...withTool, messages: [{ role: "user", content: [{ type: "text", text: MARKER }, { type: "text", text: "Q", cache_control: cache }] }, { role: "assistant", content: [{ type: "text", text: "A" }] }, { role: "user", content: [{ type: "text", text: "Q2", cache_control: cache }] }] };
+    assert.equal(JSON.stringify(full).split("cache_control").length - 1, 4);
+    const capped = transformAnthropicPayload(full, plan({ documents: [TEXT_DOC] }));
+    assert.equal(JSON.stringify(capped).split("cache_control").length - 1, 4, "no fifth breakpoint");
+  });
+
   it("forces one tool call for the response schema", () => {
     const next = transformAnthropicPayload(
       payload(),

@@ -3,7 +3,8 @@ import { describe, it } from "node:test";
 import { createAssistantMessageEventStream, createModels } from "@earendil-works/pi-ai";
 import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { createFakeFetch, jsonResponse } from "@hk01/pi-ai-extra-internal/testing";
-import { createGoogleProvider, isOfferedGeminiId } from "../src/pi-ai/index.ts";
+import { createGoogleProvider } from "../src/pi-ai/index.ts";
+import { isOfferedGeminiId } from "../src/pi-ai/live-models.ts";
 import { googleChatStreams, withGroundingTools } from "../src/pi-ai/streams.ts";
 
 const MODELS_URL = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\?pageSize=1000/;
@@ -70,7 +71,7 @@ describe("Google chat provider: chatKit traits", () => {
   });
 
   it("offers plain text chat models only: no image-output, Live, embedding or -latest ids", () => {
-    for (const id of ["gemini-3.1-flash-live-preview", "gemini-3.1-flash-lite-image", "nano-banana-pro-preview", "gemini-flash-latest", "text-embedding-9"]) {
+    for (const id of ["gemini-3.1-flash-image", "gemini-3-pro-image", "gemini-nano-banana-2.1", "gemini-3.1-flash-live-preview", "gemini-3.1-flash-lite-image", "nano-banana-pro-preview", "gemini-flash-latest", "text-embedding-9"]) {
       assert.equal(isOfferedGeminiId(id), false, id);
     }
     assert.equal(isOfferedGeminiId("gemini-3.5-flash"), true);
@@ -84,7 +85,7 @@ describe("Google chat provider: chatKit traits", () => {
     assert.deepEqual([described.fileInput, described.tools], [true, true]);
     assert.equal(described.rate?.periods[0]?.input, 0.75);
     const gemma = { ...flash, id: "gemma-4-27b" };
-    assert.equal(chatKit.describe(gemma).tools, false);
+    assert.deepEqual([chatKit.describe(gemma).tools, chatKit.describe(gemma).fileInput], [false, false], "Gemma is not verified to take tools or PDFs");
   });
 });
 

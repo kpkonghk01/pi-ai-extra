@@ -38,6 +38,14 @@ _Avoid_: Multi-Provider Module, 統一 Provider Module (the earlier browser-modu
 
 The consumer-side server package that registers the providers a consumer application builds from its configuration (keys) with the provider packages' factories, offers one interface for calling LLMs, and routes each call by its model reference to the matching provider. It runs the turn on exactly the provider and model the consumer application chose. It extends pi-ai rather than replacing it: a turn takes pi-ai's `Context` and option names, and streams pi-ai's events. Beside them it gives every provider the same extras pi-ai lacks — reference documents, a required response shape, safety-block reporting and a usage record — so the consumer never writes per-provider code. Like the image kit, it never chooses a provider for the user and never falls back.
 
+## Gem turn
+
+One chat turn of a Gem: a conversation whose context carries no tools, and that may have a required response shape (a response schema). Contrast an agent turn. The chat kit's first overload takes a Gem turn.
+
+## Agent turn
+
+One chat turn whose context may carry tools, with their tool calls and tool results, and has no response schema: tools and a response schema are mutually exclusive. The chat kit's second overload takes an agent turn.
+
 ## Chat provider
 
 The pi-ai `Provider` a provider adapter's factory builds with an explicit key, carrying under its `chatKit` member the traits the chat kit needs and pi-ai has no field for: document and tool support, native structured output, which models are offered and what each reads, model rates and the provider's cost policy. It is still a pi-ai `Provider`; plain pi-ai code ignores the traits. The chat kit identifies a chat provider by its pi-ai provider id, such as `google`. A name a consumer application gives a provider, such as the portal's `gemini`, is the consumer's own, and the consumer maps it before calling the kit.

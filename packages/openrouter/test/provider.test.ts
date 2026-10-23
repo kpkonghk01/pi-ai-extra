@@ -3,7 +3,8 @@ import { describe, it } from "node:test";
 import { createModels } from "@earendil-works/pi-ai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { createFakeFetch, jsonResponse } from "@hk01/pi-ai-extra-internal/testing";
-import { createOpenRouterProvider, isOfferedOpenRouterId, openRouterRate, openRouterThinkingLevelMap } from "../src/pi-ai/index.ts";
+import { openRouterRate, openRouterThinkingLevelMap } from "../src/pi-ai/live-models.ts";
+import { createOpenRouterProvider, isOfferedOpenRouterId } from "../src/pi-ai/provider.ts";
 
 const LIST = {
   data: [
@@ -206,6 +207,8 @@ describe("OpenRouter metadata readers", () => {
     assert.deepEqual(openRouterRate({ prompt: "0.000003", completion: "0.000015" }), { periods: [{ input: 3, output: 15 }] });
     assert.equal(openRouterRate({ prompt: "-1", completion: "-1" }), undefined);
     assert.equal(openRouterRate(undefined), undefined);
+    assert.deepEqual(openRouterRate({ prompt: "0", completion: "0" }), { periods: [{ input: 0, output: 0 }] }, "a published free rate");
+    assert.equal(openRouterRate({ prompt: "0.000001" }), undefined, "no output price: no rate");
     const tiered = openRouterRate({ prompt: "0.000002", completion: "0.00001", overrides: [{ min_prompt_tokens: 200_000, prompt: "0.000004", completion: "0.000015" }] });
     assert.deepEqual(tiered?.periods[0]?.largePrompt, { overPromptTokens: 200_000, input: 4, output: 15 });
   });

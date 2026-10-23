@@ -4,8 +4,6 @@ import { createFakeFetch, hangingResponse, jsonResponse, type FakeRoute } from "
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { createOpenRouterProvider } from "@hk01/pi-ai-extra-openrouter/pi-ai";
 import { createChatKit } from "../src/index.ts";
-import { isOfferedGeminiId } from "@hk01/pi-ai-extra-google/pi-ai";
-import { openRouterRate, openRouterThinkingLevelMap } from "@hk01/pi-ai-extra-openrouter/pi-ai";
 import { TurnFailure } from "../src/errors.ts";
 import type { ChatModel, ChatProviderModels } from "../src/index.ts";
 import { createModelList, FAILED_REFRESH_RETRY_MS, LIST_READ_TIMEOUT_MS, MODEL_LIST_TTL_MS } from "../src/models/list.ts";
@@ -667,22 +665,6 @@ describe("OpenRouter live list", () => {
     const [entry] = await chat.listModels();
     assert.ok(entry && "models" in entry && entry.source === "live");
   });
-
-  it("maps pricing and reasoning metadata as pi-ai's catalogue generator does", () => {
-    assert.deepEqual(openRouterRate({ prompt: "0", completion: "0" }), { periods: [{ input: 0, output: 0 }] }, "a published free rate");
-    assert.equal(openRouterRate({ prompt: "0.000001" }), undefined, "no output price: no rate");
-    assert.deepEqual(openRouterThinkingLevelMap({ supported_efforts: ["high", "low", "none"] }), {
-      off: "none",
-      minimal: null,
-      low: "low",
-      medium: null,
-      high: "high",
-      xhigh: null,
-      max: null,
-    });
-    assert.deepEqual(openRouterThinkingLevelMap({ mandatory: true }), { off: null });
-    assert.equal(openRouterThinkingLevelMap(null), undefined);
-  });
 });
 
 describe("Gemini live list", () => {
@@ -834,10 +816,6 @@ describe("Gemini chat-only filter", () => {
     const listedIds = entry.models.map((model) => model.id);
     assert.ok(listedIds.includes("gemini-3.8-flash"));
     for (const id of [...NOT_CHAT, ...ALIASES]) assert.ok(!listedIds.includes(id), id);
-    // pi-ai's Google catalogue has no Nano Banana id; the installed list applies the same rule.
-    for (const id of ["nano-banana-pro-preview", "gemini-nano-banana-2.1", "gemini-3.1-flash-image", "gemini-3-pro-image"]) {
-      assert.equal(isOfferedGeminiId(id), false, id);
-    }
     const sent = t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 500 }));
     for (const model of ["gemini-3.1-flash-live-preview", "gemini-flash-latest", "gemini-3.1-flash-lite-image", "nano-banana-pro-preview"]) {
       const turnResult = await outcome(chat, turn({ provider: "google", model }));

@@ -17,6 +17,7 @@ const CATALOGUE: readonly GoogleChatModel[] = Object.values(GOOGLE_MODELS) as Go
 /** Gemini chat model ids from pi-ai's built-in catalogue (the default model list). */
 export const GOOGLE_CHAT_MODEL_IDS: readonly string[] = CATALOGUE.map((model) => model.id);
 
+/** Options of `createGoogleProvider`. */
 export interface GoogleProviderOptions {
   /** Gemini API key from server-side secret configuration; used for chat and images. */
   apiKey: string;
@@ -103,7 +104,9 @@ export function createGoogleProvider(options: GoogleProviderOptions): ChatProvid
       offers: (model) => (model.type ?? "chat") === "chat" && isOfferedGeminiId(model.id),
       describe: (model) => {
         const rate = googleChatRate(model.id);
-        return { fileInput: model.input.includes("image"), tools: model.id.startsWith("gemini-"), ...(rate === undefined ? {} : { rate }) };
+        // Off until verified: only `gemini-*` models are known to take PDFs and tools (not Gemma).
+        const gemini = model.id.startsWith("gemini-");
+        return { fileInput: gemini && model.input.includes("image"), tools: gemini, ...(rate === undefined ? {} : { rate }) };
       },
       reportedCostUsd: () => undefined,
       estimatesCost: true,

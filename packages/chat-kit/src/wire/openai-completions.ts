@@ -3,7 +3,7 @@ import { dataUrl } from "../documents.ts";
 import { isRecord } from "@hk01/pi-ai-extra-internal/util";
 import { createUsageCapture } from "../usage.ts";
 import { encodeDocument, placeByUrl, replaceDocumentMarker, textOfType, type DocumentEncoder } from "./document-parts.ts";
-import { COMPLETIONS_USAGE_FIELDS, CONTENT_FILTER_BLOCK, openAIUsage } from "./openai.ts";
+import { COMPLETIONS_USAGE_FIELDS, CONTENT_FILTER_BLOCK, OPENAI_AMBIENT_HEADERS, openAIUsage } from "./openai.ts";
 import { withFileParser } from "./openrouter.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
@@ -63,6 +63,7 @@ export function createOpenAICompletionsObserver(): StreamObserver {
 export const OPENAI_COMPLETIONS_WIRE_API: WireApi = {
   api: "openai-completions",
   acceptsFetch: true,
+  suppressedHeaders: OPENAI_AMBIENT_HEADERS,
   schemaAsToolCall: () => false,
   placeDocument: placeByUrl,
   unsupported: () => undefined,

@@ -60,6 +60,12 @@ export interface WireApi {
   readonly api: Api;
   /** Whether pi-ai's adapter for this API accepts a custom fetch (its Gemini adapter rejects one). */
   readonly acceptsFetch: boolean;
+  /**
+   * Headers the request must not carry, as `null` values (pi-ai's way to suppress a header an SDK
+   * would add). pi-ai's OpenAI adapters use the OpenAI SDK, which reads `OPENAI_ORG_ID` and
+   * `OPENAI_PROJECT_ID` from the environment and would send them to OpenRouter, KIE or ToAPIs.
+   */
+  readonly suppressedHeaders?: Readonly<Record<string, null>>;
   /** Whether the response schema goes as a forced tool call: its argument deltas are then the answer text. */
   schemaAsToolCall(model: Model<Api>, request: SchemaRequest): boolean;
   /** Whether a PDF or image is fetched by the provider from its URL or sent inline. */

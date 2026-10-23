@@ -138,6 +138,7 @@ async function streamTurn(
       }
     },
     onProviderStreamEvent: (event) => run.observer.observe(event),
+    ...(turn.wire.suppressedHeaders === undefined ? {} : { headers: { ...turn.wire.suppressedHeaders } }),
     ...(turn.wire.acceptsFetch ? { fetch: statusRecordingFetch(kitFetch ?? turn.providerFetch, run.state) } : {}),
   };
 

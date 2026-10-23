@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Type, type Context, type Tool, type TranscriptContext } from "@earendil-works/pi-ai";
+import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { createOpenRouterProvider } from "@hk01/pi-ai-extra-openrouter/pi-ai";
 import { createFakeFetch, jsonResponse } from "@hk01/pi-ai-extra-internal/testing";
 import { createChatKit, type ChatKit, type ChatToolFreeContext } from "../src/index.ts";
@@ -164,6 +165,28 @@ describe("a turn that fails before anything is sent", () => {
     });
     assert.equal(fromTranscript.chatKit.error?.code, "INVALID_REQUEST");
     assert.match(fromTranscript.errorMessage ?? "", /tools or a response schema, not both/);
+  });
+
+  it("UNSUPPORTED for a context that carries tool calls or tool results, on a provider that takes no tools, even when it declares none", async () => {
+    const history: Context["messages"] = [
+      { role: "user", content: "Look it up", timestamp: 1 },
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "t1", name: "lookup", arguments: { q: "cats" } }],
+        api: "anthropic-messages",
+        provider: "kie",
+        model: "claude-sonnet-4-6",
+        usage: zeroUsage(),
+        stopReason: "toolUse",
+        timestamp: 2,
+      },
+      { role: "toolResult", toolCallId: "t1", toolName: "lookup", content: [{ type: "text", text: "found" }], isError: false, timestamp: 3 },
+    ];
+    const { chat, fake } = offlineKit();
+    const message = await chat.completeSimple({ provider: "kie", id: "claude-sonnet-4-6" }, { messages: history });
+    assert.equal(message.chatKit.error?.code, "UNSUPPORTED");
+    assert.match(message.errorMessage ?? "", /does not take tools yet/);
+    assert.deepEqual(fake.calls.filter((call) => call.method !== "GET"), [], "nothing was sent");
   });
 
   it("counts an empty tools array as no tools", async () => {

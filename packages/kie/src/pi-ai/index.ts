@@ -119,6 +119,7 @@ const CLAUDE_MODELS: readonly ChatModelDefinition[] = [
  */
 export const KIE_CHAT_MODELS: readonly ChatModelDefinition[] = [...CODEX_MODELS, ...CLAUDE_MODELS];
 
+/** Options of `createKieProvider`. */
 export interface KieProviderOptions {
   /** KIE API key from server-side secret configuration; used for chat and images. */
   apiKey: string;

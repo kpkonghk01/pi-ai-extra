@@ -54,6 +54,7 @@ export const TOAPIS_CHAT_MODELS: readonly ChatModelDefinition[] = [
   { id: "claude-haiku-4-5", protocol: "anthropic-messages", rate: ratioRate(0.15, 5) },
 ];
 
+/** Options of `createToapisProvider`. */
 export interface ToapisProviderOptions {
   /** ToAPIs API key from server-side secret configuration; used for chat and images. */
   apiKey: string;
