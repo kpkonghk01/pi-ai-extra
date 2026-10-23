@@ -1,6 +1,6 @@
 # @hk01/pi-ai-extra-kie
 
-Server-only extension to `@earendil-works/pi-ai`: Grok Imagine Image 2.0 (`grok-imagine-image-2-0/text-to-image`, `grok-imagine-image-2-0/image-edit`), GPT Image 2 (`gpt-image-2-text-to-image`, `gpt-image-2-image-to-image`) and Nano Banana 2 (`nano-banana-2`). Each paired text/edit operation shares one catalogue `familyId` (`grok-imagine-image-2-0`, `gpt-image-2`).
+Server-only extension to `@earendil-works/pi-ai`: KIE chat (Codex and Claude, a chat provider with a live model list) and image generation. Image models: Grok Imagine Image 2.0 (`grok-imagine-image-2-0/text-to-image`, `grok-imagine-image-2-0/image-edit`), GPT Image 2 (`gpt-image-2-text-to-image`, `gpt-image-2-image-to-image`) and Nano Banana 2 (`nano-banana-2`). Each paired text/edit operation shares one catalogue `familyId` (`grok-imagine-image-2-0`, `gpt-image-2`).
 
 - Main entry (CommonJS and ESM): `generateKieImage()`, `getKieTask()`, `KIE_IMAGE_MODELS`, `PiAiExtraError` / `isPiAiExtraError`.
 - `/pi-ai` subpath (ESM only, needs `@earendil-works/pi-ai@1.2.0`): `createKieProvider()`, one chat provider (a pi-ai `Provider` with the chat kit's `chatKit` traits and a live model list) serving the chat models and `KIE_IMAGE_MODELS` (image settings in `imageSettings`).

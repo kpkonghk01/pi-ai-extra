@@ -139,7 +139,7 @@ function checkTools(entry: RegisteredProvider, model: Model<Api>, modelTakesTool
   if (!entry.traits.takes.tools) {
     throw new TurnFailure("UNSUPPORTED", `Provider ${entry.id} does not take tools yet (not verified live), so this turn's tools, tool calls or tool results cannot be sent.`);
   }
-  if (!modelTakesTools) throw new TurnFailure("UNSUPPORTED", `Model ${model.id} does not take tools.`);
+  if (!modelTakesTools) throw new TurnFailure("UNSUPPORTED", `Model ${model.id} does not take tools, so this turn's tools, tool calls or tool results cannot be sent.`);
 }
 
 /** Whether the conversation holds tool calls or tool results: a provider that takes no tools cannot take those either. */

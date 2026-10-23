@@ -24,18 +24,26 @@ const ANTHROPIC_BLOCKS: DocumentEncoder<AnthropicBlock, AnthropicBlock> = {
 };
 
 /**
- * pi-ai's own prompt-cache breakpoint, if it set one: with `cacheRetention` other than `"none"` it
- * marks the system prompt and the last block of the last user message (and the last tool, where
- * supported). Reusing that object keeps its TTL and stays off when caching is off.
+ * Every block of the request that can carry a cache breakpoint: the system blocks, the tools and
+ * the blocks of each message.
  */
-function findCacheControl(payload: Record<string, unknown>): unknown {
-  const blocks = [
+function cacheableBlocks(payload: Record<string, unknown>): unknown[] {
+  return [
     ...(Array.isArray(payload.system) ? payload.system : []),
+    ...(Array.isArray(payload.tools) ? payload.tools : []),
     ...(Array.isArray(payload.messages)
       ? payload.messages.flatMap((message) => (isRecord(message) && Array.isArray(message.content) ? message.content : []))
       : []),
   ];
-  for (const block of blocks) {
+}
+
+/**
+ * pi-ai's own prompt-cache breakpoint, if it set one: with `cacheRetention` other than `"none"` it
+ * marks the system prompt, the last tool and the last block of the last user message. Reusing that
+ * object keeps its TTL and stays off when caching is off.
+ */
+function findCacheControl(payload: Record<string, unknown>): unknown {
+  for (const block of cacheableBlocks(payload)) {
     if (isRecord(block) && isRecord(block.cache_control)) return block.cache_control;
   }
   return undefined;
@@ -44,16 +52,9 @@ function findCacheControl(payload: Record<string, unknown>): unknown {
 /** Anthropic allows at most four cache breakpoints in one request; a fifth is a 400. */
 const MAX_CACHE_BREAKPOINTS = 4;
 
-/** How many cache breakpoints the request already has: on its system blocks, message blocks and tools. */
+/** How many cache breakpoints the request already has. */
 function countCacheBreakpoints(payload: Record<string, unknown>): number {
-  const blocks = [
-    ...(Array.isArray(payload.system) ? payload.system : []),
-    ...(Array.isArray(payload.tools) ? payload.tools : []),
-    ...(Array.isArray(payload.messages)
-      ? payload.messages.flatMap((message) => (isRecord(message) && Array.isArray(message.content) ? message.content : []))
-      : []),
-  ];
-  return blocks.filter((block) => isRecord(block) && isRecord(block.cache_control)).length;
+  return cacheableBlocks(payload).filter((block) => isRecord(block) && isRecord(block.cache_control)).length;
 }
 
 function thinkingEnabled(thinking: unknown): boolean {
@@ -63,9 +64,10 @@ function thinkingEnabled(thinking: unknown): boolean {
 /**
  * Anthropic Messages (OpenRouter `anthropic/*`, KIE and ToAPIs Claude): documents replace the
  * marker block (`document` for PDFs, `image` for images), with one more cache breakpoint on the
- * last document block so the prefix up to the end of the documents is cached across turns. That
- * makes three breakpoints with pi-ai's two (system prompt, last user message), within Anthropic's
- * four. The response schema is a forced call of a single tool whose input schema is the schema;
+ * last document block so the prefix up to the end of the documents is cached across turns. pi-ai
+ * sets up to three (system prompt, last tool, last user message), so that is at most Anthropic's
+ * four; the kit adds its own only while the request has fewer than four, so a breakpoint pi-ai adds
+ * later cannot push it over. The response schema is a forced call of a single tool whose input schema is the schema;
  * when the model thinks and the provider takes native structured output, it is
  * `output_config.format` instead (beside pi-ai's own `output_config`, such as its effort).
  *

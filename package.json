@@ -2,7 +2,7 @@
   "name": "pi-ai-extra",
   "version": "0.1.0",
   "private": true,
-  "description": "Registry-free pnpm workspace for KIE, ToAPIs and Gemini image helpers, KIE, ToAPIs, Gemini and OpenRouter chat providers for pi-ai, and the image and chat kits",
+  "description": "Registry-free pnpm workspace of pi-ai extensions: image helpers (KIE, ToAPIs, Gemini), chat providers (KIE, ToAPIs, Gemini, OpenRouter), and the image and chat kits",
   "packageManager": "pnpm@12.6.0",
   "engines": {
     "node": ">=24.22.1"

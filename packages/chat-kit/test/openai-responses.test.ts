@@ -45,6 +45,37 @@ function kit(routes: FakeRoute[]) {
 }
 
 describe("streamSimple on OpenAI Responses (KIE Codex)", () => {
+  it("sends no OpenAI organisation or project header from the environment, on KIE and ToAPIs alike", async () => {
+    const saved = [process.env.OPENAI_ORG_ID, process.env.OPENAI_PROJECT_ID];
+    process.env.OPENAI_ORG_ID = "org-from-env";
+    process.env.OPENAI_PROJECT_ID = "proj-from-env";
+    try {
+      for (const [provider, model, url] of [
+        ["kie", "gpt-5-6-sol", KIE_RESPONSES_URL],
+        ["toapis", "gpt-5.3-codex-official", "https://toapis.com/v1/responses"],
+      ] as const) {
+        const fake = createFakeFetch([
+          {
+            method: "POST",
+            url,
+            respond: () => responsesStream(["ok"], { type: "response.completed", response: { id: "resp_1", status: "completed", output: [] } }),
+          },
+        ]);
+        const chat = testKit([provider], wireFetch(fake));
+        assert.equal((await outcome(chat, turn({ provider, model }))).type, "done", provider);
+        const headers = fake.calls.find((call) => call.method === "POST")?.headers ?? {};
+        assert.equal(headers["openai-organization"], undefined, provider);
+        assert.equal(headers["openai-project"], undefined, provider);
+        assert.equal(headers.authorization, `Bearer ${provider === "kie" ? "kie-key" : "t-key"}`, provider);
+      }
+    } finally {
+      for (const [name, value] of [["OPENAI_ORG_ID", saved[0]], ["OPENAI_PROJECT_ID", saved[1]]] as const) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
+
   it("sends the response schema as a strict text.format and keeps credits_consumed in raw usage", async () => {
     const usage = {
       input_tokens: 30,

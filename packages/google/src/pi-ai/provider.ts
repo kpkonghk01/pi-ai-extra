@@ -56,8 +56,8 @@ export interface GoogleProviderOptions {
  * - `grounding` adds Google Search and URL context to every chat request, and a prompt Gemini
  *   blocks ends with its `promptFeedback.blockReason` as `rawStopReason` (`googleChatStreams`).
  * - `chatKit`: Gemini takes PDF and image documents and tools; the chat kit offers its plain
- *   text chat models (`isOfferedGeminiId`). A model reads PDFs when it reads images, takes tools
- *   when it is a `gemini-*` model (not Gemma), and is priced from the Gemini rate table, else
+ *   text chat models (`isOfferedGeminiId`). A `gemini-*` model reads PDFs when it reads images and
+ *   takes tools; Gemma is not verified for either, so it does neither. It is priced from the Gemini rate table, else
  *   pi-ai's list price. Gemini reports no charge, so every turn is estimated.
  *
  * It also serves `GOOGLE_IMAGE_MODELS` (`models.getModelOfType("image", "google", id)`),
