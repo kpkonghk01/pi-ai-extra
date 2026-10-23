@@ -85,7 +85,9 @@ describe("Google chat provider: chatKit traits", () => {
     assert.deepEqual([described.fileInput, described.tools], [true, true]);
     assert.equal(described.rate?.periods[0]?.input, 0.75);
     const gemma = { ...flash, id: "gemma-4-27b" };
-    assert.deepEqual([chatKit.describe(gemma).tools, chatKit.describe(gemma).fileInput], [false, false], "Gemma is not verified to take tools or PDFs");
+    // Google documents function calling and images for Gemma 4 on the Gemini API, and no PDF input.
+    assert.deepEqual([chatKit.describe(gemma).tools, chatKit.describe(gemma).fileInput], [true, false], "Gemma takes tools; its PDF input is undocumented");
+    assert.equal(chatKit.describe({ ...flash, id: "learnlm-2" }).tools, false, "an id Google documents no tool support for is off");
   });
 });
 

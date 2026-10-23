@@ -195,7 +195,7 @@ Amended 2026-10-22 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4
 - A turn on the OpenAI Completions or Responses API suppresses the `OpenAI-Organization` and `OpenAI-Project` headers, which the OpenAI SDK would add from `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`: ADR 0003 allows no ambient configuration. Other settings the SDKs read from the environment (`OPENAI_CUSTOM_HEADERS`, `ANTHROPIC_CUSTOM_HEADERS`, the Gemini Vertex switches) are not suppressed, and the README says so.
 - A context that carries tool calls or tool results counts as using tools: a provider that takes none refuses it with `UNSUPPORTED`, even when the context declares no tools.
 - The kit adds its document cache breakpoint on Anthropic Messages only while the request has fewer than Anthropic's four.
-- A Google model reports `fileInput` and `tools` only for `gemini-*` ids: Gemma is not verified for PDFs or tools, so a turn that needs either is refused.
+- A Google model reports `tools` for `gemini-*` and `gemma-*` ids, and `fileInput` (PDFs) for `gemini-*` only: Google documents function calling for both on the Gemini API, and PDF input for Gemini alone. A turn that needs what the model is not documented to take is refused.
 
 ## Considered options
 
