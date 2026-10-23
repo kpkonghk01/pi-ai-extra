@@ -202,6 +202,53 @@ describe("a turn that fails before anything is sent", () => {
     }
   });
 
+  it("does not count what pi-ai drops before sending: an errored or aborted assistant message with a partial tool call", async () => {
+    const dropped: Context["messages"] = [
+      { role: "user", content: "Look it up", timestamp: 1 },
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "t1", name: "lookup", arguments: {} }],
+        api: "openai-completions",
+        provider: "openrouter",
+        model: "openai/gpt-4o-mini",
+        usage: zeroUsage(),
+        stopReason: "aborted",
+        timestamp: 2,
+      },
+      { role: "user", content: "Never mind, just answer.", timestamp: 3 },
+    ];
+    const fake = createFakeFetch([
+      {
+        method: "POST",
+        url: "https://openrouter.ai/api/v1/chat/completions",
+        respond: () => sseResponse([completionsChunk({ content: "{}" }, "stop"), "[DONE]"]),
+      },
+    ]);
+    const chat = testKit(["openrouter"], wireFetch(fake));
+    const ref = { provider: "openrouter", id: "openai/gpt-4o-mini" };
+    const message = await chat.completeSimple(ref, { messages: dropped }, { responseSchema: { name: "answer", schema: { type: "object" } } });
+    assert.equal(message.stopReason, "stop", "pi-ai drops that message, so the request holds no tool blocks");
+    const sent = jsonBody(fake.calls.find((call) => call.method === "POST")?.body).messages as { role: string }[];
+    assert.deepEqual(sent.map((entry) => entry.role), ["user", "user"]);
+    // The same conversation on a provider that takes no tools is not refused either.
+    const { chat: kieChat } = offlineKit();
+    const refused = await kieChat.completeSimple({ provider: "kie", id: "claude-sonnet-4-6" }, { messages: dropped });
+    assert.notEqual(refused.chatKit.error?.code, "UNSUPPORTED");
+  });
+
+  it("reads an assistant message with no content array the way pi-ai does, and still reports an unknown model as one", async () => {
+    const odd = [
+      { role: "user", content: "Hi", timestamp: 1 },
+      { role: "assistant", content: null, api: "openai-completions", provider: "openrouter", model: "m", usage: zeroUsage(), stopReason: "stop", timestamp: 2 },
+      { role: "assistant", content: "plain text", api: "openai-completions", provider: "openrouter", model: "m", usage: zeroUsage(), stopReason: "stop", timestamp: 3 },
+    ] as unknown as Context["messages"];
+    const { chat } = offlineKit();
+    const unknown = await chat.completeSimple({ provider: "openrouter", id: "no/such-model" }, { messages: odd });
+    assert.equal(unknown.chatKit.error?.code, "UNKNOWN_MODEL");
+    const withSchema = await chat.completeSimple({ provider: "nope", id: "m" }, { messages: odd }, { responseSchema: { name: "a", schema: {} } });
+    assert.equal(withSchema.chatKit.error?.code, "UNKNOWN_MODEL");
+  });
+
   it("still sends that conversation without a response schema, on a provider that takes tools (an agent session that stopped declaring them)", async () => {
     const fake = createFakeFetch([
       {
@@ -213,6 +260,8 @@ describe("a turn that fails before anything is sent", () => {
     const chat = testKit(["openrouter"], wireFetch(fake));
     const message = await chat.completeSimple({ provider: "openrouter", id: "openai/gpt-4o-mini" }, { messages: TOOL_HISTORY });
     assert.equal(message.stopReason, "stop");
+    const sent = jsonBody(fake.calls.find((call) => call.method === "POST")?.body).messages as { role: string }[];
+    assert.deepEqual(sent.map((entry) => entry.role), ["user", "assistant", "tool"], "the tool call and its result went to the provider");
   });
 
   it("counts an empty tools array as no tools", async () => {

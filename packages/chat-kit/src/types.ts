@@ -50,7 +50,11 @@ export type ChatStreamOptions = ChatBaseOptions & Optional<Pick<SimpleStreamOpti
 /** Options of a Gem turn: a tool-free context, with an optional response schema. */
 export type ChatSchemaStreamOptions = ChatBaseOptions & Optional<{ responseSchema: ChatResponseSchema }>;
 
-/** pi-ai's `Context` without tools, which a response schema needs. */
+/**
+ * pi-ai's `Context` without declared `tools`, which a Gem turn's response schema needs. The type cannot
+ * see tool calls or tool results in the messages, or `toolsAdded` in a transcript: the kit refuses a
+ * response schema over those at run time (`INVALID_REQUEST`).
+ */
 export type ChatToolFreeContext = Omit<Context, "tools"> & { tools?: undefined };
 
 /**

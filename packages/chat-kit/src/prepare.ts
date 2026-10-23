@@ -65,8 +65,8 @@ export async function prepareTurn(
   if (!validation.ok) throw new TurnFailure("INVALID_REQUEST", `Invalid turn: ${validation.message}`);
   const { options } = validation;
   const documents = options.documents ?? [];
-  const tools = getCurrentTools(normalizeContext(context).messages);
-  if ((tools.length > 0 || hasToolHistory(context.messages)) && options.responseSchema !== undefined) {
+  const carriesTools = getCurrentTools(normalizeContext(context).messages).length > 0 || hasToolHistory(context.messages);
+  if (carriesTools && options.responseSchema !== undefined) {
     throw new TurnFailure(
       "INVALID_REQUEST",
       "A turn takes tools or a response schema, not both: tools, tool calls and tool results serve an agent turn, a response schema a Gem turn.",
@@ -89,7 +89,7 @@ export async function prepareTurn(
   // From the installed list, a model reads only what the installed catalogue says it reads.
   const installedNote = snapshot.source === "installed" ? unread : "";
 
-  if (tools.length > 0 || hasToolHistory(context.messages)) checkTools(entry, model, described.tools);
+  if (carriesTools) checkTools(entry, model, described.tools);
   if (!model.input.includes("image") && hasImages(context.messages)) {
     throw new TurnFailure(
       "UNSUPPORTED",
@@ -142,9 +142,18 @@ function checkTools(entry: RegisteredProvider, model: Model<Api>, modelTakesTool
   if (!modelTakesTools) throw new TurnFailure("UNSUPPORTED", `Model ${model.id} does not take tools, so this turn's tools, tool calls or tool results cannot be sent.`);
 }
 
-/** Whether the conversation holds tool calls or tool results: a provider that takes no tools cannot take those either. */
+/**
+ * Whether the conversation holds tool calls or tool results that will reach the request: a provider
+ * that takes no tools cannot take those either, and a response schema does not mix with them. It
+ * reads the messages as pi-ai's `transformMessages` will: an assistant message that errored or was
+ * aborted is dropped before sending, and a message without a content array has no tool calls.
+ */
 function hasToolHistory(messages: readonly Message[]): boolean {
-  return messages.some((message) => message.role === "toolResult" || (message.role === "assistant" && message.content.some((block) => block.type === "toolCall")));
+  return messages.some((message) => {
+    if (message.role === "toolResult") return true;
+    if (message.role !== "assistant" || message.stopReason === "error" || message.stopReason === "aborted") return false;
+    return Array.isArray(message.content) && message.content.some((block) => block.type === "toolCall");
+  });
 }
 
 /**

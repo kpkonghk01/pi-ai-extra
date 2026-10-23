@@ -79,17 +79,27 @@ describe("Google chat provider: chatKit traits", () => {
     assert.ok(offered.length > 0 && offered.length < getModels().length);
   });
 
-  it("reads PDFs when a model reads images, takes tools on Gemini models, and prices from the rate table", () => {
+  it("reads PDFs when a Gemini model reads images, takes tools on Gemini models, and prices from the rate table", () => {
     const flash = getModels().find((model) => model.id === "gemini-3.8-flash")!;
     const described = chatKit.describe(flash);
     assert.deepEqual([described.fileInput, described.tools], [true, true]);
     assert.equal(described.rate?.periods[0]?.input, 0.75);
-    // Google documents function calling and images for Gemma 4 on the Gemini API, and PDF input for Gemini only.
-    const gemma4 = { ...flash, id: "gemma-4-26b-a4b-it" };
-    assert.deepEqual([chatKit.describe(gemma4).tools, chatKit.describe(gemma4).fileInput], [true, false], "Gemma 4 takes tools; its PDF input is not documented");
-    // Off until documented: Gemma 3 is not on Google's Gemma-on-the-Gemini-API page, and unknown families are not assumed.
-    for (const id of ["gemma-3-27b-it", "gemma-3n-e4b-it", "learnlm-2"]) {
-      assert.deepEqual([chatKit.describe({ ...flash, id }).tools, chatKit.describe({ ...flash, id }).fileInput], [false, false], id);
+    assert.equal(chatKit.describe({ ...flash, input: ["text"] }).fileInput, false, "a Gemini model that reads no images reads no PDFs here");
+  });
+
+  it("takes tools on Gemma 4 and no PDFs: Google documents function calling and images for it on the Gemini API, and PDF input for Gemini", () => {
+    const flash = getModels().find((model) => model.id === "gemini-3.8-flash")!;
+    for (const id of ["gemma-4-26b-a4b-it", "gemma-4-31b-it"]) {
+      const described = chatKit.describe({ ...flash, id });
+      assert.deepEqual([described.tools, described.fileInput], [true, false], id);
+    }
+  });
+
+  it("takes neither on any other id, until Google documents it: Gemma 3, a Gemma 4 lookalike, an unknown family", () => {
+    const flash = getModels().find((model) => model.id === "gemini-3.8-flash")!;
+    for (const id of ["gemma-3-27b-it", "gemma-3n-e4b-it", "gemma-4", "gemma-40", "gemma-40b-it", "gemma-4n-e2b-it", "learnlm-2", "GEMMA-4-31B-IT"]) {
+      const described = chatKit.describe({ ...flash, id });
+      assert.deepEqual([described.tools, described.fileInput], [false, false], id);
     }
   });
 
