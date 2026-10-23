@@ -10,16 +10,12 @@ import { isModelType, type Api, type Model, type Provider } from "@earendil-work
  *
  * The read uses the key the factory bound, and is not persisted: `refreshModels` restores nothing
  * from `context.stored`, and reads only when `context.allowNetwork` is set. A read that throws
- * keeps the previous list, and the error reaches pi-ai's `Models.refresh()` result.
- *
- * `readLive` returns the list, and may return more beside it (for example what the live list said
- * about each model). `onPublished` gets that whole result when its list is published, so what was
- * read alongside a list is never ahead of it: an aborted or superseded read publishes nothing.
+ * keeps the previous list, and the error reaches pi-ai's `Models.refresh()` result. An aborted or
+ * superseded read publishes nothing.
  */
-export function withLiveChatModels<TApi extends Api, TRead extends { readonly models: readonly Model<TApi>[] }>(
+export function withLiveChatModels<TApi extends Api>(
   base: Provider<TApi>,
-  readLive: (signal: AbortSignal) => Promise<TRead>,
-  onPublished?: (read: TRead) => void,
+  readLive: (signal: AbortSignal) => Promise<readonly Model<TApi>[]>,
 ): Provider<TApi> {
   let live: readonly Model<TApi>[] | undefined;
   const chatModels = (): readonly Model<TApi>[] => live ?? base.getModels();
@@ -29,12 +25,11 @@ export function withLiveChatModels<TApi extends Api, TRead extends { readonly mo
     getAllModels: () => [...chatModels(), ...(base.getAllModels?.() ?? []).filter((model) => !isModelType(model, "chat"))],
     async refreshModels(context) {
       if (!context.allowNetwork || context.signal.aborted) return;
-      const read = await readLive(context.signal);
+      const models = await readLive(context.signal);
       if (context.signal.aborted) return;
       await context.publish({
         update: () => {
-          live = read.models;
-          onPublished?.(read);
+          live = models;
         },
       });
     },

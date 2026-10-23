@@ -21,6 +21,12 @@ export interface OpenRouterModelInfo {
   router: boolean;
 }
 
+/** A model of the live list, with what the list said about it beyond a pi-ai `Model`. */
+export interface OpenRouterListed {
+  model: Model<OpenRouterApi>;
+  info: OpenRouterModelInfo;
+}
+
 /** A model from OpenRouter's public `GET /api/v1/models`, read defensively. */
 interface OpenRouterListEntry {
   id: string;
@@ -57,23 +63,23 @@ export async function fetchOpenRouterModels(input: {
   root: string;
   installed: readonly Model<OpenRouterApi>[];
   signal: AbortSignal;
-}): Promise<{ models: Model<OpenRouterApi>[]; info: Map<string, OpenRouterModelInfo> }> {
+}): Promise<OpenRouterListed[]> {
   const body = await getModelListJson(input.fetch, `${input.root}/v1/models`, {}, input.signal);
   const entries = isRecord(body) && Array.isArray(body.data) ? body.data : undefined;
   if (entries === undefined) throw new Error("the OpenRouter model list has no data array");
   const installed = new Map(input.installed.map((model) => [model.id, model]));
-  const models: Model<OpenRouterApi>[] = [];
-  const info = new Map<string, OpenRouterModelInfo>();
+  const listed: OpenRouterListed[] = [];
+  const seen = new Set<string>();
   const now = Date.now();
   for (const entry of entries as unknown[]) {
-    if (!isRecord(entry) || typeof entry.id !== "string" || !entry.id || info.has(entry.id)) continue;
-    const listed = openRouterModel(entry as unknown as OpenRouterListEntry, installed.get(entry.id), input.root, now);
-    if (listed === undefined) continue;
-    models.push(listed.model);
-    info.set(listed.model.id, listed.info);
+    if (!isRecord(entry) || typeof entry.id !== "string" || !entry.id || seen.has(entry.id)) continue;
+    const model = openRouterModel(entry as unknown as OpenRouterListEntry, installed.get(entry.id), input.root, now);
+    if (model === undefined) continue;
+    seen.add(entry.id);
+    listed.push(model);
   }
-  if (models.length === 0) throw new Error("the OpenRouter model list lists no chat model");
-  return { models, info };
+  if (listed.length === 0) throw new Error("the OpenRouter model list lists no chat model");
+  return listed;
 }
 
 function openRouterModel(
@@ -81,7 +87,7 @@ function openRouterModel(
   known: Model<OpenRouterApi> | undefined,
   root: string,
   now: number,
-): { model: Model<OpenRouterApi>; info: OpenRouterModelInfo } | undefined {
+): OpenRouterListed | undefined {
   const architecture = isRecord(entry.architecture) ? entry.architecture : {};
   const output = outputModalities(architecture);
   if (!output.includes("text")) return undefined;

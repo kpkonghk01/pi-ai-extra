@@ -109,15 +109,15 @@ export function createToapisProvider(options: ToapisProviderOptions): ChatProvid
     }),
   });
   const installed = base.getModels();
-  const provider = withLiveChatModels(base, async (signal) => ({
-    models: await fetchToapisModels({
+  const provider = withLiveChatModels(base, (signal) =>
+    fetchToapisModels({
       fetch: options.fetch ?? ((input, init) => globalThis.fetch(input, init)),
       apiKey: options.apiKey,
       host,
       installed,
       signal,
     }),
-  }));
+  );
   return {
     ...provider,
     chatKit: {

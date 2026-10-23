@@ -101,26 +101,25 @@ export function createOpenRouterProvider(options: OpenRouterProviderOptions): Ch
     stream: (model, context, streamOptions) => base.stream(model, context, withFetch(streamOptions, fetch)),
     streamSimple: (model, context, streamOptions) => base.streamSimple(model, context, withFetch(streamOptions, fetch)),
   };
-  // What the live list said about its models: set when that list is published, never ahead of it.
-  let liveInfo = new Map<string, OpenRouterModelInfo>();
-  const provider = withLiveChatModels(
-    explicit,
-    (signal) => fetchOpenRouterModels({ fetch: fetch ?? ((input, init) => globalThis.fetch(input, init)), root, installed, signal }),
-    (read) => {
-      liveInfo = read.info;
-    },
-  );
+  // What the live list said about a model belongs to that model object: it is published, replaced or
+  // dropped with it, and a read that is never published leaves nothing behind.
+  const infoOf = new WeakMap<object, OpenRouterModelInfo>();
+  const provider = withLiveChatModels(explicit, async (signal) => {
+    const listed = await fetchOpenRouterModels({ fetch: fetch ?? ((input, init) => globalThis.fetch(input, init)), root, installed, signal });
+    for (const { model, info } of listed) infoOf.set(model, info);
+    return listed.map(({ model }) => model);
+  });
   return {
     ...provider,
     chatKit: {
       takes: { fileDocuments: true, tools: true, nativeStructuredOutput: true },
       offers: (model) => {
         if ((model.type ?? "chat") !== "chat" || !isOfferedOpenRouterId(model.id)) return false;
-        const info = liveInfo.get(model.id);
+        const info = infoOf.get(model);
         return info === undefined ? !imageModelIds.has(model.id) : !info.router && !info.imageOutput;
       },
       describe: (model) => {
-        const info = liveInfo.get(model.id);
+        const info = infoOf.get(model);
         const rate = info === undefined ? catalogueRate(model.cost) : info.rate;
         return { fileInput: info?.fileInput ?? false, tools: info?.tools ?? true, ...(rate === undefined ? {} : { rate }) };
       },

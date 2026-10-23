@@ -144,6 +144,25 @@ describe("createOpenRouterProvider", () => {
     assert.equal(openrouter.chatKit.describe(reader).fileInput, true, "the published list brings its own info");
   });
 
+  it("keeps what a live read said about a model with that model: an older list's model keeps its own info after a newer refresh", async () => {
+    const reader = (files: boolean) => ({
+      data: [{ id: "acme/reader", name: "Acme: Reader", architecture: { input_modalities: files ? ["text", "image", "file"] : ["text"], output_modalities: ["text"] }, pricing: { prompt: "0.000003", completion: "0.000015" } }],
+    });
+    let answer = reader(true);
+    const fake = createFakeFetch([{ method: "GET", url: MODELS_URL, respond: () => jsonResponse(answer) }]);
+    const openrouter = createOpenRouterProvider({ apiKey: "k", fetch: fake.fetch });
+    const models = createModels({ authContext: { env: async () => undefined, fileExists: async () => false } });
+    models.setProvider(openrouter);
+    await models.refresh({ providers: ["openrouter"], force: true });
+    const older = openrouter.getModels().find((model) => model.id === "acme/reader")!;
+    answer = reader(false);
+    await models.refresh({ providers: ["openrouter"], force: true });
+    const newer = openrouter.getModels().find((model) => model.id === "acme/reader")!;
+    assert.notEqual(older, newer);
+    assert.equal(openrouter.chatKit.describe(older).fileInput, true, "the older list's model keeps the older list's account");
+    assert.equal(openrouter.chatKit.describe(newer).fileInput, false, "the current list's model has the current one");
+  });
+
   it("describes installed models from pi-ai's catalogue: tools yes, files no, the catalogue price", () => {
     const openrouter = createOpenRouterProvider({ apiKey: "k" });
     const sonnet = openrouter.getModels().find((model) => model.id === "anthropic/claude-sonnet-4.6")!;

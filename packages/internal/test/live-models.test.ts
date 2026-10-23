@@ -22,7 +22,7 @@ const collection = () => createModels({ authContext: { env: async () => undefine
 
 describe("withLiveChatModels", () => {
   it("serves the base models until a read succeeds, then replaces them, so a dropped model disappears", async () => {
-    const provider = withLiveChatModels(base(), async () => ({ models: [model("b"), model("c")] }));
+    const provider = withLiveChatModels(base(), async () => [model("b"), model("c")]);
     const models = collection();
     models.setProvider(provider);
     assert.deepEqual(provider.getModels().map((entry) => entry.id), ["a", "b"]);
@@ -35,7 +35,7 @@ describe("withLiveChatModels", () => {
     let fail = false;
     const provider = withLiveChatModels(base(), async () => {
       if (fail) throw new Error("list is down");
-      return { models: [model("c")] };
+      return [model("c")];
     });
     const models = collection();
     models.setProvider(provider);
@@ -47,29 +47,17 @@ describe("withLiveChatModels", () => {
   });
 });
 
-describe("withLiveChatModels onPublished", () => {
-  it("runs with the list it belongs to, and not when the refresh was aborted after the read", async () => {
-    const published: string[][] = [];
+describe("withLiveChatModels, aborted and superseded reads", () => {
+  it("publishes nothing when the refresh was aborted after the read", async () => {
     const controller = new AbortController();
-    const provider = withLiveChatModels(
-      base(),
-      async () => {
-        controller.abort();
-        return { models: [model("late")], tag: "late" };
-      },
-      (read) => void published.push([read.tag, ...read.models.map((entry) => entry.id)]),
-    );
+    const provider = withLiveChatModels(base(), async () => {
+      controller.abort();
+      return [model("late")];
+    });
     const models = collection();
     models.setProvider(provider);
     await models.refresh({ providers: ["t"], force: true, signal: controller.signal });
-    assert.equal(published.length, 0);
     assert.deepEqual(provider.getModels().map((entry) => entry.id), ["a", "b"], "the aborted read did not replace the list");
-
-    const ok = withLiveChatModels(base(), async () => ({ models: [model("c")], tag: "c" }), (read) => void published.push([read.tag, ...read.models.map((entry) => entry.id)]));
-    const second = collection();
-    second.setProvider(ok);
-    await second.refresh({ providers: ["t"], force: true });
-    assert.deepEqual(published, [["c", "c"]], "the hook gets everything the read returned, with the list it published");
   });
 });
 
