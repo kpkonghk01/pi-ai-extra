@@ -23,6 +23,22 @@ import {
 
 const ALL = ["google", "openrouter", "kie", "toapis"] as const;
 
+/** A conversation that already holds a tool call and its result, as an agent session leaves it. */
+const TOOL_HISTORY: Context["messages"] = [
+  { role: "user", content: "Look it up", timestamp: 1 },
+  {
+    role: "assistant",
+    content: [{ type: "toolCall", id: "t1", name: "lookup", arguments: { q: "cats" } }],
+    api: "openai-completions",
+    provider: "openrouter",
+    model: "openai/gpt-4o-mini",
+    usage: zeroUsage(),
+    stopReason: "toolUse",
+    timestamp: 2,
+  },
+  { role: "toolResult", toolCallId: "t1", toolName: "lookup", content: [{ type: "text", text: "found" }], isError: false, timestamp: 3 },
+];
+
 const LOOKUP: Tool = { name: "lookup", description: "Looks something up.", parameters: Type.Object({ q: Type.String() }) };
 
 /** A kit whose fetch fails the test if anything is sent. */
@@ -168,25 +184,35 @@ describe("a turn that fails before anything is sent", () => {
   });
 
   it("UNSUPPORTED for a context that carries tool calls or tool results, on a provider that takes no tools, even when it declares none", async () => {
-    const history: Context["messages"] = [
-      { role: "user", content: "Look it up", timestamp: 1 },
-      {
-        role: "assistant",
-        content: [{ type: "toolCall", id: "t1", name: "lookup", arguments: { q: "cats" } }],
-        api: "anthropic-messages",
-        provider: "kie",
-        model: "claude-sonnet-4-6",
-        usage: zeroUsage(),
-        stopReason: "toolUse",
-        timestamp: 2,
-      },
-      { role: "toolResult", toolCallId: "t1", toolName: "lookup", content: [{ type: "text", text: "found" }], isError: false, timestamp: 3 },
-    ];
     const { chat, fake } = offlineKit();
-    const message = await chat.completeSimple({ provider: "kie", id: "claude-sonnet-4-6" }, { messages: history });
+    const message = await chat.completeSimple({ provider: "kie", id: "claude-sonnet-4-6" }, { messages: TOOL_HISTORY });
     assert.equal(message.chatKit.error?.code, "UNSUPPORTED");
     assert.match(message.errorMessage ?? "", /does not take tools yet/);
     assert.deepEqual(fake.calls.filter((call) => call.method !== "GET"), [], "nothing was sent");
+  });
+
+  it("INVALID_REQUEST for a response schema over a conversation that holds tool calls or tool results, even with no tools declared", async () => {
+    for (const [provider, id] of [["openrouter", "openai/gpt-4o-mini"], ["google", "gemini-3.5-flash"], ["openrouter", "anthropic/claude-sonnet-4.6"]] as const) {
+      const { chat, fake } = offlineKit();
+      const message = await chat.completeSimple({ provider, id }, { messages: TOOL_HISTORY }, { responseSchema: { name: "answer", schema: { type: "object" } } });
+      assert.equal(message.chatKit.error?.code, "INVALID_REQUEST", `${provider}/${id}`);
+      assert.match(message.errorMessage ?? "", /tools or a response schema, not both/);
+      assert.match(message.errorMessage ?? "", /tool calls/);
+      assert.deepEqual(fake.calls.filter((call) => call.method !== "GET"), [], "nothing was sent");
+    }
+  });
+
+  it("still sends that conversation without a response schema, on a provider that takes tools (an agent session that stopped declaring them)", async () => {
+    const fake = createFakeFetch([
+      {
+        method: "POST",
+        url: "https://openrouter.ai/api/v1/chat/completions",
+        respond: () => sseResponse([completionsChunk({ content: "Found it." }, "stop"), "[DONE]"]),
+      },
+    ]);
+    const chat = testKit(["openrouter"], wireFetch(fake));
+    const message = await chat.completeSimple({ provider: "openrouter", id: "openai/gpt-4o-mini" }, { messages: TOOL_HISTORY });
+    assert.equal(message.stopReason, "stop");
   });
 
   it("counts an empty tools array as no tools", async () => {

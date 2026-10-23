@@ -111,7 +111,7 @@ Events are pi-ai's, passed through, except that a forced schema tool call become
 | --- | --- | --- |
 | `UNKNOWN_MODEL` | No provider has that id, or the model is not offered | No |
 | `UNSUPPORTED` | The model or provider cannot take the turn's documents, images, tools, schema or settings | No |
-| `INVALID_REQUEST` | Malformed input, both tools and a schema, or a document whose `load()` failed | No |
+| `INVALID_REQUEST` | Malformed input, a schema together with tools (or with tool calls or tool results), or a document whose `load()` failed | No |
 | `CONTENT_BLOCKED` | A safety system blocked the prompt or the answer; `rawStopReason` is the provider's value | Yes |
 | `PROVIDER_ERROR` | The provider failed | Yes |
 
@@ -196,9 +196,10 @@ Amended 2026-10-22 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4
 Amended 2026-10-23 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4583)), before release:
 
 - A turn on the OpenAI Completions or Responses API sends `OpenAI-Organization` and `OpenAI-Project` as `null`, which drops the headers the OpenAI SDK would add from `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`: ADR 0003 allows no ambient configuration. Other settings the SDKs read from the environment cannot be suppressed without the kit handling the key; `OPENAI_CUSTOM_HEADERS` and `ANTHROPIC_CUSTOM_HEADERS` can even replace the key's header, and the README lists what still takes effect.
-- A context that carries tool calls or tool results counts as using tools: a provider that takes none, or a model that does not, refuses it with `UNSUPPORTED`, even when the context declares no tools.
+- A context that carries tool calls or tool results counts as using tools. A provider that takes none, or a model that does not, refuses it with `UNSUPPORTED`, even when the context declares no tools. A response schema over such a context is `INVALID_REQUEST`, as it is over declared tools: the history belongs to an agent turn, and a Gem turn's schema would meet tool blocks the request does not declare.
 - The kit adds its document cache breakpoint on Anthropic Messages only while the request has fewer than Anthropic's four.
 - A Google model reports `tools` for `gemini-*` and `gemma-4*` ids, and `fileInput` (PDFs) for `gemini-*` only, because those are what Google documents on the Gemini API: function calling for Gemini and Gemma 4, PDF input for Gemini. Any other id takes neither until Google documents it. A turn that needs what the model is not documented to take is refused.
+- Checked live on 2026-10-23, through the kit with a real key: `gemma-4-26b-a4b-it` and `gemma-4-31b-it` apply a response schema (an `enum` forced an answer no prompt would give, and a required field the prompt never mentioned was filled) and call a tool, as `gemini-3.5-flash` does. Google's Gemma page does not mention structured output, so the kit's `responseSchema` for Gemma 4 rests on this check.
 
 ## Considered options
 

@@ -66,10 +66,10 @@ export async function prepareTurn(
   const { options } = validation;
   const documents = options.documents ?? [];
   const tools = getCurrentTools(normalizeContext(context).messages);
-  if (tools.length > 0 && options.responseSchema !== undefined) {
+  if ((tools.length > 0 || hasToolHistory(context.messages)) && options.responseSchema !== undefined) {
     throw new TurnFailure(
       "INVALID_REQUEST",
-      "A turn takes tools or a response schema, not both: tools serve an agent turn, a response schema a Gem turn.",
+      "A turn takes tools or a response schema, not both: tools, tool calls and tool results serve an agent turn, a response schema a Gem turn.",
     );
   }
   if (documents.length > 0 && !context.messages.some((message) => message.role === "user")) {
