@@ -27,7 +27,7 @@ The product owner decided, on 2026-10-21:
 9. Every chat kit addition to a pi-ai object sits under one member, `chatKit`. It is not called `chat`, because that reads like a verb or a method.
 10. BYOK: one kit per tenant. Per-call keys could come later without a break.
 11. `listModels()` returns pi-ai `Model`s, with the chat kit's extras under `chatKit`.
-12. Tools and a response schema are mutually exclusive. Tools serve the agent use case; a response schema serves the Gem use case.
+12. Declared tools and a response schema are mutually exclusive. Tools serve the agent use case; a response schema serves the Gem use case. A conversation that holds tool calls or results without declaring tools is not "declared tools" (see the 2026-10-26 amendment).
 13. Tools stay off on KIE and ToAPIs until a live smoke test.
 14. ADR 0008's model exclusions stay fixed in 0.3.0.
 
@@ -111,7 +111,7 @@ Events are pi-ai's, passed through, except that a forced schema tool call become
 | --- | --- | --- |
 | `UNKNOWN_MODEL` | No provider has that id, or the model is not offered | No |
 | `UNSUPPORTED` | The model or provider cannot take the turn's documents, images, tools, schema or settings | No |
-| `INVALID_REQUEST` | Malformed input, both tools and a schema, or a document whose `load()` failed | No |
+| `INVALID_REQUEST` | Malformed input (a message the kit cannot read, for example), a response schema together with declared tools, or a document whose `load()` failed | No |
 | `CONTENT_BLOCKED` | A safety system blocked the prompt or the answer; `rawStopReason` is the provider's value | Yes |
 | `PROVIDER_ERROR` | The provider failed | Yes |
 
@@ -203,8 +203,10 @@ Amended 2026-10-23 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4
 
 Amended 2026-10-26 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4583)), before release:
 
-- A response schema over a conversation that holds tool calls or tool results is sent, not refused. A rule that refused it (added on 2026-10-23, as an extension of decision 12) was dropped: decision 12 covers declared tools only. Anthropic's [release notes](https://platform.claude.com/docs/en/release-notes/overview) of 2025-02-27 say that a request with `tool_use` and `tool_result` blocks no longer needs `tools`, and the OpenAI and Gemini documentation say nothing about it, so the rule guarded against no documented provider error. It has not been tried live on OpenAI or Gemini. A provider that takes no tools still refuses tool calls and tool results in the conversation (`UNSUPPORTED`), as it refuses declared tools.
-- The kit checks the shape of every message it reads before it reads it: a user message's `content` is a string or an array of blocks, an assistant message's and a tool result's `content` is an array of blocks, a block has a `type`, and a system message's `toolsAdded` and `toolsRemoved` are arrays of objects with a `name`. A context that fails is `INVALID_REQUEST`, whatever the model, so a malformed message neither throws nor hides `UNKNOWN_MODEL`. pi-ai itself fails on a null `content` for a known model, before it normalises it.
+- A response schema over a conversation that holds tool calls or tool results is sent, not refused. Decision 12 (tools and a response schema are mutually exclusive) covers declared tools only: `context.tools`, or a system message's `toolsAdded`. A rule that went further and refused a schema over tool history was added on 2026-10-23 and removed before release, because it guarded against no documented provider error: Anthropic's [release notes](https://platform.claude.com/docs/en/release-notes/overview#february-27th-2025) of 2025-02-27 say that you are no longer required to provide any `tools` when a request includes `tool_use` and `tool_result` blocks, and the OpenAI and Gemini documentation say nothing about it. It has not been tried live on OpenAI or Gemini. One adapter behaves otherwise: pi-ai's OpenAI Completions adapter adds an empty `tools` array when the history holds tool calls or results and no tools are declared, with the comment that Anthropic behind LiteLLM or a proxy requires the parameter. A provider that rejects the request anyway ends the turn `PROVIDER_ERROR`. A provider that takes no tools still refuses tool calls and tool results in the conversation (`UNSUPPORTED`), as it refuses declared tools.
+- The kit checks the shape of every message it reads before it reads it: a user or system message's `content` is a string or an array of blocks, an assistant message's and a tool result's `content` is an array of blocks, every block is an object with a string `type`, and a system message's `toolsAdded` and `toolsRemoved` are, when present, arrays of objects with a `name` (`null` counts as absent, as it does for pi-ai). A context that fails is `INVALID_REQUEST`, whatever the model, so a malformed message neither throws nor hides `UNKNOWN_MODEL`. The message lists up to ten invalid fields and counts the rest. An input the kit cannot read at all (a getter or proxy that throws) is invalid too, as is a response schema or tool parameters that cannot be serialised as JSON (a cycle, a `BigInt`).
+- A `null` or missing `content` is invalid, though pi-ai's `transformMessages` would read it as empty: on the installed pi-ai 1.2.0 the token estimate that runs first on the context as given (`estimateContextTokens`, called from `simple-options`) throws on it, for every role, so such a turn would otherwise end `PROVIDER_ERROR` after the kit had accepted it. A string among the blocks of a user message is invalid too: pi-ai's OpenAI Completions adapter would send it as an image part with no data (`data:undefined;base64,undefined`), and its estimate counts it as an image.
+- The two Google bullets of the 2026-10-23 amendment above were reworded on 2026-10-26 to what Google's pages say, after reading them again; the live check they record was made on 2026-10-23. Its outputs are in [a DATA-4583 comment](https://hk01-digital.atlassian.net/browse/DATA-4583?focusedCommentId=150806).
 
 ## Considered options
 

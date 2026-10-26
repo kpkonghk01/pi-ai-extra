@@ -80,8 +80,11 @@ describe("Google chat provider: chatKit traits", () => {
   });
 
   const flash = () => getModels().find((model) => model.id === "gemini-3.8-flash")!;
-  /** What `describe()` reports for a model with this id, otherwise like Gemini 3.8 Flash. */
-  const describeId = (id: string) => chatKit.describe({ ...flash(), id });
+  /** `describe()`'s tools and PDF input for a model with this id, otherwise like Gemini 3.8 Flash. */
+  const abilitiesOf = (id: string): [tools: boolean, fileInput: boolean] => {
+    const { tools, fileInput } = chatKit.describe({ ...flash(), id });
+    return [tools, fileInput];
+  };
 
   it("reads PDFs when a Gemini model reads images, takes tools on Gemini models, and prices from the rate table", () => {
     const described = chatKit.describe(flash());
@@ -92,13 +95,13 @@ describe("Google chat provider: chatKit traits", () => {
 
   it("takes tools on a Gemma 4 id and no PDFs: Google's Gemma page documents function calling for it, and its PDF page names Gemini models only", () => {
     for (const id of ["gemma-4-26b-a4b-it", "gemma-4-31b-it"]) {
-      assert.deepEqual([describeId(id).tools, describeId(id).fileInput], [true, false], id);
+      assert.deepEqual(abilitiesOf(id), [true, false], id);
     }
   });
 
   it("takes neither on any other id, until Google documents it: Gemma 3, a Gemma 4 lookalike, an unknown family", () => {
     for (const id of ["gemma-3-27b-it", "gemma-3n-e4b-it", "gemma-4", "gemma-40", "gemma-40b-it", "gemma-4n-e2b-it", "learnlm-2", "GEMMA-4-31B-IT"]) {
-      assert.deepEqual([describeId(id).tools, describeId(id).fileInput], [false, false], id);
+      assert.deepEqual(abilitiesOf(id), [false, false], id);
     }
   });
 

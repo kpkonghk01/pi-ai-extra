@@ -27,5 +27,11 @@ export function statusFromMessage(message: string | undefined): number | undefin
 }
 
 export function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) return error.message;
+  try {
+    return String(error);
+  } catch {
+    // A thrown object without `toString` (a null-prototype object).
+    return "unknown error";
+  }
 }

@@ -78,7 +78,7 @@ function startTurn(
 ): ChatTurnStream {
   const stream = createAssistantMessageEventStream();
   const target = targetOf(ref);
-  const callerSignal = options?.signal instanceof AbortSignal ? options.signal : undefined;
+  const callerSignal = signalOf(options);
   const controller = new AbortController();
   const abort = () => controller.abort(callerSignal?.reason);
   if (callerSignal?.aborted) abort();
@@ -171,7 +171,21 @@ function statusRecordingFetch(base: typeof globalThis.fetch | undefined, state: 
 
 /** `?` stands in for a provider or model the reference does not name (malformed input only). */
 function targetOf(ref: ChatModelRef): TurnTarget {
-  const record = (typeof ref === "object" && ref !== null ? ref : {}) as Partial<Record<"provider" | "id", unknown>>;
   const part = (value: unknown) => (typeof value === "string" && value ? value : "?");
-  return { provider: part(record.provider), model: part(record.id) };
+  try {
+    const record = (typeof ref === "object" && ref !== null ? ref : {}) as Partial<Record<"provider" | "id", unknown>>;
+    return { provider: part(record.provider), model: part(record.id) };
+  } catch {
+    // A getter or proxy that throws: `parseTurn` answers INVALID_REQUEST.
+    return { provider: "?", model: "?" };
+  }
+}
+
+/** The caller's abort signal, or none when the options have none or cannot be read (`parseTurn` answers INVALID_REQUEST). */
+function signalOf(options: TurnOptions | undefined): AbortSignal | undefined {
+  try {
+    return options?.signal instanceof AbortSignal ? options.signal : undefined;
+  } catch {
+    return undefined;
+  }
 }

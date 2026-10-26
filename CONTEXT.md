@@ -48,11 +48,11 @@ A consumer application's configured assistant: its instructions, reference files
 
 ## Gem turn
 
-One chat turn of a Gem, as the chat kit sees it: a context with no tools and, optionally, a required response shape (a response schema). The chat kit's first overload takes it.
+One chat turn of a Gem, as the chat kit sees it: a context that declares no tools and, optionally, a required response shape (a response schema). Its history may still hold tool calls and tool results. The chat kit's first overload takes it.
 
 ## Agent turn
 
-One chat turn whose context may carry tools, with their tool calls and tool results, and which has no response schema: tools and a response schema are mutually exclusive. The chat kit's second overload takes it. A turn with neither tools nor a response schema is both kinds.
+One chat turn whose context may declare tools (in `tools`, or in a transcript's `toolsAdded`), with their tool calls and tool results, and which has no response schema: declared tools and a response schema are mutually exclusive. The chat kit's second overload takes it. A pi-ai `TranscriptContext` carries its tools in `toolsAdded`, so its type fits the first overload, and the kit's run-time check refuses a response schema over it. A turn with neither declared tools nor a response schema is both kinds.
 
 ## Model rate
 

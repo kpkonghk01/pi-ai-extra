@@ -146,15 +146,20 @@ function checkTools(entry: RegisteredProvider, model: Model<Api>, modelTakesTool
  * Whether the conversation holds tool calls or tool results that will reach the request: a provider
  * that takes no tools cannot take those either. An assistant message that errored or was aborted is
  * not counted, because pi-ai's `transformMessages` drops it before sending; a tool result is, even
- * one whose call sat in a dropped message, because pi-ai sends it. The messages are already checked
- * (`parseTurn`): an assistant message has a content array.
+ * one whose call sat in a dropped message, because pi-ai sends it.
  */
 function hasToolHistory(messages: readonly Message[]): boolean {
   return messages.some((message) => {
     if (message.role === "toolResult") return true;
     if (message.role !== "assistant" || message.stopReason === "error" || message.stopReason === "aborted") return false;
-    return message.content.some((block) => block.type === "toolCall");
+    return blocksOf(message).some((block) => block.type === "toolCall");
   });
+}
+
+/** A message's content blocks: none for the text of a user or system message. The messages are already checked (`parseTurn`). */
+function blocksOf(message: Message): readonly { type: string }[] {
+  const content: unknown = message.content;
+  return Array.isArray(content) ? content : [];
 }
 
 /**
@@ -164,10 +169,7 @@ function hasToolHistory(messages: readonly Message[]): boolean {
  */
 function hasImages(messages: readonly Message[]): boolean {
   return messages.some(
-    (message) =>
-      (message.role === "user" || message.role === "toolResult") &&
-      Array.isArray(message.content) &&
-      message.content.some((part) => part.type === "image"),
+    (message) => (message.role === "user" || message.role === "toolResult") && blocksOf(message).some((part) => part.type === "image"),
   );
 }
 

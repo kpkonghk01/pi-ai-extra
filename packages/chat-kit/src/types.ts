@@ -108,7 +108,7 @@ export type ChatAssistantMessage = AssistantMessage &
  * - `PROVIDER_ERROR`: the provider failed, or a response-schema answer could not be complete (it hit `maxTokens`, or Anthropic answered without the schema tool call). Sent.
  * - `UNSUPPORTED`: the provider or model cannot take the turn's documents, images, tools, schema or settings. Nothing was sent.
  * - `UNKNOWN_MODEL`: no provider has that id, or the model is not offered. Nothing was sent.
- * - `INVALID_REQUEST`: malformed input (a message of a shape the kit cannot read, for example), a response schema together with tools, or a document whose `load()` failed. Nothing was sent.
+ * - `INVALID_REQUEST`: malformed input (a message the kit cannot read, for example), a response schema together with declared tools, or a document whose `load()` failed. Nothing was sent.
  *
  * A new code may come in a minor release: treat an unknown code as `PROVIDER_ERROR`.
  */

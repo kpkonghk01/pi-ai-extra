@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
+import type { Context } from "@earendil-works/pi-ai";
+import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { createFakeFetch, type FakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import type { ChatKit } from "../src/index.ts";
 import { brokenSseResponse, jsonBody, outcome,
@@ -84,6 +86,34 @@ describe("streamSimple on Gemini", () => {
     assert.equal(config.responseMimeType, "application/json");
     assert.deepEqual(config.responseJsonSchema, { type: "object", properties: { tags: { type: "array", items: { type: "string" } } } });
     assert.deepEqual(body.tools, [{ googleSearch: {} }, { urlContext: {} }]);
+  });
+
+  it("sends a response schema over a conversation that holds a tool call and its result, with no declared tools: the provider decides", async () => {
+    const { chat, fake } = kit([
+      { method: "POST", url: STREAM_URL, respond: () => sseResponse([JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "{}" }] }, finishReason: "STOP" }] })]) },
+    ]);
+    const history: Context["messages"] = [
+      { role: "user", content: "Look it up", timestamp: 1 },
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "t1", name: "lookup", arguments: { q: "cats" } }],
+        api: "google-generative-ai",
+        provider: "google",
+        model: "gemini-3.5-flash",
+        usage: zeroUsage(),
+        stopReason: "toolUse",
+        timestamp: 2,
+      },
+      { role: "toolResult", toolCallId: "t1", toolName: "lookup", content: [{ type: "text", text: "found" }], isError: false, timestamp: 3 },
+    ];
+    const message = await chat.completeSimple({ provider: "google", id: "gemini-3.5-flash" }, { messages: history }, { responseSchema: { name: "tags", schema: SCHEMA } });
+    assert.equal(message.stopReason, "stop");
+    const post = fake.calls.find((call) => call.method === "POST");
+    const body = JSON.stringify(jsonBody(post?.body));
+    assert.match(body, /responseJsonSchema/, "the schema is in the request");
+    assert.match(body, /"functionCall"/, "so is the tool call of the history");
+    assert.match(body, /"functionResponse"/, "and its result");
+    assert.equal(jsonBody(post?.body).tools, undefined, "no tools are declared");
   });
 
   it("reports a prompt-level block (promptFeedback only) as CONTENT_BLOCKED with the billed usage", async () => {
