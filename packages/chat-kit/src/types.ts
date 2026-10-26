@@ -52,8 +52,8 @@ export type ChatSchemaStreamOptions = ChatBaseOptions & Optional<{ responseSchem
 
 /**
  * pi-ai's `Context` without declared `tools`, which a Gem turn's response schema needs. The type cannot
- * see tool calls or tool results in the messages, or `toolsAdded` in a transcript: the kit refuses a
- * response schema over those at run time (`INVALID_REQUEST`).
+ * see the `toolsAdded` of a transcript's system message: the kit refuses a response schema over
+ * declared tools at run time (`INVALID_REQUEST`).
  */
 export type ChatToolFreeContext = Omit<Context, "tools"> & { tools?: undefined };
 
@@ -108,7 +108,7 @@ export type ChatAssistantMessage = AssistantMessage &
  * - `PROVIDER_ERROR`: the provider failed, or a response-schema answer could not be complete (it hit `maxTokens`, or Anthropic answered without the schema tool call). Sent.
  * - `UNSUPPORTED`: the provider or model cannot take the turn's documents, images, tools, schema or settings. Nothing was sent.
  * - `UNKNOWN_MODEL`: no provider has that id, or the model is not offered. Nothing was sent.
- * - `INVALID_REQUEST`: malformed input, a response schema together with tools (or with tool calls or tool results in the conversation), or a document whose `load()` failed. Nothing was sent.
+ * - `INVALID_REQUEST`: malformed input (a message of a shape the kit cannot read, for example), a response schema together with tools, or a document whose `load()` failed. Nothing was sent.
  *
  * A new code may come in a minor release: treat an unknown code as `PROVIDER_ERROR`.
  */

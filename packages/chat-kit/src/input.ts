@@ -47,10 +47,32 @@ const documentSchema = z.looseObject({
   load: z.custom<() => Promise<Uint8Array>>((value) => typeof value === "function", "must be a function"),
 });
 
+/** A content block of a message: the kit reads its `type`, and pi-ai the rest. */
+const blockSchema = z.looseObject({ type: z.string() });
+
+/** The tool definitions a system message adds or removes: the kit reads their names. */
+const toolNamesSchema = z.array(z.looseObject({ name: z.string() })).optional();
+
+/**
+ * pi-ai's `Message`, read loosely: the kit checks the shape it reads itself (`role`, the arrays of
+ * `content` and the tool lists), so that nothing it reads can throw, and leaves the rest to pi-ai.
+ */
+const messageSchema = z.discriminatedUnion("role", [
+  z.looseObject({ role: z.literal("user"), content: z.union([z.string(), z.array(blockSchema)]) }),
+  z.looseObject({ role: z.literal("assistant"), content: z.array(blockSchema) }),
+  z.looseObject({ role: z.literal("toolResult"), content: z.array(blockSchema) }),
+  z.looseObject({
+    role: z.literal("system"),
+    content: z.union([z.string(), z.array(blockSchema)]),
+    toolsAdded: toolNamesSchema,
+    toolsRemoved: toolNamesSchema,
+  }),
+]);
+
 /** pi-ai's `Context`, read loosely: the kit checks only what it relies on, and pi-ai the rest. */
 const contextSchema = z.looseObject({
   systemPrompt: z.string().optional(),
-  messages: z.array(z.looseObject({ role: z.enum(["user", "assistant", "system", "toolResult"]) })),
+  messages: z.array(messageSchema),
   tools: z.array(z.looseObject({ name: nonEmpty, description: z.string(), parameters: z.looseObject({}) })).optional(),
 });
 

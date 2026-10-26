@@ -65,11 +65,11 @@ export async function prepareTurn(
   if (!validation.ok) throw new TurnFailure("INVALID_REQUEST", `Invalid turn: ${validation.message}`);
   const { options } = validation;
   const documents = options.documents ?? [];
-  const carriesTools = getCurrentTools(normalizeContext(context).messages).length > 0 || hasToolHistory(context.messages);
-  if (carriesTools && options.responseSchema !== undefined) {
+  const declaresTools = getCurrentTools(normalizeContext(context).messages).length > 0;
+  if (declaresTools && options.responseSchema !== undefined) {
     throw new TurnFailure(
       "INVALID_REQUEST",
-      "A turn takes tools or a response schema, not both: tools, tool calls and tool results serve an agent turn, a response schema a Gem turn.",
+      "A turn takes tools or a response schema, not both: tools serve an agent turn, a response schema a Gem turn.",
     );
   }
   if (documents.length > 0 && !context.messages.some((message) => message.role === "user")) {
@@ -89,7 +89,7 @@ export async function prepareTurn(
   // From the installed list, a model reads only what the installed catalogue says it reads.
   const installedNote = snapshot.source === "installed" ? unread : "";
 
-  if (carriesTools) checkTools(entry, model, described.tools);
+  if (declaresTools || hasToolHistory(context.messages)) checkTools(entry, model, described.tools);
   if (!model.input.includes("image") && hasImages(context.messages)) {
     throw new TurnFailure(
       "UNSUPPORTED",
@@ -144,15 +144,16 @@ function checkTools(entry: RegisteredProvider, model: Model<Api>, modelTakesTool
 
 /**
  * Whether the conversation holds tool calls or tool results that will reach the request: a provider
- * that takes no tools cannot take those either, and a response schema does not mix with them. It
- * reads the messages as pi-ai's `transformMessages` will: an assistant message that errored or was
- * aborted is dropped before sending, and a message without a content array has no tool calls.
+ * that takes no tools cannot take those either. An assistant message that errored or was aborted is
+ * not counted, because pi-ai's `transformMessages` drops it before sending; a tool result is, even
+ * one whose call sat in a dropped message, because pi-ai sends it. The messages are already checked
+ * (`parseTurn`): an assistant message has a content array.
  */
 function hasToolHistory(messages: readonly Message[]): boolean {
   return messages.some((message) => {
     if (message.role === "toolResult") return true;
     if (message.role !== "assistant" || message.stopReason === "error" || message.stopReason === "aborted") return false;
-    return Array.isArray(message.content) && message.content.some((block) => block.type === "toolCall");
+    return message.content.some((block) => block.type === "toolCall");
   });
 }
 

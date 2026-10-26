@@ -58,7 +58,7 @@ export interface GoogleProviderOptions {
  * - `chatKit`: Gemini takes PDF and image documents and tools; the chat kit offers its plain
  *   text chat models (`isOfferedGeminiId`). A `gemini-*` model reads PDFs when it reads images and
  *   takes tools. A `gemma-4-*` model takes tools too (Google documents function calling for Gemma 4
- *   on the Gemini API), but no PDFs: Google documents PDF input for Gemini models only. Any other
+ *   on the Gemini API), but no PDFs: Google's document-processing page names Gemini models only. Any other
  *   id takes neither, until Google documents it. A model is priced from the Gemini rate table, else
  *   pi-ai's list price. Gemini reports no charge, so every turn is estimated.
  *

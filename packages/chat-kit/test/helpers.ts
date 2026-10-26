@@ -165,7 +165,7 @@ export function anthropicEvents(input: {
   return events;
 }
 
-/** A turn as the tests describe it: what a consumer's Gem helper would turn into pi-ai's `Context` and the options. */
+/** A turn as the tests describe it: what a consumer would turn into pi-ai's `Context` and the options. */
 export interface TestTurn {
   provider: string;
   model: string;

@@ -15,4 +15,4 @@ models.setProvider(createOpenRouterProvider({ apiKey: process.env.OPENROUTER_API
 await models.refresh({ providers: ["openrouter"] });
 ```
 
-The key is always an explicit argument; the package never reads a key or setting of its own from environment variables (the SDKs underneath read a few; the [root README](https://github.com/kpkonghk01/pi-ai-extra#chat-providers-and-createchatkit) lists them, and says which of them the chat kit suppresses; this package alone suppresses none) and must not be imported into browser code. Install the pinned GitHub Release asset (`openrouter-vX.Y.Z`). The full guide: https://github.com/kpkonghk01/pi-ai-extra#readme
+The key is always an explicit argument; the package never reads a key or setting of its own from environment variables (the SDKs underneath read a few; the [root README](https://github.com/kpkonghk01/pi-ai-extra#chat-providers-and-createchatkit) lists them, and says which the chat kit suppresses; used without the chat kit, none is suppressed) and must not be imported into browser code. Install the pinned GitHub Release asset (`openrouter-vX.Y.Z`). The full guide: https://github.com/kpkonghk01/pi-ai-extra#readme
