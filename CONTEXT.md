@@ -52,7 +52,7 @@ One chat turn of a Gem, as the chat kit sees it: a context that declares no tool
 
 ## Agent turn
 
-One chat turn whose context may declare tools (in `tools`, or in a transcript's `toolsAdded`), with their tool calls and tool results, and which has no response schema: declared tools and a response schema are mutually exclusive. The chat kit's second overload takes it. A pi-ai `TranscriptContext` carries its tools in `toolsAdded`, so its type fits the first overload, and the kit's run-time check refuses a response schema over it. A turn with neither declared tools nor a response schema is both kinds.
+One chat turn whose context may declare tools, with their tool calls and tool results, and which has no response schema: declared tools and a response schema are mutually exclusive. Declared tools are the tools the context offers the model, in `tools` or in a transcript's `toolsAdded`; tool calls and tool results already in its history are not declared tools. The chat kit's second overload takes it. A pi-ai `TranscriptContext` carries its tools in `toolsAdded`, so its type fits the first overload, and the kit's run-time check refuses a response schema over it. A turn with neither declared tools nor a response schema is both kinds.
 
 ## Model rate
 

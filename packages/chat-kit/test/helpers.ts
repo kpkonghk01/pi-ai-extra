@@ -346,3 +346,23 @@ export async function withEnv<T>(env: Record<string, string | undefined>, run: (
     apply(saved);
   }
 }
+
+/** An error whose `message` getter throws. */
+export function errorWithThrowingMessage(): Error {
+  const error = new Error("hidden");
+  Object.defineProperty(error, "message", {
+    get() {
+      throw error;
+    },
+  });
+  return error;
+}
+
+/** A proxy whose prototype lookup throws, which `instanceof` performs. */
+export function throwingPrototype(): object {
+  return new Proxy({}, {
+    getPrototypeOf() {
+      throw new Error("no prototype");
+    },
+  });
+}

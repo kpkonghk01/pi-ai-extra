@@ -26,12 +26,24 @@ export function statusFromMessage(message: string | undefined): number | undefin
   return status !== undefined && status >= 400 && status <= 599 ? status : undefined;
 }
 
-export function errorText(error: unknown): string {
-  if (error instanceof Error) return error.message;
+/**
+ * `read()`, or `fallback` when it throws. For what the kit reads of a caller's objects or of a
+ * thrown value, where a getter or proxy that throws must not end a turn with an exception.
+ */
+export function readOr<T>(read: () => T, fallback: T): T {
   try {
-    return String(error);
+    return read();
   } catch {
-    // A thrown object without `toString` (a null-prototype object).
-    return "unknown error";
+    return fallback;
   }
+}
+
+/** The text of anything thrown, even a null-prototype object or an error whose `message` getter throws. */
+export function errorText(error: unknown): string {
+  return readOr(() => (error instanceof Error ? error.message : String(error)), "unknown error");
+}
+
+/** `error instanceof TurnFailure`, which a proxy with a throwing `getPrototypeOf` trap would make throw. */
+export function isTurnFailure(error: unknown): error is TurnFailure {
+  return readOr(() => error instanceof TurnFailure, false);
 }

@@ -5,7 +5,7 @@ import {
   type ModelsSimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import { untilAborted } from "./abort.ts";
-import { errorText, TurnFailure } from "./errors.ts";
+import { errorText, isTurnFailure, readOr, TurnFailure } from "./errors.ts";
 import { parseKitOptions, type TurnOptions } from "./input.ts";
 import { chatModel } from "./models/info.ts";
 import {
@@ -131,7 +131,7 @@ async function streamTurn(
         return turn.wire.transform(payload, turn.plan);
       } catch (error) {
         run.state.transformFailure =
-          error instanceof TurnFailure
+          isTurnFailure(error)
             ? error
             : new TurnFailure("UNSUPPORTED", `chat-kit could not build the request: ${errorText(error)}`);
         throw run.state.transformFailure;
@@ -170,22 +170,19 @@ function statusRecordingFetch(base: typeof globalThis.fetch | undefined, state: 
 }
 
 /** `?` stands in for a provider or model the reference does not name (malformed input only). */
+/** The reference's names for the final message, "?" for what is missing or cannot be read (`parseTurn` answers INVALID_REQUEST). */
 function targetOf(ref: ChatModelRef): TurnTarget {
   const part = (value: unknown) => (typeof value === "string" && value ? value : "?");
-  try {
+  return readOr(() => {
     const record = (typeof ref === "object" && ref !== null ? ref : {}) as Partial<Record<"provider" | "id", unknown>>;
     return { provider: part(record.provider), model: part(record.id) };
-  } catch {
-    // A getter or proxy that throws: `parseTurn` answers INVALID_REQUEST.
-    return { provider: "?", model: "?" };
-  }
+  }, { provider: "?", model: "?" });
 }
 
-/** The caller's abort signal, or none when the options have none or cannot be read (`parseTurn` answers INVALID_REQUEST). */
+/** The caller's abort signal, read once, or none when the options have none or cannot be read (`parseTurn` answers INVALID_REQUEST). */
 function signalOf(options: TurnOptions | undefined): AbortSignal | undefined {
-  try {
-    return options?.signal instanceof AbortSignal ? options.signal : undefined;
-  } catch {
-    return undefined;
-  }
+  return readOr(() => {
+    const signal = options?.signal;
+    return signal instanceof AbortSignal ? signal : undefined;
+  }, undefined);
 }

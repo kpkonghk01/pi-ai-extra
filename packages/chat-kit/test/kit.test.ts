@@ -4,11 +4,13 @@ import { Type, type Context, type Tool, type TranscriptContext } from "@earendil
 import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { createOpenRouterProvider } from "@hk01/pi-ai-extra-openrouter/pi-ai";
 import { createFakeFetch, jsonResponse } from "@hk01/pi-ai-extra-internal/testing";
-import { createChatKit, type ChatAssistantMessage, type ChatKit, type ChatToolFreeContext } from "../src/index.ts";
+import { createChatKit, type ChatKit, type ChatToolFreeContext } from "../src/index.ts";
 import {
   anthropicEvents,
   chatProviders,
+  collect,
   completionsChunk,
+  errorWithThrowingMessage,
   contextOf,
   jsonBody,
   outcome,
@@ -17,6 +19,7 @@ import {
   sseResponse,
   testDocument,
   testKit,
+  throwingPrototype,
   turn,
   wireFetch,
   type TestTurn,
@@ -46,6 +49,38 @@ const LOOKUP: Tool = { name: "lookup", description: "Looks something up.", param
 function offlineKit() {
   const fake = createFakeFetch([]);
   return { chat: testKit(ALL, fake.fetch), fake };
+}
+
+const KNOWN = { provider: "openrouter", id: "openai/gpt-4o-mini" };
+const KIE_SOURCE = { api: "anthropic-messages", provider: "kie", model: "claude-sonnet-4-6" };
+
+/** An object that holds itself, which JSON cannot serialise. */
+function cyclicObject(): Record<string, unknown> {
+  const cyclic: Record<string, unknown> = {};
+  cyclic.self = cyclic;
+  return cyclic;
+}
+
+/** An object whose property `name` throws when it is read. */
+function throwingGetter(name: string, thrown: unknown = new Error("boom")): Record<string, unknown> {
+  return Object.defineProperty({}, name, {
+    enumerable: true,
+    get() {
+      throw thrown;
+    },
+  });
+}
+
+/** A pi-ai assistant message as a stored conversation holds it; `content` is whatever the test needs. */
+function assistantMessage(content: unknown, stopReason: string, from = { api: "openai-completions", provider: "openrouter", model: "m" }) {
+  return { role: "assistant", content, ...from, usage: zeroUsage(), stopReason, timestamp: 2 };
+}
+
+/** Runs a turn through `streamSimple` to its end: the events, and the message `result()` settled with. */
+async function streamToEnd(chat: ChatKit, ref: { provider: string; id: string }, context: unknown, options?: unknown) {
+  const stream = chat.streamSimple(ref, context as ChatToolFreeContext, options as never);
+  const events = await collect(stream);
+  return { events, message: await stream.result() };
 }
 
 /** A turn the kit fails before sending: one lone `error` event, no `start`, and nothing sent but model lists. */
@@ -161,12 +196,18 @@ describe("a turn that fails before anything is sent", () => {
     assert.equal(message.stopReason, "error");
     assert.equal(message.chatKit.error?.code, "UNSUPPORTED");
     assert.match(message.errorMessage ?? "", /does not read images/);
+    const inToolResult: Context = {
+      messages: [{ role: "toolResult", toolCallId: "t1", toolName: "lookup", content: [{ type: "image", data: "eA==", mimeType: "image/png" }], isError: false, timestamp: 1 }],
+    };
+    const fromToolResult = await chat.completeSimple({ provider: "openrouter", id: "aion-labs/aion-2.0" }, inToolResult);
+    assert.equal(fromToolResult.chatKit.error?.code, "UNSUPPORTED");
+    assert.match(fromToolResult.errorMessage ?? "", /does not read images/, "an image in a tool result is refused as well");
   });
 
   it("INVALID_REQUEST for tools together with a response schema, from tools or from a transcript's toolsAdded", async () => {
     const both = await failure(turn({ tools: [LOOKUP], responseSchema: { name: "answer", schema: {} } }));
     assert.equal(both.code, "INVALID_REQUEST");
-    assert.match(both.text, /tools or a response schema, not both/);
+    assert.match(both.text, /declared tools or a response schema, not both/);
 
     // A pi-ai TranscriptContext carries its tools in a system message, so it satisfies ChatToolFreeContext.
     const transcript = {
@@ -181,7 +222,7 @@ describe("a turn that fails before anything is sent", () => {
       responseSchema: { name: "answer", schema: {} },
     });
     assert.equal(fromTranscript.chatKit.error?.code, "INVALID_REQUEST");
-    assert.match(fromTranscript.errorMessage ?? "", /tools or a response schema, not both/);
+    assert.match(fromTranscript.errorMessage ?? "", /declared tools or a response schema, not both/);
   });
 
   it("UNSUPPORTED for a context that carries tool calls or tool results, on a provider that takes no tools, even when it declares none", async () => {
@@ -194,45 +235,49 @@ describe("a turn that fails before anything is sent", () => {
 
   it("sends a response schema over a conversation that holds tool calls or tool results: the provider decides, as for any request", async () => {
     // Anthropic's release notes (2025-02-27) say tools are no longer required beside tool_use and tool_result blocks; OpenAI's and Gemini's docs are silent.
-    for (const [provider, id] of [["openrouter", "openai/gpt-4o-mini"], ["openrouter", "anthropic/claude-sonnet-4.6"]] as const) {
+    const schema = { type: "object" };
+    const checks: Record<string, (body: Record<string, unknown>) => void> = {
+      "openai/gpt-4o-mini": (body) => {
+        assert.deepEqual((body.response_format as { json_schema: { schema: unknown } }).json_schema.schema, schema, "the schema is in the request");
+        assert.deepEqual((body.messages as { role: string }[]).map((entry) => entry.role), ["user", "assistant", "tool"], "so are the tool call and its result");
+        assert.deepEqual(body.tools, [], "pi-ai's Completions adapter adds an empty tools array, as the ADR says");
+      },
+      "anthropic/claude-sonnet-4.6": (body) => {
+        assert.deepEqual((body.tools as { name: string; input_schema: unknown }[]).map((tool) => [tool.name, tool.input_schema]), [["answer", schema]], "the schema is the forced tool call");
+        assert.deepEqual(body.tool_choice, { type: "tool", name: "answer" });
+        const history = JSON.stringify(body.messages);
+        assert.match(history, /"tool_use".*"name":"lookup"/, "the history's tool call is in the request, under a name the request does not declare");
+        assert.match(history, /"tool_result"/, "and its result");
+      },
+    };
+    for (const [id, check] of Object.entries(checks)) {
       const fake = createFakeFetch([
         { method: "POST", url: "https://openrouter.ai/api/v1/chat/completions", respond: () => sseResponse([completionsChunk({ content: "{}" }, "stop"), "[DONE]"]) },
         { method: "POST", url: /^https:\/\/openrouter\.ai\/api\/v1\/messages\b/, respond: () => sseResponse(anthropicEvents({ blocks: [{ type: "tool_use", name: "answer", json: ["{}"] }], stopReason: "tool_use" })) },
       ]);
       const chat = testKit(["openrouter"], wireFetch(fake));
-      const message = await chat.completeSimple({ provider, id }, { messages: TOOL_HISTORY }, { responseSchema: { name: "answer", schema: { type: "object" } } });
-      assert.equal(message.stopReason, "stop", `${provider}/${id}`);
+      const message = await chat.completeSimple({ provider: "openrouter", id }, { messages: TOOL_HISTORY }, { responseSchema: { name: "answer", schema } });
+      assert.equal(message.stopReason, "stop", id);
       const posts = fake.calls.filter((call) => call.method === "POST");
-      assert.equal(posts.length, 1, "the request was sent");
-      const body = JSON.stringify(jsonBody(posts[0]?.body));
-      assert.match(body, /"name":"answer"|"response_format"/, `${id}: the schema is in the request`);
-      assert.match(body, /tool_calls|tool_use/, `${id}: so is the tool call of the history`);
+      assert.equal(posts.length, 1, `${id}: the request was sent`);
+      check(jsonBody(posts[0]?.body));
     }
   });
 
   for (const stopReason of ["aborted", "error"] as const) {
     it(`does not count what pi-ai drops before sending: an assistant message with stopReason "${stopReason}" and a partial tool call`, async () => {
-      const dropped: Context["messages"] = [
+      const dropped = [
         { role: "user", content: "Look it up", timestamp: 1 },
-        {
-          role: "assistant",
-          content: [{ type: "toolCall", id: "t1", name: "lookup", arguments: {} }],
-          api: "anthropic-messages",
-          provider: "kie",
-          model: "claude-sonnet-4-6",
-          usage: zeroUsage(),
-          stopReason,
-          timestamp: 2,
-        },
+        assistantMessage([{ type: "toolCall", id: "t1", name: "lookup", arguments: {} }], stopReason, KIE_SOURCE),
         { role: "user", content: "Never mind, just answer.", timestamp: 3 },
-      ];
+      ] as unknown as Context["messages"];
       const fake = createFakeFetch([
         { method: "POST", url: /^https:\/\/api\.kie\.ai\/anthropic\/v1\/messages\b/, respond: () => sseResponse(anthropicEvents({ blocks: [{ type: "text", text: "ok" }], stopReason: "end_turn" })) },
       ]);
       const chat = testKit(["kie"], wireFetch(fake));
       const ref = { provider: "kie", id: "claude-sonnet-4-6" };
-      const firstTurn = await chat.completeSimple(ref, { messages: dropped });
-      assert.equal(firstTurn.stopReason, "stop", "KIE takes no tools, and the request holds no tool block");
+      const withDroppedCall = await chat.completeSimple(ref, { messages: dropped });
+      assert.equal(withDroppedCall.stopReason, "stop", "KIE takes no tools, and the request holds no tool block");
       // The same partial call in a message pi-ai keeps is refused: it would reach the wire.
       const kept = dropped.map((message) => (message.role === "assistant" ? { ...message, stopReason: "toolUse" as const } : message));
       const refused = await chat.completeSimple(ref, { messages: kept });
@@ -242,14 +287,6 @@ describe("a turn that fails before anything is sent", () => {
   }
 
   it("answers a malformed context with INVALID_REQUEST, for a known and an unknown model alike, and never throws", async () => {
-    const cyclic: Record<string, unknown> = {};
-    cyclic.self = cyclic;
-    const throwingGetter = Object.defineProperty({ role: "user" }, "content", {
-      enumerable: true,
-      get() {
-        throw new Error("boom");
-      },
-    });
     const throwingProxy = new Proxy({ role: "user", content: "x" }, {
       get() {
         throw new Error("boom");
@@ -262,39 +299,44 @@ describe("a turn that fails before anything is sent", () => {
       "systemPrompt a number": { messages: [], systemPrompt: 5 },
       "a tool that is null": { messages: [], tools: [null] },
       "a tool without a description": { messages: [], tools: [{ name: "a", parameters: {} }] },
-      "a tool with cyclic parameters": { messages: [], tools: [{ name: "a", description: "d", parameters: cyclic }] },
+      "a tool with cyclic parameters": { messages: [], tools: [{ name: "a", description: "d", parameters: cyclicObject() }] },
+      "a tool with parameters holding a BigInt": { messages: [], tools: [{ name: "a", description: "d", parameters: { n: 1n } }] },
+      "a tool with null parameters": { messages: [], tools: [{ name: "a", description: "d", parameters: null }] },
       "assistant content a string": withMessages({ role: "assistant", content: "plain text" }),
       "assistant content a number": withMessages({ role: "assistant", content: 5 }),
       "assistant content null": withMessages({ role: "assistant", content: null }),
       "assistant content missing": withMessages({ role: "assistant" }),
-      "user content null": withMessages({ role: "user", content: null }),
-      "user content missing": withMessages({ role: "user" }),
-      "tool result content null": withMessages({ role: "toolResult", content: null }),
-      "system content null": withMessages({ role: "system", content: null }),
       "assistant content with a null block": withMessages({ role: "assistant", content: [null] }),
       "assistant content with an undefined block": withMessages({ role: "assistant", content: [undefined] }),
       "assistant block without a type": withMessages({ role: "assistant", content: [{}] }),
       "user content holding a string": withMessages({ role: "user", content: ["hello"] }),
       "user content a number": withMessages({ role: "user", content: 5 }),
+      "user content null": withMessages({ role: "user", content: null }),
+      "user content missing": withMessages({ role: "user" }),
       "tool result content a string": withMessages({ role: "toolResult", content: "found" }),
+      "tool result content null": withMessages({ role: "toolResult", content: null }),
       "system content a number": withMessages({ role: "system", content: 5 }),
+      "system content null": withMessages({ role: "system", content: null }),
       "toolsAdded a number": withMessages({ role: "system", content: "x", toolsAdded: 5 }),
       "toolsAdded an object": withMessages({ role: "system", content: "x", toolsAdded: {} }),
       "toolsAdded with a null entry": withMessages({ role: "system", content: "x", toolsAdded: [null] }),
       "toolsAdded with an entry without a name": withMessages({ role: "system", content: "x", toolsAdded: [{}] }),
+      "toolsAdded with cyclic parameters": withMessages({ role: "system", content: "x", toolsAdded: [{ name: "a", parameters: cyclicObject() }] }),
+      "toolsAdded with parameters holding a BigInt": withMessages({ role: "system", content: "x", toolsAdded: [{ name: "a", parameters: { n: 1n } }] }),
       "toolsRemoved a number": withMessages({ role: "system", content: "x", toolsRemoved: 5 }),
       "toolsRemoved with an entry without a name": withMessages({ role: "system", content: "x", toolsRemoved: [{}] }),
       "a null message": withMessages(null),
       "a message without a role": withMessages({ content: "x" }),
       "a message with an unknown role": withMessages({ role: "tool", content: "x" }),
       "a string message": withMessages("hello"),
-      "a message whose getter throws": withMessages(throwingGetter),
+      "a message whose getter throws": withMessages(Object.assign(throwingGetter("content"), { role: "user" })),
       "a message that is a throwing proxy": withMessages(throwingProxy),
     };
     const { chat } = offlineKit();
     const schema = { name: "a", schema: {} };
     for (const [label, context] of Object.entries(malformed)) {
-      for (const ref of [{ provider: "openrouter", id: "openai/gpt-4o-mini" }, { provider: "openrouter", id: "no/such-model" }, { provider: "nope", id: "m" }]) {
+      for (const ref of [KNOWN, { provider: "openrouter", id: "no/such-model" }, { provider: "nope", id: "m" }]) {
+        // The plain turn is the one that tells the context guards apart: with a schema, a context that declares tools is refused for that too.
         const plain = await chat.completeSimple(ref, context as ChatToolFreeContext);
         assert.equal(plain.chatKit.error?.code, "INVALID_REQUEST", `${label} on ${ref.id}`);
         const withSchema = await chat.completeSimple(ref, context as ChatToolFreeContext, { responseSchema: schema });
@@ -303,51 +345,103 @@ describe("a turn that fails before anything is sent", () => {
     }
   });
 
-  it("answers INVALID_REQUEST, never throws, for a reference, options or response schema that cannot be read or sent", async () => {
+  it("answers INVALID_REQUEST, never throws, for a reference, options or response schema that cannot be read or sent, through completeSimple and streamSimple alike", async () => {
     const { chat } = offlineKit();
-    const known = { provider: "openrouter", id: "openai/gpt-4o-mini" };
     const context: ChatToolFreeContext = { messages: [{ role: "user", content: "Hi", timestamp: 1 }] };
-    const cyclic: Record<string, unknown> = {};
-    cyclic.self = cyclic;
-    const throwing = (name: string) => Object.defineProperty({}, name, { enumerable: true, get: () => { throw new Error("boom"); } });
-    const cases: Record<string, () => Promise<ChatAssistantMessage>> = {
-      "a reference whose getter throws": () => chat.completeSimple(throwing("provider") as never, context),
-      "options whose getter throws": () => chat.completeSimple(known, context, throwing("signal") as never),
-      "a cyclic response schema": () => chat.completeSimple(known, context, { responseSchema: { name: "a", schema: cyclic } }),
-      "a response schema holding a BigInt": () => chat.completeSimple(known, context, { responseSchema: { name: "a", schema: { n: 1n } } }),
-      "a response schema whose getter throws": () => chat.completeSimple(known, context, { responseSchema: { name: "a", schema: throwing("type") } }),
+    let signalReads = 0;
+    const flippingSignal = {
+      get signal() {
+        return signalReads++ === 0 ? new AbortController().signal : "not a signal";
+      },
     };
-    for (const [label, call] of Object.entries(cases)) {
-      const message = await call();
+    const answer = (schema: unknown) => ({ responseSchema: { name: "a", schema } });
+    const readingFails = (thrown: unknown) => ({ messages: [Object.assign(throwingGetter("content", thrown), { role: "user" })] });
+    const cases: Record<string, { ref?: unknown; context?: unknown; options?: unknown; reason: RegExp }> = {
+      "a reference whose getter throws": { ref: throwingGetter("provider"), reason: /model: could not be read: boom/ },
+      "options whose getter throws": { options: throwingGetter("signal"), reason: /options: could not be read: boom/ },
+      "a signal that is a different value on the second read": { options: flippingSignal, reason: /options\.signal: must be an AbortSignal/ },
+      "a context that throws an error whose message getter throws": { context: readingFails(errorWithThrowingMessage()), reason: /context: could not be read: unknown error/ },
+      "a context that throws a null-prototype object": { context: readingFails(Object.create(null)), reason: /context: could not be read: unknown error/ },
+      "a context that throws a proxy whose prototype trap throws": { context: readingFails(throwingPrototype()), reason: /context: could not be read: unknown error/ },
+      "a cyclic response schema": { options: answer(cyclicObject()), reason: /responseSchema\.schema: must be serialisable as JSON/ },
+      "a response schema holding a BigInt": { options: answer({ n: 1n }), reason: /responseSchema\.schema: must be serialisable as JSON/ },
+      "a response schema whose getter throws": { options: answer(throwingGetter("type")), reason: /responseSchema\.schema: must be serialisable as JSON/ },
+      "a response schema that is an array": { options: answer([]), reason: /responseSchema\.schema: must be a JSON Schema object/ },
+      "a response schema that is null": { options: answer(null), reason: /responseSchema\.schema: must be a JSON Schema object/ },
+    };
+    for (const [label, input] of Object.entries(cases)) {
+      const ref = (input.ref ?? KNOWN) as typeof KNOWN;
+      const turnContext = input.context ?? context;
+      const message = await chat.completeSimple(ref, turnContext as ChatToolFreeContext, input.options as never);
       assert.equal(message.chatKit.error?.code, "INVALID_REQUEST", label);
+      assert.match(message.errorMessage ?? "", input.reason, label);
+      const streamed = await streamToEnd(chat, ref, turnContext, input.options);
+      assert.deepEqual(streamed.events.map((event) => event.type), ["error"], `${label}: a lone error event`);
+      assert.equal(streamed.message.chatKit.error?.code, "INVALID_REQUEST", `${label}: through streamSimple`);
     }
   });
 
-  it("keeps the INVALID_REQUEST text short for a context of thousands of malformed messages", async () => {
+  it("ends a turn whose input fails on a read after the validation as an error, never an exception or a turn that does not settle", async () => {
     const { chat } = offlineKit();
-    const messages = Array.from({ length: 2000 }, () => "not a message");
-    const message = await chat.completeSimple({ provider: "nope", id: "m" }, { messages } as unknown as ChatToolFreeContext);
-    assert.equal(message.chatKit.error?.code, "INVALID_REQUEST");
-    assert.match(message.errorMessage ?? "", /context: and 1990 more/);
-    assert.ok((message.errorMessage ?? "").length < 1500, `${message.errorMessage?.length} characters`);
+    // The code of such an error is not part of the contract: the input passed validation, then failed on a later read.
+    // What it throws has a text: pi-ai, which reads some of these inputs itself, turns a thrown value into the message's text.
+    for (const thrown of [new Error("late"), "late", 42, undefined]) {
+      for (let validReads = 1; validReads <= 12; validReads++) {
+        let reads = 0;
+        const message = {
+          get role() {
+            if (reads++ >= validReads) throw thrown;
+            return "user";
+          },
+          content: "Hi",
+          timestamp: 1,
+        };
+        const context = { messages: [message] };
+        const completed = await chat.completeSimple(KNOWN, context as never);
+        assert.equal(completed.stopReason, "error", `read ${validReads}`);
+        assert.ok(completed.chatKit.error !== undefined);
+        reads = 0;
+        const streamed = await streamToEnd(chat, KNOWN, context);
+        assert.equal(streamed.message.stopReason, "error", `read ${validReads}, streamed`);
+      }
+    }
   });
 
-  it("accepts every ordinary message shape, and a tool list that is null, which pi-ai sends: strings, blocks, thinking, images, tool calls, results, system messages", async () => {
-    const assistant = { role: "assistant", api: "openai-completions", provider: "openrouter", model: "m", usage: zeroUsage(), timestamp: 4 };
+  it("keeps the INVALID_REQUEST text short: at most ten invalid fields in all, each cut", async () => {
+    const { chat } = offlineKit();
+    const messages = Array.from({ length: 2000 }, () => "not a message");
+    const onlyContext = await chat.completeSimple({ provider: "nope", id: "m" }, { messages } as unknown as ChatToolFreeContext);
+    assert.equal(onlyContext.chatKit.error?.code, "INVALID_REQUEST");
+    assert.match(onlyContext.errorMessage ?? "", /; and 1990 more$/);
+    assert.ok((onlyContext.errorMessage ?? "").length < 1500, `${onlyContext.errorMessage?.length} characters`);
+
+    // A bad reference, context and options share the one cap: two model fields, 2000 messages and one option.
+    const everything = await chat.completeSimple({ provider: "", id: "" }, { messages } as unknown as ChatToolFreeContext, { maxToken: 1 } as never);
+    assert.match(everything.errorMessage ?? "", /model\.provider.*model\.id.*context\.messages\[0\].*; and 1993 more$/);
+
+    const unknownKeys = Object.fromEntries(Array.from({ length: 5000 }, (_, index) => [`key${index}`, 1]));
+    const manyKeys = await chat.completeSimple(KNOWN, { messages: [] }, unknownKeys as never);
+    assert.match(manyKeys.errorMessage ?? "", /options: Unrecognized keys: "key0", .*…/, "an issue naming thousands of keys is cut");
+    assert.ok((manyKeys.errorMessage ?? "").length < 600, `${manyKeys.errorMessage?.length} characters`);
+  });
+
+  it("accepts every ordinary message shape, and what pi-ai sends: strings, blocks, thinking, images, tool calls, results, system messages, a null tool list", async () => {
     const system = { role: "system", timestamp: 0 };
     const accepted: Record<string, unknown[]> = {
       "an ordinary conversation": [
         { ...system, content: [{ type: "text", text: "Be brief." }], toolsAdded: [LOOKUP] },
         { role: "user", content: [{ type: "text", text: "Hi" }, { type: "image", data: "eA==", mimeType: "image/png" }], timestamp: 1 },
         ...TOOL_HISTORY,
-        { ...assistant, content: [{ type: "thinking", thinking: "hm" }, { type: "text", text: "ok" }], stopReason: "stop" },
-        { ...assistant, content: [], stopReason: "error" },
+        assistantMessage([{ type: "thinking", thinking: "hm" }, { type: "text", text: "ok" }], "stop"),
+        assistantMessage([], "error"),
       ],
       "a user message of an empty string": [{ role: "user", content: "", timestamp: 1 }],
       "a user message of no blocks": [{ role: "user", content: [], timestamp: 1 }],
       "a tool result of no blocks": [{ role: "toolResult", toolCallId: "t", toolName: "lookup", content: [], isError: false, timestamp: 1 }],
-      "an assistant block of a type the kit has no list of": [{ ...assistant, content: [{ type: "futureBlock" }], stopReason: "stop" }],
-      "a system message with sections": [{ ...system, content: "x", sections: [{ name: "a", content: "b" }] }],
+      "an assistant block of a type the kit has no list of": [assistantMessage([{ type: "futureBlock" }], "stop")],
+      "a system message with sections": [{ ...system, content: "x", sections: { persona: "Be brief.", retired: null } }],
+      "a system message adding a tool without parameters": [{ ...system, content: "x", toolsAdded: [{ name: "lookup" }] }],
+      "a system message adding a tool whose parameters are `true`": [{ ...system, content: "x", toolsAdded: [{ name: "lookup", parameters: true }] }],
       "a system message removing a tool by name": [{ ...system, content: "x", toolsRemoved: [{ name: "lookup" }] }],
       "toolsAdded that is null": [{ ...system, content: "x", toolsAdded: null }],
       "toolsRemoved that is null": [{ ...system, content: "x", toolsRemoved: null }],
@@ -368,38 +462,28 @@ describe("a turn that fails before anything is sent", () => {
       { role: "system", content: "Be brief.", toolsAdded: null, toolsRemoved: null, timestamp: 0 },
       { role: "user", content: "Hi", timestamp: 1 },
     ] as unknown as ChatToolFreeContext["messages"];
-    const message = await chat.completeSimple({ provider: "openrouter", id: "openai/gpt-4o-mini" }, { messages: stored });
+    const message = await chat.completeSimple(KNOWN, { messages: stored });
     assert.equal(message.stopReason, "stop");
     assert.equal(fake.calls.filter((call) => call.method === "POST").length, 1, "the request was sent");
   });
 
-  it("counts a tool call or tool result that pi-ai sends as tool history, whatever the stop reason, and nothing else", async () => {
-    const assistant = (content: unknown, stopReason: string) => ({
-      role: "assistant",
-      content,
-      api: "anthropic-messages",
-      provider: "kie",
-      model: "claude-sonnet-4-6",
-      usage: zeroUsage(),
-      stopReason,
-      timestamp: 2,
-    });
+  it("counts a tool result, and a tool call in any assistant message pi-ai keeps (every stop reason but error and aborted), as tool history, and nothing else", async () => {
     const call = [{ type: "toolCall", id: "t1", name: "lookup", arguments: {} }];
     const user = { role: "user", content: "Look it up", timestamp: 1 };
     const result = { role: "toolResult", toolCallId: "t1", toolName: "lookup", content: [{ type: "text", text: "found" }], isError: false, timestamp: 3 };
     const counted: Record<string, unknown[]> = {
       "a lone tool result": [user, result],
-      "a tool call that stopped with stop": [user, assistant(call, "stop")],
-      "a tool call that stopped with length": [user, assistant(call, "length")],
-      "a tool call that stopped with toolUse": [user, assistant(call, "toolUse")],
-      "a tool call that is pending": [user, assistant(call, "pending")],
-      "a tool call that is deferred": [user, assistant(call, "deferred")],
-      "a tool call after text": [user, assistant([{ type: "text", text: "Looking." }, ...call], "toolUse")],
+      "a tool call that stopped with stop": [user, assistantMessage(call, "stop", KIE_SOURCE)],
+      "a tool call that stopped with length": [user, assistantMessage(call, "length", KIE_SOURCE)],
+      "a tool call that stopped with toolUse": [user, assistantMessage(call, "toolUse", KIE_SOURCE)],
+      "a tool call that is pending": [user, assistantMessage(call, "pending", KIE_SOURCE)],
+      "a tool call that is deferred": [user, assistantMessage(call, "deferred", KIE_SOURCE)],
+      "a tool call after text": [user, assistantMessage([{ type: "text", text: "Looking." }, ...call], "toolUse", KIE_SOURCE)],
     };
     const notCounted: Record<string, unknown[]> = {
-      "text only": [user, assistant([{ type: "text", text: "Hello" }], "stop")],
-      "thinking and text": [user, assistant([{ type: "thinking", thinking: "hm" }, { type: "text", text: "Hello" }], "stop")],
-      "no content": [user, assistant([], "stop")],
+      "text only": [user, assistantMessage([{ type: "text", text: "Hello" }], "stop", KIE_SOURCE)],
+      "thinking and text": [user, assistantMessage([{ type: "thinking", thinking: "hm" }, { type: "text", text: "Hello" }], "stop", KIE_SOURCE)],
+      "no content": [user, assistantMessage([], "stop", KIE_SOURCE)],
     };
     const fake = createFakeFetch([
       { method: "POST", url: /^https:\/\/api\.kie\.ai\/anthropic\/v1\/messages\b/, respond: () => sseResponse(anthropicEvents({ blocks: [{ type: "text", text: "ok" }], stopReason: "end_turn" })) },

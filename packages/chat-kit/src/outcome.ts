@@ -1,7 +1,7 @@
 import type { AssistantMessage, AssistantMessageEvent, StopReason } from "@earendil-works/pi-ai";
 import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { withCost } from "./cost.ts";
-import { errorText, statusFromMessage, TurnFailure } from "./errors.ts";
+import { errorText, isTurnFailure, statusFromMessage, TurnFailure } from "./errors.ts";
 import type { PreparedTurn, TurnTarget } from "./prepare.ts";
 import type { ChatAssistantMessage, ChatTurnErrorCode, ChatUsage } from "./types.ts";
 import type { StreamObserver } from "./wire/index.ts";
@@ -154,7 +154,7 @@ export function kitAborted(target: TurnTarget): ChatFinalEvent {
 
 /** A failure thrown before or around the stream: the kit's own code, else aborted or a provider error. */
 export function failedFrom(target: TurnTarget, error: unknown, signal: AbortSignal): ChatFinalEvent {
-  if (error instanceof TurnFailure) return kitFailed(target, error.code, error.message);
+  if (isTurnFailure(error)) return kitFailed(target, error.code, error.message);
   if (signal.aborted) return kitAborted(target);
   return kitFailed(target, "PROVIDER_ERROR", errorText(error));
 }
