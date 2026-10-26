@@ -1,13 +1,31 @@
-import type { Api, Model, ThinkingLevelMap } from "@earendil-works/pi-ai";
-import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
-import { modelCostAt, roundRate, singleRate, type ModelRate, type TokenRates } from "@hk01/pi-ai-extra-internal/rates";
-import { isRecord } from "../guards.ts";
-import type { ChatModelInput } from "../types.ts";
-import { getModelListJson } from "./http.ts";
-import type { ListedModel } from "./list.ts";
+import type { Model, ThinkingLevelMap } from "@earendil-works/pi-ai";
+import { getModelListJson, modelCostAt, roundRate, singleRate, type ModelRate, type TokenRates } from "@hk01/pi-ai-extra-internal/pi-ai";
+import { isRecord } from "@hk01/pi-ai-extra-internal/util";
+
+/** The chat APIs pi-ai's OpenRouter provider uses. */
+export type OpenRouterApi = "anthropic-messages" | "openai-completions";
 
 /** pi-ai's selectable thinking levels, in order; `none` is OpenRouter's "off". */
 const THINKING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+
+/** What the live list says about a model beyond its pi-ai `Model`. */
+export interface OpenRouterModelInfo {
+  /** `file` is in `architecture.input_modalities`: it reads PDFs natively. */
+  fileInput: boolean;
+  /** `tools` is in `supported_parameters`. */
+  tools: boolean;
+  rate: ModelRate | undefined;
+  /** It also answers with images (`architecture.output_modalities`). */
+  imageOutput: boolean;
+  /** OpenRouter tags it as a router (`architecture.tokenizer` is `Router`). */
+  router: boolean;
+}
+
+/** A model of the live list, with what the list said about it beyond a pi-ai `Model`. */
+export interface OpenRouterListed {
+  model: Model<OpenRouterApi>;
+  info: OpenRouterModelInfo;
+}
 
 /** A model from OpenRouter's public `GET /api/v1/models`, read defensively. */
 interface OpenRouterListEntry {
@@ -21,124 +39,75 @@ interface OpenRouterListEntry {
   reasoning?: unknown;
 }
 
-/**
- * OpenRouter's live chat list from its public `GET <root>/v1/models` (no key needed). Each entry
- * becomes a pi-ai model the way pi-ai's own catalogue generator builds one
- * (`scripts/openrouter-catalog.ts` in pi-ai 1.2), with these differences:
- *
- * - a model id pi-ai's catalogue already has keeps that entry (its API choice, compat and
- *   thinking fixes), updated with the live limits and price, as pi-ai's
- *   `personalizeOpenRouterCatalog` does;
- * - models without tool support are kept: the kit never sends tools;
- * - ids `isOfferedOpenRouterId` leaves out are not listed, and neither is a model that does not
- *   answer in text or that answers with images (`architecture.output_modalities`);
- * - nor is a model OpenRouter tags as a router (`architecture.tokenizer` is `Router`), so a router
- *   OpenRouter adds later is left out without a kit release;
- * - a new `anthropic/*` id goes through OpenAI Completions, not Anthropic Messages, so a new
- *   Claude family is never sent pi-ai's budget-thinking parameters, which it may reject;
- * - text, image and file input come from `architecture.input_modalities`.
- */
-export async function fetchOpenRouterModels(input: {
-  fetch: typeof globalThis.fetch;
-  root: string;
-  installed: readonly ListedModel[];
-  signal: AbortSignal;
-  now: number;
-}): Promise<ListedModel[]> {
-  const body = await getModelListJson(input.fetch, `${input.root}/v1/models`, {}, input.signal);
-  const entries = isRecord(body) && Array.isArray(body.data) ? body.data : undefined;
-  if (entries === undefined) throw new Error("the OpenRouter model list has no data array");
-  const installed = new Map(input.installed.map((listed) => [listed.model.id, listed.model]));
-  const models = entries.flatMap((entry: unknown) => {
-    if (!isRecord(entry) || typeof entry.id !== "string" || !entry.id) return [];
-    const listed = openRouterModel(entry as unknown as OpenRouterListEntry, installed.get(entry.id), input.root, input.now);
-    return listed === undefined ? [] : [listed];
-  });
-  if (models.length === 0) throw new Error("the OpenRouter model list lists no chat model");
-  return models;
-}
-
-/**
- * Moving aliases: every `-latest` id, with or without OpenRouter's `~` prefix
- * (`~google/gemini-flash-latest`, `~unbiased/pareto-latest`, `openai/gpt-chat-latest`). The model
- * one names can change at any time, which silently changes both its behaviour and its price.
- */
-const MOVING_ALIAS = /-latest$/;
-
-/**
- * Third-party routers, which pick the model for each request themselves, named one by one as
- * OpenRouter listed them on 2026-10-20; a description is never matched. OpenRouter's own routers
- * are every `openrouter/*` id. The live list also leaves out every model OpenRouter tags as a
- * router (`ROUTER_TOKENIZER`); this list is for pi-ai's catalogue, which has no such tag.
- */
-const THIRD_PARTY_ROUTERS: ReadonlySet<string> = new Set(["typesafe/jev-router", "nvidia/switchyard"]);
-
 /** The `architecture.tokenizer` OpenRouter gives its routers, third-party routers and `~` aliases. */
 const ROUTER_TOKENIZER = "Router";
 
 /**
- * Whether an OpenRouter model id is offered at all, on the live list and the installed catalogue
- * alike. Left out:
+ * OpenRouter's live chat list from its public `GET <root>/v1/models` (no key needed): every model
+ * that answers in text, as a pi-ai model built the way pi-ai's own catalogue generator builds one
+ * (`scripts/openrouter-catalog.ts` in pi-ai 1.2), with what pi-ai's `Model` has no field for in
+ * `info`. Differences from the generator:
  *
- * - `:batch` variants: the gateway sends no batch requests, and they get no document cache
- *   breakpoint;
- * - `:free` variants: they are heavily rate-limited, and their providers may train on the prompts,
- *   which does not suit a newsroom gateway;
- * - every model whose provider picks the model itself, by product-owner decision: OpenRouter's own
- *   routers (every `openrouter/*` id: `auto`, `auto-beta`, `fusion`, `free`, and any new one),
- *   `THIRD_PARTY_ROUTERS` and moving aliases (`MOVING_ALIAS`).
+ * - a model id pi-ai's catalogue already has keeps that entry (its API choice, compat and
+ *   thinking fixes), updated with the live limits and price, as pi-ai's
+ *   `personalizeOpenRouterCatalog` does;
+ * - models without tool support are kept, with `info.tools` false;
+ * - a new `anthropic/*` id goes through OpenAI Completions, not Anthropic Messages, so a new
+ *   Claude family is never sent pi-ai's budget-thinking parameters, which it may reject;
+ * - text and image input come from `architecture.input_modalities`.
  *
- * Image-output models are left out as well, by their output modalities (`fetchOpenRouterModels`,
- * `isOfferedInstalledOpenRouterModel`).
+ * A list without a chat model throws.
  */
-export function isOfferedOpenRouterId(id: string): boolean {
-  return (
-    !id.endsWith(":batch") &&
-    !id.endsWith(":free") &&
-    !id.startsWith("openrouter/") &&
-    !THIRD_PARTY_ROUTERS.has(id) &&
-    !MOVING_ALIAS.test(id)
-  );
+export async function fetchOpenRouterModels(input: {
+  fetch: typeof globalThis.fetch;
+  root: string;
+  installed: readonly Model<OpenRouterApi>[];
+  signal: AbortSignal;
+}): Promise<OpenRouterListed[]> {
+  const body = await getModelListJson(input.fetch, `${input.root}/v1/models`, {}, input.signal);
+  const entries = isRecord(body) && Array.isArray(body.data) ? body.data : undefined;
+  if (entries === undefined) throw new Error("the OpenRouter model list has no data array");
+  const installed = new Map(input.installed.map((model) => [model.id, model]));
+  const listed: OpenRouterListed[] = [];
+  const seen = new Set<string>();
+  const now = Date.now();
+  for (const entry of entries as unknown[]) {
+    if (!isRecord(entry) || typeof entry.id !== "string" || !entry.id || seen.has(entry.id)) continue;
+    const model = openRouterModel(entry as unknown as OpenRouterListEntry, installed.get(entry.id), input.root, now);
+    if (model === undefined) continue;
+    seen.add(entry.id);
+    listed.push(model);
+  }
+  if (listed.length === 0) throw new Error("the OpenRouter model list lists no chat model");
+  return listed;
 }
 
-/**
- * Whether an installed OpenRouter model is offered, by the live list's rules: the id rules
- * (`isOfferedOpenRouterId`), text answers, and no image output, which the product owner leaves
- * out on every provider for now. `getModels()` serves pi-ai's chat models only, so a chat model
- * there answers in text. pi-ai's chat catalogue records no output modalities, so a chat model that
- * also answers with images is found by its id in pi-ai's OpenRouter image catalogue
- * (`google/gemini-3-pro-image`, `google/gemini-nano-banana-2.1`).
- */
-export function isOfferedInstalledOpenRouterModel(model: Model<Api>): boolean {
-  return (model.type ?? "chat") === "chat" && isOfferedOpenRouterId(model.id) && !catalogueImageModelIds().has(model.id);
-}
-
-let imageModelIds: ReadonlySet<string> | undefined;
-
-/** The ids of pi-ai's OpenRouter image catalogue, read once. */
-function catalogueImageModelIds(): ReadonlySet<string> {
-  imageModelIds ??= new Set(
-    (openrouterProvider().getAllModels?.() ?? []).filter((model) => model.type === "image").map((model) => model.id),
-  );
-  return imageModelIds;
-}
-
-function openRouterModel(entry: OpenRouterListEntry, known: Model<Api> | undefined, root: string, now: number): ListedModel | undefined {
-  if (!isOfferedOpenRouterId(entry.id)) return undefined;
+function openRouterModel(
+  entry: OpenRouterListEntry,
+  known: Model<OpenRouterApi> | undefined,
+  root: string,
+  now: number,
+): OpenRouterListed | undefined {
   const architecture = isRecord(entry.architecture) ? entry.architecture : {};
-  if (architecture.tokenizer === ROUTER_TOKENIZER) return undefined;
   const output = outputModalities(architecture);
-  if (!output.includes("text") || output.includes("image")) return undefined;
+  if (!output.includes("text")) return undefined;
   const input = inputModalities(architecture);
+  const parameters = Array.isArray(entry.supported_parameters) ? entry.supported_parameters : [];
   const rate = openRouterRate(entry.pricing);
+  const info: OpenRouterModelInfo = {
+    fileInput: input.includes("file"),
+    tools: parameters.includes("tools"),
+    rate,
+    imageOutput: output.includes("image"),
+    router: architecture.tokenizer === ROUTER_TOKENIZER,
+  };
   const topProvider = isRecord(entry.top_provider) ? entry.top_provider : {};
   // `||`: OpenRouter reports a missing limit as absent, null or 0, as pi-ai's generator reads it.
   const contextWindow = positive(topProvider.context_length) || positive(entry.context_length) || known?.contextWindow || 4096;
   const maxTokens = positive(topProvider.max_completion_tokens) || known?.maxTokens || 4096;
   const piInput: ("text" | "image")[] = input.includes("image") ? ["text", "image"] : ["text"];
   const cost = modelCostAt(rate, now);
-  if (known !== undefined) return { model: { ...known, input: piInput, contextWindow, maxTokens, cost }, rate, input };
-  const parameters = Array.isArray(entry.supported_parameters) ? entry.supported_parameters : [];
+  if (known !== undefined) return { model: { ...known, input: piInput, contextWindow, maxTokens, cost }, info };
   const thinkingLevelMap = openRouterThinkingLevelMap(entry.reasoning);
   const model: Model<"openai-completions"> = {
     id: entry.id,
@@ -153,7 +122,7 @@ function openRouterModel(entry: OpenRouterListEntry, known: Model<Api> | undefin
     contextWindow,
     maxTokens,
   };
-  return { model: model as Model<Api>, rate, input };
+  return { model, info };
 }
 
 /** What the model answers with: `output_modalities`, else the `->` side of `modality`. Unknown: text. */
@@ -166,7 +135,7 @@ function outputModalities(architecture: Record<string, unknown>): readonly unkno
 }
 
 /** Text, image and file input from `input_modalities` (else `modality`); text always. */
-function inputModalities(architecture: Record<string, unknown>): ChatModelInput[] {
+function inputModalities(architecture: Record<string, unknown>): ("text" | "image" | "file")[] {
   const listed: unknown[] = Array.isArray(architecture.input_modalities)
     ? architecture.input_modalities
     : typeof architecture.modality === "string"
@@ -178,12 +147,11 @@ function inputModalities(architecture: Record<string, unknown>): ChatModelInput[
 /**
  * OpenRouter's per-token decimal-string prices as a one-period schedule in USD per 1M tokens,
  * as pi-ai's `openRouterCost` converts them, except that a missing, invalid or negative input or
- * output price (OpenRouter reports -1 for routers, which are not offered) is no rate rather than
- * 0, and a missing cache price is unpublished. The first prompt-length override
- * (`min_prompt_tokens`, without a time-of-day condition) becomes the large-prompt tier. A
- * published zero price is a zero rate, while pi-ai's catalogue zero reads as no rate
- * (`catalogueRate`), so a model OpenRouter prices at zero has a zero rate on the live list and
- * none on the installed one.
+ * output price (OpenRouter reports -1 for routers) is no rate rather than 0, and a missing cache
+ * price is unpublished. The first prompt-length override (`min_prompt_tokens`, without a
+ * time-of-day condition) becomes the large-prompt tier. A published zero price is a zero rate,
+ * while pi-ai's catalogue zero reads as no rate (`catalogueRate`), so a model OpenRouter prices at
+ * zero has a zero rate on the live list and none on the installed one.
  */
 export function openRouterRate(pricing: unknown): ModelRate | undefined {
   if (!isRecord(pricing)) return undefined;

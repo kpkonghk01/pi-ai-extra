@@ -1,8 +1,8 @@
 import type { ChatTurnErrorCode } from "./types.ts";
 
 /**
- * A failure the kit detects itself (before or while building the request). It never escapes
- * `runTurn`: it becomes a `failed` event with this code. Thrown inside a payload transform, it
+ * A failure the kit detects itself (before or while building the request). It never escapes a
+ * turn: it becomes the final `error` event, with this code. Thrown inside a payload transform, it
  * stops the request before anything is sent.
  */
 export class TurnFailure extends Error {
@@ -26,6 +26,24 @@ export function statusFromMessage(message: string | undefined): number | undefin
   return status !== undefined && status >= 400 && status <= 599 ? status : undefined;
 }
 
+/**
+ * `read()`, or `fallback` when it throws. For what the kit reads of a caller's objects or of a
+ * thrown value, where a getter or proxy that throws must not end a turn with an exception.
+ */
+export function readOr<T>(read: () => T, fallback: T): T {
+  try {
+    return read();
+  } catch {
+    return fallback;
+  }
+}
+
+/** The text of anything thrown, even a null-prototype object or an error whose `message` getter throws. */
 export function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return readOr(() => (error instanceof Error ? error.message : String(error)), "unknown error");
+}
+
+/** `error instanceof TurnFailure`, which a proxy with a throwing `getPrototypeOf` trap would make throw. */
+export function isTurnFailure(error: unknown): error is TurnFailure {
+  return readOr(() => error instanceof TurnFailure, false);
 }

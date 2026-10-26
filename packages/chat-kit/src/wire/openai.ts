@@ -1,4 +1,4 @@
-import { isRecord } from "../guards.ts";
+import { isRecord } from "@hk01/pi-ai-extra-internal/util";
 import type { ChatUsage } from "../types.ts";
 import { tokenCount, toChatUsage } from "../usage.ts";
 import type { BlockedTurn } from "./types.ts";
@@ -8,6 +8,9 @@ export const CONTENT_FILTER_BLOCK: BlockedTurn = {
   reason: "content_filter",
   message: "The provider's content filter stopped the answer (content_filter).",
 };
+
+/** The headers the OpenAI SDK would add from `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`: never sent (ADR 0003, no ambient configuration). */
+export const OPENAI_AMBIENT_HEADERS: Readonly<Record<string, null>> = { "OpenAI-Organization": null, "OpenAI-Project": null };
 
 /** Where an OpenAI usage object keeps the prompt and answer counts and their details. */
 export interface OpenAIUsageFields {
@@ -50,7 +53,7 @@ export function openAIUsage(
   const output = isRecord(outputDetails) ? outputDetails : {};
   return toChatUsage(
     {
-      input: tokenCount(usage[fields.input]),
+      prompt: tokenCount(usage[fields.input]),
       output: tokenCount(usage[fields.output]),
       total: tokenCount(usage.total_tokens),
       cacheRead: tokenCount(input.cached_tokens),

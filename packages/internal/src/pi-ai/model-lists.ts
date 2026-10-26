@@ -1,9 +1,11 @@
-import { isRecord } from "../guards.ts";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import { isRecord } from "../util.ts";
+import { modelIdKey } from "../model-id.ts";
 
 /**
- * GETs a provider's model list as JSON, under the list read's `signal` (`LIST_READ_TIMEOUT_MS`). A
- * non-2xx status, a body that is not JSON, or KIE's HTTP-200 error envelope (`{ code, msg }`)
- * throws, with the provider's own message when it gave one.
+ * GETs a provider's model list as JSON, under the list read's `signal`. A non-2xx status, a body
+ * that is not JSON, or KIE's HTTP-200 error envelope (`{ code, msg }`) throws, with the
+ * provider's own message when it gave one.
  */
 export async function getModelListJson(
   fetch: typeof globalThis.fetch,
@@ -44,6 +46,27 @@ export function modelIdsOf(body: unknown, source: string): string[] {
   });
   if (ids.length === 0) throw new Error(`the model list from ${source} lists no model ids`);
   return ids;
+}
+
+/**
+ * The package's models whose ids the live lists name, in package order, matched across `.` and
+ * `-` spellings. None at all is treated as a failed read, not as an empty list: with an
+ * undocumented list shape it more likely means the ids were not recognised, and the previous list
+ * stays in use.
+ */
+export function keepListed<TApi extends Api>(
+  installed: readonly Model<TApi>[],
+  listFor: (model: Model<TApi>) => ReadonlySet<string>,
+  provider: string,
+): Model<TApi>[] {
+  const kept = installed.filter((model) => listFor(model).has(modelIdKey(model.id)));
+  if (kept.length === 0) throw new Error(`the ${provider} model lists name none of the package's chat models`);
+  return kept;
+}
+
+/** A reported amount (a cost or credits): a finite, non-negative number, otherwise not reported. */
+export function reportedAmount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 function detail(body: unknown): string {

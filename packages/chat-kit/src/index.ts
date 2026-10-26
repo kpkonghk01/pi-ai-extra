@@ -1,30 +1,31 @@
 /**
- * Server-only chat kit: runs one chat turn on the provider and model the consumer chose, with the
- * same features on every provider (reference documents, a response schema, safety-block
- * reporting, usage and cost), and lists each provider's live models. It never chooses a provider
- * and never falls back (ADR 0003, ADR 0008).
+ * Server-only chat kit on pi-ai (ADR 0008, ADR 0009). It registers the chat providers a consumer
+ * builds with the provider packages' factories, offers one interface for calling LLMs, and routes
+ * each turn by its model reference (`{ provider, id }`) to that provider. A turn takes pi-ai's
+ * `Context` and option names and streams pi-ai's events. Beside them it gives every provider the
+ * same extras pi-ai lacks: reference documents, a response schema, safety-block reporting, and a
+ * usage record with its cost. It never chooses a provider and never falls back (ADR 0003).
  *
- * Never import it from browser code: provider keys are passed to `createChatKit`.
+ * Never import it from browser code: the providers it registers hold their keys.
  */
 export { createChatKit } from "./kit.ts";
-export type { LargePromptRates, ModelRate, RatePeriod, TokenRates } from "@hk01/pi-ai-extra-internal/rates";
+export type { ChatProvider, ChatProviderTraits, LargePromptRates, ModelRate, RatePeriod, TokenRates } from "@hk01/pi-ai-extra-internal/pi-ai";
 export type {
+  ChatAssistantMessage,
   ChatDocument,
-  ChatHistoryMessage,
   ChatKit,
   ChatKitOptions,
   ChatListModelsOptions,
-  ChatModelInfo,
-  ChatModelInput,
-  ChatProviderConfig,
-  ChatProviderKind,
+  ChatModel,
+  ChatModelRef,
+  ChatModelTraits,
   ChatProviderModels,
   ChatResponseSchema,
+  ChatSchemaStreamOptions,
+  ChatStreamOptions,
+  ChatToolFreeContext,
   ChatTurnError,
   ChatTurnErrorCode,
-  ChatTurnEvent,
-  ChatTurnInput,
-  ChatTurnOptions,
-  ChatTurnSettings,
+  ChatTurnStream,
   ChatUsage,
 } from "./types.ts";

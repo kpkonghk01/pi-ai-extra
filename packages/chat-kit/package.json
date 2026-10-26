@@ -1,7 +1,7 @@
 {
   "name": "@hk01/pi-ai-extra-chat-kit",
-  "version": "0.2.0",
-  "description": "Server-side chat kit on pi-ai: runs one chat turn the same way on Gemini, OpenRouter, KIE and ToAPIs (documents, response schema, safety blocks, usage and cost) and lists each provider's live models",
+  "version": "0.3.0",
+  "description": "Server-side chat kit on pi-ai: registers chat providers and runs a turn from pi-ai's Context the same way on each (documents, response schema, safety blocks, usage and cost), and lists their live models",
   "license": "UNLICENSED",
   "type": "module",
   "module": "./dist/index.mjs",
@@ -34,15 +34,31 @@
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "1.2.0",
-    "@hk01/pi-ai-extra-google": ">=0.5.0 <1.0.0",
-    "@hk01/pi-ai-extra-kie": ">=0.4.0 <1.0.0",
-    "@hk01/pi-ai-extra-toapis": ">=0.4.0 <1.0.0"
+    "@hk01/pi-ai-extra-google": ">=0.6.0 <1.0.0",
+    "@hk01/pi-ai-extra-kie": ">=0.5.0 <1.0.0",
+    "@hk01/pi-ai-extra-openrouter": ">=0.1.0 <1.0.0",
+    "@hk01/pi-ai-extra-toapis": ">=0.5.0 <1.0.0"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "1.2.0",
     "@hk01/pi-ai-extra-google": "workspace:*",
     "@hk01/pi-ai-extra-internal": "workspace:*",
     "@hk01/pi-ai-extra-kie": "workspace:*",
+    "@hk01/pi-ai-extra-openrouter": "workspace:*",
     "@hk01/pi-ai-extra-toapis": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@hk01/pi-ai-extra-google": {
+      "optional": true
+    },
+    "@hk01/pi-ai-extra-kie": {
+      "optional": true
+    },
+    "@hk01/pi-ai-extra-openrouter": {
+      "optional": true
+    },
+    "@hk01/pi-ai-extra-toapis": {
+      "optional": true
+    }
   }
 }

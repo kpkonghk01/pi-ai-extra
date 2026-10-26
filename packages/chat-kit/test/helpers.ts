@@ -1,6 +1,13 @@
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { jsonResponse, type FakeFetch } from "@hk01/pi-ai-extra-internal/testing";
-import type { ChatDocument, ChatTurnEvent, ChatTurnInput } from "../src/index.ts";
+import type { AssistantMessage, AssistantMessageEvent, Context, Message, ThinkingLevel, Tool } from "@earendil-works/pi-ai";
+import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
+import { createGoogleProvider } from "@hk01/pi-ai-extra-google/pi-ai";
+import { createKieProvider } from "@hk01/pi-ai-extra-kie/pi-ai";
+import { createOpenRouterProvider } from "@hk01/pi-ai-extra-openrouter/pi-ai";
+import { createToapisProvider } from "@hk01/pi-ai-extra-toapis/pi-ai";
+import { createChatKit, type ChatProvider } from "../src/index.ts";
+import type { ChatAssistantMessage, ChatTurnErrorCode, ChatUsage, ChatDocument, ChatKit, ChatResponseSchema, ChatStreamOptions, ChatTurnStream } from "../src/index.ts";
 
 /** A $/1M-token rate as OpenRouter's per-token decimal string. */
 const perToken = (perMillion: number) => String(perMillion / 1_000_000);
@@ -30,7 +37,7 @@ export function openRouterLiveList(): { data: Record<string, unknown>[] } {
                 ...(model.cost.cacheWrite > 0 ? { input_cache_write: perToken(model.cost.cacheWrite) } : {}),
               },
             }),
-        supported_parameters: model.reasoning ? ["reasoning"] : [],
+        supported_parameters: model.reasoning ? ["reasoning", "tools"] : ["tools"],
       })),
   };
 }
@@ -158,17 +165,85 @@ export function anthropicEvents(input: {
   return events;
 }
 
-export async function collect(events: AsyncIterable<ChatTurnEvent>): Promise<ChatTurnEvent[]> {
-  const result: ChatTurnEvent[] = [];
+/** A turn as the tests describe it: what a consumer would turn into pi-ai's `Context` and the options. */
+export interface TestTurn {
+  provider: string;
+  model: string;
+  systemPrompt: string;
+  documents: readonly ChatDocument[];
+  history: readonly { role: "user" | "assistant"; text: string }[];
+  message: string;
+  responseSchema?: ChatResponseSchema | undefined;
+  settings?: { temperature?: number; maxTokens?: number; reasoning?: ThinkingLevel } | undefined;
+  tools?: Tool[] | undefined;
+}
+
+export function turn(overrides: Partial<TestTurn> = {}): TestTurn {
+  return {
+    provider: "openrouter",
+    model: "openai/gpt-4o-mini",
+    systemPrompt: "You are a helpful Gem.",
+    documents: [],
+    history: [],
+    message: "Hello",
+    ...overrides,
+  };
+}
+
+/** pi-ai's `Context` for a test turn. */
+export function contextOf(input: TestTurn): Context {
+  const messages: Message[] = input.history.map((entry) =>
+    entry.role === "user"
+      ? { role: "user", content: entry.text, timestamp: 1 }
+      : {
+          role: "assistant",
+          content: [{ type: "text", text: entry.text }],
+          api: "openai-completions",
+          provider: input.provider,
+          model: input.model,
+          usage: zeroUsage(),
+          stopReason: "stop",
+          timestamp: 1,
+        },
+  );
+  messages.push({ role: "user", content: input.message, timestamp: 2 });
+  return { ...(input.systemPrompt ? { systemPrompt: input.systemPrompt } : {}), messages, ...(input.tools ? { tools: input.tools } : {}) };
+}
+
+/** Runs a test turn on the kit: pi-ai's `Context` and options built from it. */
+export function run(chat: ChatKit, input: TestTurn, signal?: AbortSignal): ChatTurnStream {
+  const options = {
+    ...input.settings,
+    ...(input.documents.length > 0 ? { documents: input.documents } : {}),
+    ...(input.responseSchema ? { responseSchema: input.responseSchema } : {}),
+    ...(signal ? { signal } : {}),
+  };
+  return chat.streamSimple({ provider: input.provider, id: input.model }, contextOf(input) as Context, options as unknown as ChatStreamOptions);
+}
+
+export async function collect(events: AsyncIterable<AssistantMessageEvent>): Promise<AssistantMessageEvent[]> {
+  const result: AssistantMessageEvent[] = [];
   for await (const event of events) result.push(event);
   return result;
 }
 
-export function textOf(events: readonly ChatTurnEvent[]): string {
-  return events.map((event) => (event.type === "text" ? event.delta : "")).join("");
+/** Runs a turn to its end: every event, and the final message. */
+export async function runToEnd(chat: ChatKit, input: TestTurn, signal?: AbortSignal): Promise<{ events: AssistantMessageEvent[]; message: ChatAssistantMessage }> {
+  const stream = run(chat, input, signal);
+  const events = await collect(stream);
+  return { events, message: await stream.result() };
 }
 
-export function lastEvent(events: readonly ChatTurnEvent[]): ChatTurnEvent {
+export function textOf(events: readonly AssistantMessageEvent[]): string {
+  return events.map((event) => (event.type === "text_delta" ? event.delta : "")).join("");
+}
+
+/** The text of the final message's text blocks. */
+export function answerOf(message: AssistantMessage): string {
+  return message.content.map((block) => (block.type === "text" ? block.text : "")).join("");
+}
+
+export function lastEvent(events: readonly AssistantMessageEvent[]): AssistantMessageEvent {
   const last = events.at(-1);
   if (!last) throw new Error("no events");
   return last;
@@ -195,19 +270,99 @@ export function testDocument(
   return document;
 }
 
-export function turn(overrides: Partial<ChatTurnInput> = {}): ChatTurnInput {
-  return {
-    provider: "router",
-    model: "openai/gpt-4o-mini",
-    systemPrompt: "You are a helpful Gem.",
-    documents: [],
-    history: [],
-    message: "Hello",
-    ...overrides,
-  };
-}
-
 export function jsonBody(body: unknown): Record<string, unknown> {
   if (typeof body !== "string") throw new Error("expected a JSON string body");
   return JSON.parse(body) as Record<string, unknown>;
+}
+
+type ProviderName = "google" | "openrouter" | "kie" | "toapis";
+
+/** One chat provider per name, each bound to its key and `fetch` (which serves its model list). */
+export function chatProviders(
+  names: readonly ProviderName[],
+  fetch: typeof globalThis.fetch | undefined,
+  extra: { grounding?: boolean; keys?: Partial<Record<ProviderName, string>> } = {},
+): ChatProvider[] {
+  const key = (name: ProviderName, fallback: string) => extra.keys?.[name] ?? fallback;
+  const factories: Record<ProviderName, () => ChatProvider> = {
+    google: () => createGoogleProvider({ apiKey: key("google", "g-key"), fetch, ...(extra.grounding ? { grounding: true } : {}) }),
+    openrouter: () => createOpenRouterProvider({ apiKey: key("openrouter", "or-key"), fetch }),
+    kie: () => createKieProvider({ apiKey: key("kie", "kie-key"), fetch }),
+    toapis: () => createToapisProvider({ apiKey: key("toapis", "t-key"), fetch }),
+  };
+  return names.map((name) => factories[name]());
+}
+
+/** A kit over the named providers, with `fetch` for model lists and turns. */
+export function testKit(names: readonly ProviderName[], fetch?: typeof globalThis.fetch, extra?: Parameters<typeof chatProviders>[2]): ChatKit {
+  return createChatKit({ providers: chatProviders(names, fetch, extra), ...(fetch ? { fetch } : {}) });
+}
+
+/**
+ * A turn's outcome in compact form, for assertions: `done` (with `truncated` for a `length` stop)
+ * or `failed` (with the error's code, status, the raw stop reason and the message).
+ */
+export type Outcome =
+  | { type: "done"; truncated?: true; usage?: ChatUsage }
+  | { type: "aborted"; usage?: ChatUsage }
+  | { type: "failed"; error: { code: ChatTurnErrorCode; reason?: string; status?: number; message: string }; usage?: ChatUsage };
+
+export function outcomeOf(message: ChatAssistantMessage): Outcome {
+  const usage = message.chatKit.usage === undefined ? {} : { usage: message.chatKit.usage };
+  if (message.stopReason === "error") {
+    return {
+      type: "failed",
+      error: {
+        code: message.chatKit.error.code,
+        ...(message.rawStopReason === undefined ? {} : { reason: message.rawStopReason }),
+        ...(message.chatKit.error.status === undefined ? {} : { status: message.chatKit.error.status }),
+        message: message.errorMessage ?? "",
+      },
+      ...usage,
+    };
+  }
+  if (message.stopReason === "aborted") return { type: "aborted", ...usage };
+  return { type: "done", ...(message.stopReason === "length" ? { truncated: true as const } : {}), ...usage };
+}
+
+/** Runs a turn to its end and returns its outcome in compact form. */
+export async function outcome(chat: ChatKit, input: TestTurn, signal?: AbortSignal): Promise<Outcome> {
+  return outcomeOf((await runToEnd(chat, input, signal)).message);
+}
+
+/** Runs `run` with the environment variables set (or, for `undefined`, deleted), and restores them afterwards. */
+export async function withEnv<T>(env: Record<string, string | undefined>, run: () => Promise<T>): Promise<T> {
+  const saved = Object.fromEntries(Object.keys(env).map((name) => [name, process.env[name]]));
+  const apply = (values: Record<string, string | undefined>) => {
+    for (const [name, value] of Object.entries(values)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  };
+  apply(env);
+  try {
+    return await run();
+  } finally {
+    apply(saved);
+  }
+}
+
+/** An error whose `message` getter throws. */
+export function errorWithThrowingMessage(): Error {
+  const error = new Error("hidden");
+  Object.defineProperty(error, "message", {
+    get() {
+      throw error;
+    },
+  });
+  return error;
+}
+
+/** A proxy whose prototype lookup throws, which `instanceof` performs. */
+export function throwingPrototype(): object {
+  return new Proxy({}, {
+    getPrototypeOf() {
+      throw new Error("no prototype");
+    },
+  });
 }

@@ -1,7 +1,7 @@
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
+import { modelIdKey } from "@hk01/pi-ai-extra-internal/model-id";
 import { TurnFailure } from "../errors.ts";
-import { isRecord } from "../guards.ts";
-import { modelIdKey } from "../model-id.ts";
+import { isRecord } from "@hk01/pi-ai-extra-internal/util";
 import type { ChatUsage } from "../types.ts";
 import { createUsageCapture, tokenCount, toChatUsage } from "../usage.ts";
 import { sanitizeSchemaForAnthropic } from "./anthropic-schema.ts";
@@ -24,21 +24,39 @@ const ANTHROPIC_BLOCKS: DocumentEncoder<AnthropicBlock, AnthropicBlock> = {
 };
 
 /**
- * pi-ai's own prompt-cache breakpoint, if it set one: with `cacheRetention` other than `"none"` it
- * marks the system prompt and the last block of the last user message (and the last tool, where
- * supported). Reusing that object keeps its TTL and stays off when caching is off.
+ * Every block of the request that can carry a cache breakpoint: the system blocks, the tools and
+ * the blocks of each message.
  */
-function findCacheControl(payload: Record<string, unknown>): unknown {
-  const blocks = [
+function cacheableBlocks(payload: Record<string, unknown>): unknown[] {
+  return [
     ...(Array.isArray(payload.system) ? payload.system : []),
+    ...(Array.isArray(payload.tools) ? payload.tools : []),
     ...(Array.isArray(payload.messages)
       ? payload.messages.flatMap((message) => (isRecord(message) && Array.isArray(message.content) ? message.content : []))
       : []),
   ];
-  for (const block of blocks) {
-    if (isRecord(block) && isRecord(block.cache_control)) return block.cache_control;
-  }
-  return undefined;
+}
+
+/** The blocks of the request that carry a cache breakpoint. */
+function breakpointBlocks(payload: Record<string, unknown>): Record<string, unknown>[] {
+  return cacheableBlocks(payload).filter((block): block is Record<string, unknown> => isRecord(block) && isRecord(block.cache_control));
+}
+
+/**
+ * pi-ai's own prompt-cache breakpoint, if it set one: with `cacheRetention` other than `"none"` it
+ * marks the system prompt, the last tool (where the provider supports it) and the last block of the
+ * last user message. Reusing that object keeps its TTL and stays off when caching is off.
+ */
+function findCacheControl(payload: Record<string, unknown>): unknown {
+  return breakpointBlocks(payload)[0]?.cache_control;
+}
+
+/** Anthropic allows at most four cache breakpoints in one request; a fifth is a 400. */
+const MAX_CACHE_BREAKPOINTS = 4;
+
+/** How many cache breakpoints the request already has. */
+function countCacheBreakpoints(payload: Record<string, unknown>): number {
+  return breakpointBlocks(payload).length;
 }
 
 function thinkingEnabled(thinking: unknown): boolean {
@@ -48,9 +66,10 @@ function thinkingEnabled(thinking: unknown): boolean {
 /**
  * Anthropic Messages (OpenRouter `anthropic/*`, KIE and ToAPIs Claude): documents replace the
  * marker block (`document` for PDFs, `image` for images), with one more cache breakpoint on the
- * last document block so the prefix up to the end of the documents is cached across turns. That
- * makes three breakpoints with pi-ai's two (system prompt, last user message), within Anthropic's
- * four. The response schema is a forced call of a single tool whose input schema is the schema;
+ * last document block so the prefix up to the end of the documents is cached across turns. pi-ai
+ * sets up to three (system prompt, last tool, last user message), so that is at most Anthropic's
+ * four; the kit adds its own only while the request has fewer than four, so a breakpoint pi-ai adds
+ * later cannot push it over. The response schema is a forced call of a single tool whose input schema is the schema;
  * when the model thinks and the provider takes native structured output, it is
  * `output_config.format` instead (beside pi-ai's own `output_config`, such as its effort).
  *
@@ -66,7 +85,7 @@ export function transformAnthropicPayload(payload: unknown, plan: PayloadPlan): 
     const replacement = plan.documents.map((document) => encodeDocument(document, ANTHROPIC_BLOCKS));
     const cacheControl = findCacheControl(payload);
     const last = replacement.length - 1;
-    if (cacheControl !== undefined && last >= 0) replacement[last] = { ...replacement[last], cache_control: cacheControl };
+    if (cacheControl !== undefined && last >= 0 && countCacheBreakpoints(payload) < MAX_CACHE_BREAKPOINTS) replacement[last] = { ...replacement[last], cache_control: cacheControl };
     next.messages = replaceDocumentMarker(payload.messages, plan.marker, replacement, { partsKey: "content", textOf: textOfType("text") });
   }
   if (plan.responseSchema && plan.nativeStructuredOutput) {
@@ -126,8 +145,8 @@ function alwaysThinks(model: Model<Api>): boolean {
  */
 export function anthropicSchemaUnsupported(model: Model<Api>, request: SchemaRequest): string | undefined {
   if (!request.responseSchema || request.nativeStructuredOutput) return undefined;
-  if (request.settings.reasoning !== undefined) {
-    return "a response schema on Anthropic Messages is a forced tool call, which Anthropic does not allow with thinking, and this provider does not take native structured output yet; remove settings.reasoning.";
+  if (request.reasoning !== undefined) {
+    return "a response schema on Anthropic Messages is a forced tool call, which Anthropic does not allow with thinking, and this provider does not take native structured output yet; remove the reasoning option.";
   }
   if (alwaysThinks(model)) {
     return "a response schema on Anthropic Messages is a forced tool call, which Anthropic does not allow with thinking, and this model always thinks; this provider does not take native structured output yet.";
@@ -137,13 +156,14 @@ export function anthropicSchemaUnsupported(model: Model<Api>, request: SchemaReq
 
 /** A forced tool call unless the model thinks during the turn and the provider takes native structured output. */
 function anthropicSchemaAsToolCall(model: Model<Api>, request: SchemaRequest): boolean {
-  const thinks = request.settings.reasoning !== undefined || alwaysThinks(model);
+  const thinks = request.reasoning !== undefined || alwaysThinks(model);
   return !(thinks && request.nativeStructuredOutput);
 }
 
 /**
  * The Messages usage object: `input_tokens` excludes cache reads (`cache_read_input_tokens`) and
- * writes (`cache_creation_input_tokens`), so `inputTokens` adds the ones reported. Anthropic
+ * writes (`cache_creation_input_tokens`): it is `ChatUsage.input` as it stands (the prompt is the
+ * three added up, and `toChatUsage` takes the cache counts back off). Anthropic
  * reports no total, so `totalTokens` is omitted, and reasoning only as
  * `output_tokens_details.thinking_tokens` where a proxy passes it on.
  */
@@ -154,7 +174,7 @@ function anthropicUsage(usage: Record<string, unknown>, raw: Record<string, unkn
   const output = isRecord(usage.output_tokens_details) ? usage.output_tokens_details : {};
   return toChatUsage(
     {
-      input: input === undefined ? undefined : input + (cacheRead ?? 0) + (cacheWrite ?? 0),
+      prompt: input === undefined ? undefined : input + (cacheRead ?? 0) + (cacheWrite ?? 0),
       output: tokenCount(usage.output_tokens),
       cacheRead,
       cacheWrite,

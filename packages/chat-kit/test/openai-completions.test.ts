@@ -1,18 +1,24 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { createFakeFetch, jsonResponse, PNG_BYTES, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
+import { createOpenRouterProvider } from "@hk01/pi-ai-extra-openrouter/pi-ai";
 import { createChatKit } from "../src/index.ts";
+import { createFakeFetch, jsonResponse, PNG_BYTES, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import {
   brokenSseResponse,
-  collect,
   completionsChunk,
   completionsUsageChunk,
   jsonBody,
+  outcome,
   lastEvent,
+  outcomeOf,
+  run,
+  runToEnd,
   sseResponse,
   testDocument,
   textOf,
   turn,
+  testKit,
+  withEnv,
   wireFetch,
 } from "./helpers.ts";
 
@@ -21,7 +27,7 @@ const SCHEMA = { type: "object", properties: { title: { type: "string" } }, requ
 
 function kit(routes: FakeRoute[]) {
   const fake = createFakeFetch(routes);
-  const chat = createChatKit({ providers: [{ name: "router", provider: "openrouter", apiKey: "explicit-or-key" }], fetch: wireFetch(fake) });
+  const chat = testKit(["openrouter"], wireFetch(fake), { keys: { openrouter: "explicit-or-key" } });
   return { chat, fake };
 }
 
@@ -53,7 +59,7 @@ function okStream() {
   ]);
 }
 
-describe("runTurn on OpenAI Completions (OpenRouter)", () => {
+describe("streamSimple on OpenAI Completions (OpenRouter)", () => {
   let savedKey: string | undefined;
   beforeEach(() => {
     savedKey = process.env.OPENROUTER_API_KEY;
@@ -64,17 +70,28 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
     else process.env.OPENROUTER_API_KEY = savedKey;
   });
 
+  it("sends no OpenAI organisation or project header from the environment", async () => {
+    await withEnv({ OPENAI_ORG_ID: "org-from-env", OPENAI_PROJECT_ID: "proj-from-env" }, async () => {
+      const { chat, fake } = kit([{ method: "POST", url: COMPLETIONS_URL, respond: okStream }]);
+      assert.equal((await outcome(chat, turn())).type, "done");
+      const headers = fake.calls.find((call) => call.method === "POST")?.headers ?? {};
+      assert.equal(headers["openai-organization"], undefined);
+      assert.equal(headers["openai-project"], undefined);
+      assert.equal(headers.authorization, "Bearer explicit-or-key");
+    });
+  });
+
   it("streams text and reports usage with the provider's raw record (cost), using only the explicit key", async () => {
     const { chat, fake } = kit([{ method: "POST", url: COMPLETIONS_URL, respond: okStream }]);
-    const events = await collect(chat.runTurn(turn()));
+    const { events, message } = await runToEnd(chat, turn());
     assert.equal(textOf(events), "Hello");
-    assert.deepEqual(lastEvent(events), {
+    assert.deepEqual(outcomeOf(message), {
       type: "done",
       usage: {
-        inputTokens: 120,
-        outputTokens: 8,
-        cachedInputTokens: 100,
-        reasoningTokens: 3,
+        input: 20,
+        output: 8,
+        cacheRead: 100,
+        reasoning: 3,
         totalTokens: 128,
         costUsd: 0.00042,
         costSource: "provider",
@@ -113,11 +130,11 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
         ],
       },
     ]);
-    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn()))), {
+    assert.deepEqual(await outcome(chat, turn()), {
       type: "done",
       usage: {
-        inputTokens: 10,
-        outputTokens: 2,
+        input: 10,
+        output: 2,
         totalTokens: 12,
         // No reported cost: estimated from the catalogue rate (0.15 in, 0.6 out per 1M).
         costUsd: 0.0000027,
@@ -125,7 +142,7 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
         raw: { usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } },
       },
     });
-    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn()))), { type: "done" });
+    assert.deepEqual(await outcome(chat, turn()), { type: "done" });
   });
 
   it("keeps OpenRouter's reported cost when the answer count is missing", async () => {
@@ -137,9 +154,9 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
         respond: () => sseResponse([completionsChunk({ content: "Hi" }, "stop"), completionsUsageChunk(usage), "[DONE]"]),
       },
     ]);
-    assert.deepEqual(lastEvent(await collect(chat.runTurn(turn()))), {
+    assert.deepEqual(await outcome(chat, turn()), {
       type: "done",
-      usage: { inputTokens: 10, costUsd: 0.0001, costSource: "provider", raw: { usage } },
+      usage: { input: 10, costUsd: 0.0001, costSource: "provider", raw: { usage } },
     });
   });
 
@@ -148,9 +165,7 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
     const png = testDocument("logo.png", "image/png", PNG_BYTES);
     const notes = testDocument("notes.md", "text/markdown; charset=utf-8", "# Notes\nBe brief.");
     const { chat, fake } = kit([{ method: "POST", url: COMPLETIONS_URL, respond: okStream }]);
-    const events = await collect(
-      chat.runTurn(
-        turn({
+    const { message } = await runToEnd(chat, turn({
           documents: [pdf, png, notes],
           history: [
             { role: "user", text: "First question" },
@@ -158,11 +173,9 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
           ],
           message: "Second question",
           responseSchema: { name: "answer", schema: SCHEMA },
-          settings: { temperature: 0.3, maxOutputTokens: 500 },
-        }),
-      ),
-    );
-    assert.equal(lastEvent(events).type, "done");
+          settings: { temperature: 0.3, maxTokens: 500 },
+        }),);
+    assert.equal(outcomeOf(message).type, "done");
     assert.equal(pdf.loads, 0, "a PDF sent by URL is never loaded");
     assert.equal(png.loads, 1);
     assert.equal(notes.loads, 1);
@@ -190,9 +203,7 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
   it("opens the first user turn with the documents when the history starts with an assistant message", async () => {
     const notes = testDocument("notes.md", "text/markdown", "N");
     const { chat, fake } = kit([{ method: "POST", url: COMPLETIONS_URL, respond: okStream }]);
-    await collect(
-      chat.runTurn(
-        turn({
+    (await runToEnd(chat, turn({
           systemPrompt: "",
           documents: [notes],
           history: [
@@ -201,9 +212,7 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
             { role: "assistant", text: "A1" },
           ],
           message: "Q2",
-        }),
-      ),
-    );
+        }))).events;
     const messages = jsonBody(fake.calls[0]?.body).messages as { role: string; content: unknown }[];
     assert.deepEqual(
       messages.map((message) => message.role),
@@ -226,11 +235,11 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
       },
     ]);
     const chat = createChatKit({
-      providers: [{ name: "router", provider: "openrouter", apiKey: "k", baseUrl: "https://proxy.example.com/openrouter/" }],
+      providers: [createOpenRouterProvider({ apiKey: "k", baseUrl: "https://proxy.example.com/openrouter/", fetch: wireFetch(fake) })],
       fetch: wireFetch(fake),
     });
-    assert.equal(lastEvent(await collect(chat.runTurn(turn()))).type, "done");
-    await collect(chat.runTurn(turn({ model: "anthropic/claude-sonnet-4.6" })));
+    assert.equal((await outcome(chat, turn())).type, "done");
+    await runToEnd(chat, turn({ model: "anthropic/claude-sonnet-4.6" }));
     assert.deepEqual(
       fake.calls.map((call) => call.url.split("?")[0]),
       ["https://proxy.example.com/openrouter/v1/chat/completions", "https://proxy.example.com/openrouter/v1/messages"],
@@ -251,14 +260,14 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
           ]),
       },
     ]);
-    const events = await collect(chat.runTurn(turn()));
+    const { events, message } = await runToEnd(chat, turn());
     assert.equal(textOf(events), "Partial");
-    const last = lastEvent(events);
+    const last = outcomeOf(message);
     assert.equal(last.type, "failed");
     assert.equal(last.type === "failed" && last.error.code, "CONTENT_BLOCKED");
     assert.equal(last.type === "failed" && last.error.reason, "content_filter");
-    assert.match(last.type === "failed" ? last.error.message : "", /^\[router\/openai\/gpt-4o-mini\] /);
-    assert.equal(last.type === "failed" && last.usage?.inputTokens, 10);
+    assert.match(last.type === "failed" ? last.error.message : "", /^\[openrouter\/openai\/gpt-4o-mini\] /);
+    assert.equal(last.type === "failed" && last.usage?.input, 10);
   });
 
   it("retries a transient failure before generation starts, with the same provider and model", async () => {
@@ -269,8 +278,8 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
         respond: [() => jsonResponse({ error: { message: "overloaded" } }, 503, { "retry-after-ms": "1" }), okStream],
       },
     ]);
-    const events = await collect(chat.runTurn(turn()));
-    assert.equal(lastEvent(events).type, "done");
+    const { message } = await runToEnd(chat, turn());
+    assert.equal(outcomeOf(message).type, "done");
     assert.equal(fake.calls.length, 2);
     assert.deepEqual(
       fake.calls.map((call) => jsonBody(call.body).model),
@@ -286,7 +295,7 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
         respond: () => jsonResponse({ error: { message: "overloaded" } }, 503, { "retry-after-ms": "1" }),
       },
     ]);
-    const last = lastEvent(await collect(chat.runTurn(turn())));
+    const last = await outcome(chat, turn());
     assert.equal(fake.calls.length, 3);
     assert.equal(last.type === "failed" && last.error.code, "PROVIDER_ERROR");
     assert.equal(last.type === "failed" && last.error.status, 503);
@@ -300,10 +309,10 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
         respond: [() => brokenSseResponse([completionsChunk({ content: "Half an ans" })]), okStream],
       },
     ]);
-    const events = await collect(chat.runTurn(turn()));
+    const { events, message } = await runToEnd(chat, turn());
     assert.equal(fake.calls.length, 1);
     assert.equal(textOf(events), "Half an ans");
-    const last = lastEvent(events);
+    const last = outcomeOf(message);
     assert.equal(last.type === "failed" && last.error.code, "PROVIDER_ERROR");
   });
 
@@ -315,9 +324,9 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
         respond: () => jsonResponse({ error: { message: "No endpoints support response_format" } }, 404),
       },
     ]);
-    const events = await collect(chat.runTurn(turn({ responseSchema: { name: "answer", schema: SCHEMA } })));
+    const { message } = await runToEnd(chat, turn({ responseSchema: { name: "answer", schema: SCHEMA } }));
     assert.equal(fake.calls.length, 1);
-    const last = lastEvent(events);
+    const last = outcomeOf(message);
     assert.equal(last.type, "failed");
     if (last.type !== "failed") return;
     assert.equal(last.error.code, "PROVIDER_ERROR");
@@ -338,54 +347,39 @@ describe("runTurn on OpenAI Completions (OpenRouter)", () => {
 
   it("ends a free-form answer cut off at the output-token limit with done and truncated, keeping its text", async () => {
     const { chat } = kit([{ method: "POST", url: COMPLETIONS_URL, respond: lengthStop("Long answ") }]);
-    const events = await collect(chat.runTurn(turn()));
+    const { events, message } = await runToEnd(chat, turn());
     assert.equal(textOf(events), "Long answ");
-    const last = lastEvent(events);
+    const last = outcomeOf(message);
     assert.equal(last.type, "done");
     if (last.type !== "done") return;
     assert.equal(last.truncated, true);
-    assert.equal(last.usage?.outputTokens, 5);
+    assert.equal(last.usage?.output, 5);
   });
 
   it("fails a response-schema answer cut off at the output-token limit, with the raw stop reason", async () => {
     const { chat } = kit([{ method: "POST", url: COMPLETIONS_URL, respond: lengthStop('{"title":"Lo') }]);
-    const last = lastEvent(await collect(chat.runTurn(turn({ responseSchema: { name: "answer", schema: SCHEMA } }))));
+    const last = await outcome(chat, turn({ responseSchema: { name: "answer", schema: SCHEMA } }));
     assert.equal(last.type, "failed");
     if (last.type !== "failed") return;
     assert.equal(last.error.code, "PROVIDER_ERROR");
     assert.equal(last.error.reason, "length");
-    assert.match(last.error.message, /^\[router\/openai\/gpt-4o-mini\] The answer hit the output-token limit/);
-    assert.equal(last.usage?.outputTokens, 5);
+    assert.match(last.error.message, /^\[openrouter\/openai\/gpt-4o-mini\] The answer hit the output-token limit/);
+    assert.equal(last.usage?.output, 5);
   });
 
-  it("ends with ABORTED when the caller aborts mid-stream", async () => {
+  it("ends as aborted, without an error, when the caller aborts mid-stream", async () => {
     const { chat } = kit([{ method: "POST", url: COMPLETIONS_URL, respond: hangingStream }]);
     const controller = new AbortController();
     const events = [];
-    for await (const event of chat.runTurn(turn(), { signal: controller.signal })) {
+    const stream = run(chat, turn(), controller.signal);
+    for await (const event of stream) {
       events.push(event);
-      if (event.type === "text") controller.abort();
+      if (event.type === "text_delta") controller.abort();
     }
     assert.equal(textOf(events), "Start");
-    const last = lastEvent(events);
-    assert.equal(last.type === "failed" && last.error.code, "ABORTED");
-  });
-
-  it("stops the provider request when the consumer stops iterating", async () => {
-    let requestSignal: AbortSignal | undefined;
-    const { chat } = kit([
-      {
-        method: "POST",
-        url: COMPLETIONS_URL,
-        respond: (request, signal) => {
-          requestSignal = signal;
-          return hangingStream(request, signal);
-        },
-      },
-    ]);
-    for await (const event of chat.runTurn(turn())) {
-      if (event.type === "text") break;
-    }
-    assert.equal(requestSignal?.aborted, true);
+    const message = await stream.result();
+    assert.equal(message.stopReason, "aborted");
+    assert.equal(message.chatKit.error, undefined);
+    assert.equal(lastEvent(events).type, "error");
   });
 });

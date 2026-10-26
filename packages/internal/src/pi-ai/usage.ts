@@ -27,3 +27,8 @@ export function toPiAiUsage(model: ImageModel<ImageApi>, tokens: ImageTokenUsage
   // Image models carry zero per-token rates; consumers price image tasks from `credits`/`costUsd`.
   return { ...usage, cost: calculateCost(model, usage) };
 }
+
+/** A fresh zero-filled pi-ai `Usage`: a message pi-ai did not produce still needs one, and pi-ai may update it in place. */
+export function zeroUsage(): Usage {
+  return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+}

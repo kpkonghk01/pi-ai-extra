@@ -1,141 +1,162 @@
-import type { ModelsSimpleStreamOptions } from "@earendil-works/pi-ai";
+import {
+  createAssistantMessageEventStream,
+  type AssistantMessageEvent,
+  type Context,
+  type ModelsSimpleStreamOptions,
+} from "@earendil-works/pi-ai";
 import { untilAborted } from "./abort.ts";
-import { errorText, TurnFailure } from "./errors.ts";
-import { parseKitOptions } from "./input.ts";
-import { modelInfo } from "./models/info.ts";
-import { classifyOutcome, failed, failedFrom, type TurnRun, type TurnState } from "./outcome.ts";
+import { errorText, isTurnFailure, readOr, TurnFailure } from "./errors.ts";
+import { parseKitOptions, type TurnOptions } from "./input.ts";
+import { chatModel } from "./models/info.ts";
+import {
+  kitAborted,
+  classifyOutcome,
+  kitFailed,
+  failedFrom,
+  type ChatFinalEvent,
+  type TurnRun,
+  type TurnState,
+} from "./outcome.ts";
 import { prepareTurn, type PreparedTurn, type TurnTarget } from "./prepare.ts";
-import { createProviderRegistry, type RegisteredProvider } from "./registry.ts";
-import type { ChatKit, ChatKitOptions, ChatProviderModels, ChatTurnEvent, ChatTurnInput } from "./types.ts";
+import { createProviderRegistry, type ProviderRegistry } from "./registry.ts";
+import { forcedCallAnswer, PASS_THROUGH } from "./schema-answer.ts";
+import type { ChatKit, ChatKitOptions, ChatModelRef, ChatProviderModels, ChatTurnStream } from "./types.ts";
 
 /**
  * pi-ai retries only the initial request, before the response stream starts (408, 409, 429, 5xx
  * and connection errors, with backoff and `Retry-After`). A turn is never re-sent after its first
  * token, and never to another provider or model.
  */
-const MAX_REQUEST_RETRIES = 2;
+const DEFAULT_MAX_RETRIES = 2;
 
 /**
- * Creates the chat kit. Each provider is registered with its explicit key under the consumer's
- * name; an invalid configuration (unknown provider, duplicate name, missing key, grounding on a
- * provider other than Google) throws a `TypeError` here.
+ * Creates the chat kit over the chat providers the consumer built with the provider packages'
+ * factories. Anything that is not a chat provider, or a second provider with the same pi-ai id,
+ * throws a `TypeError` here.
  */
 export function createChatKit(options: ChatKitOptions): ChatKit {
   const { providers, fetch } = parseKitOptions(options);
-  const registry = createProviderRegistry(providers, { fetch });
+  const registry = createProviderRegistry(providers);
+  const streamSimple = (model: ChatModelRef, context: Context, turnOptions?: TurnOptions): ChatTurnStream =>
+    startTurn(registry, fetch, model, context, turnOptions);
   return {
-    runTurn: (input, turnOptions) => runTurn(registry, fetch, input, turnOptions?.signal),
+    streamSimple,
+    completeSimple: (model: ChatModelRef, context: Context, turnOptions?: TurnOptions) =>
+      streamSimple(model, context, turnOptions).result(),
     listModels: (listOptions) => listModels(registry, listOptions?.signal),
-  };
+  } as ChatKit;
 }
 
 /** Every provider's list, each read on its own: one that fails becomes an `error` entry. */
-async function listModels(registry: ReadonlyMap<string, RegisteredProvider>, signal: AbortSignal | undefined): Promise<ChatProviderModels[]> {
+async function listModels(registry: ProviderRegistry, signal: AbortSignal | undefined): Promise<ChatProviderModels[]> {
   const listed = Promise.all(
-    [...registry.values()].map(async (provider): Promise<ChatProviderModels> => {
+    [...registry.providers.values()].map(async (provider): Promise<ChatProviderModels> => {
       try {
         const snapshot = await provider.models.read();
-        const now = Date.now();
         return {
-          provider: provider.name,
-          kind: provider.kind,
+          provider: provider.id,
           source: snapshot.source,
           ...(snapshot.fetchedAt === undefined ? {} : { fetchedAt: new Date(snapshot.fetchedAt).toISOString() }),
           ...(snapshot.refreshError === undefined ? {} : { refreshError: snapshot.refreshError }),
-          models: snapshot.models.map((model) => modelInfo(model, provider, now)),
+          models: snapshot.models.map((model) => chatModel(model, provider.traits)),
         };
       } catch (error) {
-        return { provider: provider.name, kind: provider.kind, error: errorText(error) };
+        return { provider: provider.id, error: errorText(error) };
       }
     }),
   );
   return untilAborted(listed, signal, () => signal?.reason);
 }
 
-async function* runTurn(
-  registry: ReadonlyMap<string, RegisteredProvider>,
+/** Starts a turn: the stream is returned at once, and the turn runs behind it. It never throws. */
+function startTurn(
+  registry: ProviderRegistry,
   kitFetch: typeof globalThis.fetch | undefined,
-  input: ChatTurnInput,
-  callerSignal: AbortSignal | undefined,
-): AsyncGenerator<ChatTurnEvent, void, undefined> {
-  // Our own controller also stops the request when the consumer stops iterating early.
+  ref: ChatModelRef,
+  context: Context,
+  options: TurnOptions | undefined,
+): ChatTurnStream {
+  const stream = createAssistantMessageEventStream();
+  const target = targetOf(ref);
+  const callerSignal = signalOf(options);
   const controller = new AbortController();
   const abort = () => controller.abort(callerSignal?.reason);
   if (callerSignal?.aborted) abort();
   else callerSignal?.addEventListener("abort", abort, { once: true });
-  const target = targetOf(input);
-  try {
-    if (controller.signal.aborted) {
-      yield failed(target, "ABORTED", "The turn was aborted.");
-      return;
-    }
-    let turn: PreparedTurn;
+  const finish = (final: ChatFinalEvent) => {
+    stream.push(final);
+    stream.end(final.type === "done" ? final.message : final.error);
+  };
+  void (async () => {
     try {
-      turn = await prepareTurn(registry, input, target, controller.signal);
+      if (controller.signal.aborted) return finish(kitAborted(target));
+      let turn: PreparedTurn;
+      try {
+        turn = await prepareTurn(registry, ref, context, options, target, controller.signal);
+      } catch (error) {
+        return finish(failedFrom(target, error, controller.signal));
+      }
+      await streamTurn(turn, kitFetch, controller.signal, stream, finish);
     } catch (error) {
-      yield failedFrom(target, error, controller.signal);
-      return;
+      // Last resort: a turn never throws.
+      finish(failedFrom(target, error, controller.signal));
+    } finally {
+      callerSignal?.removeEventListener("abort", abort);
+      controller.abort();
     }
-    yield* streamTurn(turn, kitFetch, controller.signal);
-  } catch (error) {
-    // Last resort: a turn never throws.
-    yield failedFrom(target, error, controller.signal);
-  } finally {
-    callerSignal?.removeEventListener("abort", abort);
-    controller.abort();
-  }
+  })();
+  return stream as ChatTurnStream;
 }
 
-async function* streamTurn(
+async function streamTurn(
   turn: PreparedTurn,
   kitFetch: typeof globalThis.fetch | undefined,
   signal: AbortSignal,
-): AsyncGenerator<ChatTurnEvent, void, undefined> {
+  stream: { push(event: AssistantMessageEvent): void },
+  finish: (final: ChatFinalEvent) => void,
+): Promise<void> {
   const run: TurnRun = { turn, observer: turn.wire.createObserver(), state: { transformFailure: undefined, httpStatus: undefined }, signal };
-  const { schemaAsToolCall } = turn;
-  const { temperature, maxOutputTokens, reasoning } = turn.settings;
+  const { temperature, maxTokens, reasoning, sessionId, toolChoice, maxRetries } = turn.options;
   const options: ModelsSimpleStreamOptions = {
     signal,
     cacheRetention: "short",
-    maxRetries: MAX_REQUEST_RETRIES,
+    maxRetries: maxRetries ?? DEFAULT_MAX_RETRIES,
     ...(temperature === undefined ? {} : { temperature }),
-    ...(maxOutputTokens === undefined ? {} : { maxTokens: maxOutputTokens }),
+    ...(maxTokens === undefined ? {} : { maxTokens }),
     ...(reasoning === undefined ? {} : { reasoning }),
+    ...(sessionId === undefined ? {} : { sessionId }),
+    ...(toolChoice === undefined ? {} : { toolChoice }),
     onPayload: (payload) => {
       try {
         return turn.wire.transform(payload, turn.plan);
       } catch (error) {
         run.state.transformFailure =
-          error instanceof TurnFailure
+          isTurnFailure(error)
             ? error
             : new TurnFailure("UNSUPPORTED", `chat-kit could not build the request: ${errorText(error)}`);
         throw run.state.transformFailure;
       }
     },
     onProviderStreamEvent: (event) => run.observer.observe(event),
-    ...(turn.wire.acceptsFetch ? { fetch: statusRecordingFetch(kitFetch, run.state) } : {}),
+    ...(turn.wire.suppressedHeaders === undefined ? {} : { headers: { ...turn.wire.suppressedHeaders } }),
+    ...(turn.wire.acceptsFetch ? { fetch: statusRecordingFetch(kitFetch ?? turn.providerFetch, run.state) } : {}),
   };
 
-  for await (const event of turn.provider.streamSimple(turn.model, turn.context, options)) {
-    switch (event.type) {
-      case "text_delta":
-        // With a forced tool call the answer is the tool's arguments, never free text.
-        if (!schemaAsToolCall && event.delta) yield { type: "text", delta: event.delta };
-        break;
-      case "toolcall_delta":
-        // pi-ai's Anthropic adapter passes each `input_json_delta` through unchanged.
-        if (schemaAsToolCall && event.delta) yield { type: "text", delta: event.delta };
-        break;
-      case "done":
-      case "error":
-        yield classifyOutcome(run, event);
-        return;
-      default:
-        // Thinking is never streamed as text.
-        break;
+  // With a forced tool call the answer is the tool's arguments: they become text events.
+  const answer = turn.schemaAsToolCall ? forcedCallAnswer() : PASS_THROUGH;
+  for await (const event of turn.send(turn.model, turn.context, options)) {
+    if (event.type === "done" || event.type === "error") {
+      const { content } = event.type === "done" ? event.message : event.error;
+      return finish(classifyOutcome(run, event, answer.finalContent(content)));
     }
+    for (const out of answer.translate(event)) stream.push(out);
   }
-  yield failed(turn.target, "PROVIDER_ERROR", "The provider stream ended without a result.");
+  finish(endedWithoutResult(turn));
+}
+
+/** The turn's own failure when pi-ai's stream ended without a final event, with the model's `api`. */
+function endedWithoutResult(turn: PreparedTurn): ChatFinalEvent {
+  return kitFailed(turn.target, "PROVIDER_ERROR", "The provider stream ended without a result.");
 }
 
 /** Records the status of the latest provider response, when it was an error (for `ChatTurnError.status`). */
@@ -148,9 +169,20 @@ function statusRecordingFetch(base: typeof globalThis.fetch | undefined, state: 
   };
 }
 
-/** `?` stands in for a provider or model the input does not name (malformed input only). */
-function targetOf(input: ChatTurnInput): TurnTarget {
-  const record = (typeof input === "object" && input !== null ? input : {}) as Partial<Record<"provider" | "model", unknown>>;
+/** `?` stands in for a provider or model the reference does not name (malformed input only). */
+/** The reference's names for the final message, "?" for what is missing or cannot be read (`parseTurn` answers INVALID_REQUEST). */
+function targetOf(ref: ChatModelRef): TurnTarget {
   const part = (value: unknown) => (typeof value === "string" && value ? value : "?");
-  return { provider: part(record.provider), model: part(record.model) };
+  return readOr(() => {
+    const record = (typeof ref === "object" && ref !== null ? ref : {}) as Partial<Record<"provider" | "id", unknown>>;
+    return { provider: part(record.provider), model: part(record.id) };
+  }, { provider: "?", model: "?" });
+}
+
+/** The caller's abort signal, read once, or none when the options have none or cannot be read (`parseTurn` answers INVALID_REQUEST). */
+function signalOf(options: TurnOptions | undefined): AbortSignal | undefined {
+  return readOr(() => {
+    const signal = options?.signal;
+    return signal instanceof AbortSignal ? signal : undefined;
+  }, undefined);
 }

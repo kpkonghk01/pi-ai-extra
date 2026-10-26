@@ -1,5 +1,5 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { isRecord } from "../guards.ts";
+import { isRecord } from "@hk01/pi-ai-extra-internal/util";
 
 /**
  * OpenRouter's PDF parser pinned to the model's native file input. Without it, OpenRouter falls

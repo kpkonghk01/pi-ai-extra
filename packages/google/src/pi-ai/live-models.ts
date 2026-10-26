@@ -1,9 +1,10 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
-import { googleChatRate } from "@hk01/pi-ai-extra-google/pi-ai";
-import { modelCostAt } from "@hk01/pi-ai-extra-internal/rates";
-import { isRecord } from "../guards.ts";
-import { getModelListJson } from "./http.ts";
-import type { ListedModel } from "./list.ts";
+import type { Model } from "@earendil-works/pi-ai";
+import { isRecord } from "@hk01/pi-ai-extra-internal";
+import { getModelListJson, modelCostAt } from "@hk01/pi-ai-extra-internal/pi-ai";
+import { GOOGLE_PROVIDER_ID } from "../constants.ts";
+import { googleChatRate } from "./rates.ts";
+
+type GoogleChatModel = Model<"google-generative-ai">;
 
 /**
  * Ids of Gemini models that are not plain text chat models, though many list `generateContent`
@@ -27,14 +28,15 @@ const NOT_PLAIN_CHAT = /embedding|imagen|veo|tts|(?:^|-)live(?:-|$)|computer-use
 const MOVING_ALIAS = /-latest$/i;
 
 /**
- * Whether a Gemini model id is offered: a plain text chat model under its own id, not a moving
- * alias. The live list and the installed catalogue both keep only these.
+ * Whether the chat kit offers a Gemini model id: a plain text chat model under its own id, not a
+ * moving alias. The live list keeps every chat model it reads, for plain pi-ai use; the chat kit
+ * offers only these (`chatKit.offers`).
  */
 export function isOfferedGeminiId(id: string): boolean {
   return !NOT_PLAIN_CHAT.test(id) && !MOVING_ALIAS.test(id);
 }
 
-/** `models.list` pages; a key sees well under this many models. They share the list read's deadline (`LIST_READ_TIMEOUT_MS`). */
+/** `models.list` pages; a key sees well under this many models. They share the list read's signal. */
 const MAX_PAGES = 10;
 
 /** A new Gemini model, unknown to pi-ai's catalogue: limits it does not report are kept small. */
@@ -43,30 +45,31 @@ const UNKNOWN_MAX_OUTPUT_TOKENS = 8_192;
 
 /**
  * Gemini's live chat list: the ids `GET <base>/models` lists for the key (`x-goog-api-key`), with
- * the `models/` prefix stripped, kept when the model supports `generateContent` and is a plain
- * text chat model under its own id, not a `-latest` alias (`isOfferedGeminiId`). A model pi-ai's
- * catalogue knows keeps its catalogue entry (thinking levels, limits) and rate. A new id gets
- * conservative defaults: text input only, the limits Gemini reports (else small ones), no
- * thinking levels, and its rate from the Gemini rate table, which usually means no rate.
+ * the `models/` prefix stripped, kept when the model supports `generateContent`. A model in
+ * `installed` (pi-ai's catalogue, with the rate table's cost) keeps that entry (thinking levels,
+ * limits). A new id gets conservative defaults: text input only, the limits Gemini reports (else
+ * small ones), no thinking levels, and its cost from the Gemini rate table, which usually means no
+ * rate. `keep` narrows the list (the factory's `modelIds`). A list without a chat model throws.
  */
 export async function fetchGeminiModels(input: {
   fetch: typeof globalThis.fetch;
   apiKey: string;
   baseUrl: string;
-  installed: readonly ListedModel[];
+  installed: readonly GoogleChatModel[];
+  keep: (id: string) => boolean;
   signal: AbortSignal;
-  now: number;
-}): Promise<ListedModel[]> {
-  const installed = new Map(input.installed.map((listed) => [listed.model.id, listed]));
-  const models: ListedModel[] = [];
+}): Promise<GoogleChatModel[]> {
+  const installed = new Map(input.installed.map((model) => [model.id, model]));
+  const models: GoogleChatModel[] = [];
+  const now = Date.now();
   let pageToken: string | undefined;
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const query = `pageSize=1000${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`;
     const body = await getModelListJson(input.fetch, `${input.baseUrl}/models?${query}`, { "x-goog-api-key": input.apiKey }, input.signal);
     if (!isRecord(body) || (body.models !== undefined && !Array.isArray(body.models))) throw new Error("the Gemini model list has no models array");
     for (const entry of (body.models ?? []) as unknown[]) {
-      const listed = geminiModel(entry, installed, input.baseUrl, input.now);
-      if (listed !== undefined && !models.some((model) => model.model.id === listed.model.id)) models.push(listed);
+      const model = geminiModel(entry, installed, input.baseUrl, now);
+      if (model !== undefined && input.keep(model.id) && !models.some((listed) => listed.id === model.id)) models.push(model);
     }
     pageToken = typeof body.nextPageToken === "string" && body.nextPageToken ? body.nextPageToken : undefined;
     if (pageToken === undefined) break;
@@ -75,27 +78,25 @@ export async function fetchGeminiModels(input: {
   return models;
 }
 
-function geminiModel(entry: unknown, installed: ReadonlyMap<string, ListedModel>, baseUrl: string, now: number): ListedModel | undefined {
+function geminiModel(entry: unknown, installed: ReadonlyMap<string, GoogleChatModel>, baseUrl: string, now: number): GoogleChatModel | undefined {
   if (!isRecord(entry) || typeof entry.name !== "string") return undefined;
   const id = entry.name.replace(/^models\//, "");
   const methods = Array.isArray(entry.supportedGenerationMethods) ? entry.supportedGenerationMethods : [];
-  if (!id || !methods.includes("generateContent") || !isOfferedGeminiId(id)) return undefined;
+  if (!id || !methods.includes("generateContent")) return undefined;
   const known = installed.get(id);
   if (known !== undefined) return known;
-  const rate = googleChatRate(id);
-  const model: Model<"google-generative-ai"> = {
+  return {
     id,
     name: typeof entry.displayName === "string" && entry.displayName ? entry.displayName : id,
     api: "google-generative-ai",
-    provider: "google",
+    provider: GOOGLE_PROVIDER_ID,
     baseUrl,
     reasoning: entry.thinking === true,
     input: ["text"],
-    cost: modelCostAt(rate, now),
+    cost: modelCostAt(googleChatRate(id), now),
     contextWindow: positiveInteger(entry.inputTokenLimit) ?? UNKNOWN_CONTEXT_WINDOW,
     maxTokens: positiveInteger(entry.outputTokenLimit) ?? UNKNOWN_MAX_OUTPUT_TOKENS,
   };
-  return { model: model as Model<Api>, rate, input: ["text"] };
 }
 
 function positiveInteger(value: unknown): number | undefined {
