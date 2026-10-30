@@ -60,7 +60,7 @@ InfoCard（`pi-ai-migration/`）和 opengraph2（`pi-ai-extra-migration/`）裏�
   - Google：少了 Nano Banana 2，剩下 Nano Banana 2.1 和 Nano Banana Pro。
   - ToAPIs：Nano Banana 2 Preview 換成 Nano Banana 2.1 (ToAPIs)，參考圖上限由 6 張變成 14 張。
   - KIE：Nano Banana 2 換成 Nano Banana 2.1 (KIE)，參考圖上限由 14 張變成 **10 張**。超過 10 張時，這個 model 會在選單變灰。
-- **之前選了舊 model 的用戶**：瀏覽器記住的 model 已不在清單內時，選單會自動切回 app 的預設 model（Nano Banana 2.1），不用另外處理。
+- **之前選了舊 model 的用戶**：瀏覽器記住的 model 已不在清單內時，選單會自動切回 app 自己的預設 model，不用另外處理。Auto OG 的預設是 GPT Image 2.5 Flare，其餘四個 app 是 Google Nano Banana 2.1。
 - **費用預估**：
 
   | Model | 1K | 2K | 4K | 輸入 | 來源（2026-10-30） |
@@ -69,7 +69,13 @@ InfoCard（`pi-ai-migration/`）和 opengraph2（`pi-ai-extra-migration/`）裏�
   | Nano Banana 2.1（KIE） | 0.02 | 0.03 | 0.045 | 不收 | kie.ai/pricing（4 / 6 / 9 credits） |
   | Nano Banana 2.1（ToAPIs） | 0.015 | 0.015 | 0.015 | 不收 | ToAPIs 價目 API，每次請求固定價 |
 
-  單位是 USD / 張。KIE 和 ToAPIs 的舊 model 原本沒有價錢（「未計價」），現在有了。Google 2.1 的輸入價原本在各 app 都寫成 $0.50 / 百萬 token，現在改正為 $1.50。
+  單位是 USD / 張。KIE 和 ToAPIs 的舊 model 原本沒有價錢（「未計價」），現在有了。Google 2.1 的輸入價在 InfoCard、Auto OG、opengraph2 和 og-master 原本寫成 $0.50 / 百萬 token，現在改正為 $1.50。open-graph-single 用自己的 `pricing.ts` 計價，本來就不計輸入價，這次也不加。
+
+  Google 自己的文件對 4K 說法不一：定價頁寫明 4K 每張 $0.113（3780 tokens），生圖文件的 token 表則寫 2520 tokens（約 $0.0756）。收費以定價頁為準，所以用 0.113。
+
+## Node.js 版本
+
+新版三個 package 的 `engines` 要求 Node.js 24.22.1 或以上。各 app 現時用的舊版（google 0.3.2、kie 0.2.0、toapis 0.2.0）要求 22.19.0 或以上。npm 遇到版本不符只會警告，不會停止安裝；build 出來的程式也沒有用到只有 Node 24 才有的 API。如果 AI Studio 安裝或啟動時出錯，把錯誤訊息貼回來。
 
 ## 驗證清單（在 AI Studio，用真 key）
 

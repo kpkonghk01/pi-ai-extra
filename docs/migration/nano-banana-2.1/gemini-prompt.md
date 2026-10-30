@@ -36,7 +36,7 @@ Then run `npm install` so that `package-lock.json` is updated.
 
 ## Step 2: update the catalogue policy
 
-Find the file that calls `createImageClient` (usually `server/imageModels.ts`). It defines a `CataloguePolicy` with `overrides`, and maybe `exclude` lists and `scopes`.
+Find the file that calls `createImageClient` (usually `server/imageModels.ts`). It defines a `CataloguePolicy` with `overrides`, and maybe `exclude` lists and `scopes`. Apply 2a–2d to every `overrides` object in the policy, including any inside `scopes`.
 
 **2a.** Delete the whole `'google:gemini-3.1-flash-image'` entry from `overrides`.
 
@@ -89,12 +89,12 @@ Handle each match by what the code does with it:
 | --- | --- |
 | A list, set or condition that changes behaviour by model, such as which models get special prompt wording | Replace each removed key with its replacement key. Do not add a key twice. Example: Auto OG's `NANO_BANANA_2_FAMILIES` must end up with exactly `'google:gemini-nano-banana-2.1'`, `'kie:nano-banana-2-1'` and `'toapis:gemini-nano-banana-2.1'`. |
 | A table that only turns a stored model ID into a display name, for example for old history records | Keep the old entries, so that old records still show a name. Add `'toapis:gemini-nano-banana-2.1': 'Nano Banana 2.1 (ToAPIs)'` and `'kie:nano-banana-2-1': 'Nano Banana 2.1 (KIE)'` if they are missing. |
-| A price or cost calculation by model ID, outside the policy | Delete the branch for the removed model. If this code also prices `google:gemini-nano-banana-2.1`, change its per-image prices to 0.0336 USD (1K), 0.0504 USD (2K) and 0.113 USD (4K); add 1.50 USD per 1M input tokens only if this code already prices input tokens. If this code prices other models by ID, also add the two new models with the per-image prices from Step 2b and 2c. Do not widen the app's own resolution types: use the 4K price only where the code already handles 4K. |
+| A price or cost calculation by model ID, outside the policy | Delete the branch for the removed model. If it is part of an `if` / `else if` chain, keep the other branches working: for example, the `else if` right after it becomes `if`. If this code also prices `google:gemini-nano-banana-2.1`, change its per-image prices to 0.0336 USD (1K), 0.0504 USD (2K) and 0.113 USD (4K); add 1.50 USD per 1M input tokens only if this code already prices input tokens. If this code prices other models by ID, also add the two new models with the per-image prices from Step 2b and 2c. Do not widen the app's own resolution types: use the 4K price only where the code already handles 4K. |
 | A default model ID | If it is a removed key, change it to `'google:gemini-nano-banana-2.1'`. |
 | A TypeScript type that lists model IDs | Replace each removed key with its replacement key. |
 | A comment | Update the model name, for example "Nano Banana 2 (KIE)" → "Nano Banana 2.1 (KIE)". |
 
-Then open `.env.example`, if the app has one. Where a comment lists the KIE or ToAPIs image models, change "Nano Banana 2" and "Nano Banana 2 Preview" to "Nano Banana 2.1". Change nothing else in that file.
+Then open `.env.example`, if the app has one. Where a comment lists the KIE or ToAPIs image models, first change "Nano Banana 2 Preview" to "Nano Banana 2.1", then change the remaining "Nano Banana 2" to "Nano Banana 2.1". Never write "Nano Banana 2.1 Preview". Change nothing else in that file.
 
 The model a user selected before is saved in their browser. You do not need to migrate it: when it is no longer in the list, the image kit's model selector switches back to the app's default model by itself.
 
