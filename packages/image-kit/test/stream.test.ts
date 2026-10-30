@@ -75,13 +75,13 @@ describe('streamImageResponse', () => {
     const res = new FakeResponse();
     await quiet(() =>
       streamImageResponse(res, async () => {
-        throw new AppImageError('kie/nano-banana-2 生成失敗 [timeout]：slow', { provider: 'kie', model: 'nano-banana-2', code: 'timeout', taskId: 't1' });
+        throw new AppImageError('kie/nano-banana-2-1 生成失敗 [timeout]：slow', { provider: 'kie', model: 'nano-banana-2-1', code: 'timeout', taskId: 't1' });
       }),
     );
     assert.deepEqual(res.events().at(-1), {
       type: 'error',
-      error: 'kie/nano-banana-2 生成失敗 [timeout]：slow',
-      details: { provider: 'kie', model: 'nano-banana-2', code: 'timeout', taskId: 't1' },
+      error: 'kie/nano-banana-2-1 生成失敗 [timeout]：slow',
+      details: { provider: 'kie', model: 'nano-banana-2-1', code: 'timeout', taskId: 't1' },
     });
   });
 
@@ -123,7 +123,7 @@ describe('streamImageResponse', () => {
 
 describe('handleImageRequest', () => {
   const PNG = dataUrl(PNG_BYTES, 'image/png');
-  const GOOGLE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent';
+  const GOOGLE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image:generateContent';
   const policy = { scopes: { generate: {} } };
 
   it('answers validation errors with JSON and their HTTP status, without streaming', async () => {
@@ -134,7 +134,7 @@ describe('handleImageRequest', () => {
       await handleImageRequest(
         res,
         createImageClient({ app: 't', policy, env: {} }).forScope('generate'),
-        { appModelId: 'google:gemini-3.1-flash-image', parts: [{ text: 'x' }], aspectRatio: '1:1' }, async (image) => ({
+        { appModelId: 'google:gemini-3-pro-image', parts: [{ text: 'x' }], aspectRatio: '1:1' }, async (image) => ({
         imageUrl: image.dataUrl,
       }));
     } finally {
@@ -158,10 +158,10 @@ describe('handleImageRequest', () => {
     const original = console.info;
     console.info = () => undefined;
     try {
-      await handleImageRequest(res, client, { appModelId: 'google:gemini-3.1-flash-image', parts: [{ text: 'x' }], aspectRatio: '1:1' }, async (image) => ({ imageUrl: `${image.dataUrl}#done`, model: image.model }));
+      await handleImageRequest(res, client, { appModelId: 'google:gemini-3-pro-image', parts: [{ text: 'x' }], aspectRatio: '1:1' }, async (image) => ({ imageUrl: `${image.dataUrl}#done`, model: image.model }));
     } finally {
       console.info = original;
     }
-    assert.deepEqual(res.events().at(-1), { imageUrl: `${PNG}#done`, model: 'gemini-3.1-flash-image', type: 'complete' });
+    assert.deepEqual(res.events().at(-1), { imageUrl: `${PNG}#done`, model: 'gemini-3-pro-image', type: 'complete' });
   });
 });

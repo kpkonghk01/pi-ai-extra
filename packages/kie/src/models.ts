@@ -13,7 +13,7 @@ export type KieImageModelId =
   | "grok-imagine-image-2-0/image-edit"
   | "gpt-image-2-text-to-image"
   | "gpt-image-2-image-to-image"
-  | "nano-banana-2";
+  | "nano-banana-2-1";
 
 export type KieGrokAspectRatio = "1:1" | "2:3" | "3:2" | "16:9" | "9:16";
 export type KieGrokEditAspectRatio = KieGrokAspectRatio | "auto";
@@ -22,10 +22,10 @@ export type KieGptImage2AspectRatio =
   | "16:9" | "9:16" | "2:1" | "1:2" | "3:1" | "1:3" | "21:9" | "9:21";
 export type KieResolution = "1K" | "2K" | "4K";
 export type KieGptImage2Background = "transparent" | "opaque" | "auto";
-export type KieNanoBanana2AspectRatio =
+export type KieNanoBanana21AspectRatio =
   | "1:1" | "2:3" | "3:2" | "1:4" | "4:1" | "3:4" | "4:3" | "4:5"
   | "5:4" | "1:8" | "8:1" | "9:16" | "16:9" | "21:9" | "auto";
-export type KieNanoBanana2OutputFormat = "png" | "jpg";
+export type KieNanoBanana21OutputFormat = "png" | "jpg";
 
 /** Validated, provider-neutral view of a KIE request before it is mapped to the model's `input` fields. */
 export interface NormalizedKieRequest {
@@ -156,12 +156,12 @@ const GROK_EDIT = info({
   notes: ["aspectRatio is required; use auto to follow the input image."],
 });
 
-const NANO_BANANA_2 = info({
-  id: "nano-banana-2",
-  name: "Nano Banana 2",
+const NANO_BANANA_21 = info({
+  id: "nano-banana-2-1",
+  name: "Nano Banana 2.1",
   kind: "text-and-image-to-image",
   promptMaxLength: 20_000,
-  referenceImages: references(0, 14),
+  referenceImages: references(0, 10),
   aspectRatio: option(NANO_RATIOS, "auto"),
   resolution: option(RESOLUTIONS, "1K"),
   outputFormat: option(NANO_FORMATS, "jpg"),
@@ -181,10 +181,10 @@ const DEFINITIONS: Record<KieImageModelId, KieModelDefinition> = {
   },
   "gpt-image-2-text-to-image": gptImage2("gpt-image-2-text-to-image"),
   "gpt-image-2-image-to-image": gptImage2("gpt-image-2-image-to-image"),
-  "nano-banana-2": {
-    info: NANO_BANANA_2,
+  "nano-banana-2-1": {
+    info: NANO_BANANA_21,
     schema: z.strictObject({
-      ...baseRequestShape(NANO_BANANA_2),
+      ...baseRequestShape(NANO_BANANA_21),
       aspectRatio: z.enum(NANO_RATIOS).optional(),
       resolution: z.enum(RESOLUTIONS).optional(),
       outputFormat: z.enum(NANO_FORMATS).optional(),

@@ -10,7 +10,7 @@ import {
 import { TOAPIS_PROVIDER_ID } from "./constants.ts";
 
 export type ToapisImageModelId =
-  | "gemini-3.1-flash-image-preview"
+  | "gemini-nano-banana-2.1"
   | "gpt-image-2"
   | "gpt-image-2.5-flare"
   | "gpt-image-2.5-sunburst"
@@ -111,14 +111,14 @@ function gptImage25(id: "gpt-image-2.5-flare" | "gpt-image-2.5-sunburst"): Toapi
   };
 }
 
-const GEMINI_FLASH = info({
-  id: "gemini-3.1-flash-image-preview",
-  name: "Gemini 3.1 Flash Image (Nano Banana 2)",
+const GEMINI_NANO_BANANA_21 = info({
+  id: "gemini-nano-banana-2.1",
+  name: "Gemini Nano Banana 2.1",
   promptMaxLength: null,
-  referenceImages: references(6),
+  referenceImages: references(14),
   aspectRatio: option(GEMINI_RATIOS, null),
   resolution: option(RESOLUTIONS, "1K"),
-  notes: ["Standard tier: up to 6 reference images."],
+  notes: ["Up to 14 reference images."],
 });
 
 const GPT_IMAGE_2 = info({
@@ -147,10 +147,10 @@ const SEEDREAM = info({
 });
 
 const DEFINITIONS: Record<ToapisImageModelId, ToapisModelDefinition> = {
-  "gemini-3.1-flash-image-preview": {
-    info: GEMINI_FLASH,
+  "gemini-nano-banana-2.1": {
+    info: GEMINI_NANO_BANANA_21,
     schema: z.strictObject({
-      ...baseRequestShape(GEMINI_FLASH),
+      ...baseRequestShape(GEMINI_NANO_BANANA_21),
       aspectRatio: z.enum(GEMINI_RATIOS).optional(),
       resolution: z.enum(RESOLUTIONS).optional(),
     }),

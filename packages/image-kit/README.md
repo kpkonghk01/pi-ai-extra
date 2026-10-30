@@ -16,10 +16,10 @@ Only `/server` imports provider packages, so browser bundles never contain provi
 Install matching pinned release assets. A provider release adds its catalogue models; image-kit 0.2 derives non-excluded families automatically.
 
 ```json
-"@hk01/pi-ai-extra-google": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.5.0/hk01-pi-ai-extra-google-0.5.0.tgz",
+"@hk01/pi-ai-extra-google": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.7.0/hk01-pi-ai-extra-google-0.7.0.tgz",
 "@hk01/pi-ai-extra-image-kit": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/image-kit-v0.2.0/hk01-pi-ai-extra-image-kit-0.2.0.tgz",
-"@hk01/pi-ai-extra-kie": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.4.0/hk01-pi-ai-extra-kie-0.4.0.tgz",
-"@hk01/pi-ai-extra-toapis": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.4.0/hk01-pi-ai-extra-toapis-0.4.0.tgz"
+"@hk01/pi-ai-extra-kie": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.6.0/hk01-pi-ai-extra-kie-0.6.0.tgz",
+"@hk01/pi-ai-extra-toapis": "https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.6.0/hk01-pi-ai-extra-toapis-0.6.0.tgz"
 ```
 
 ## Catalogue policy

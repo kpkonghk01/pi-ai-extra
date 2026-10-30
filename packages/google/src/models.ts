@@ -2,12 +2,11 @@ import { z } from "zod";
 import { baseRequestShape, option, type ImageModelInfo, type NumericRangeSpec, type ReferenceImageSpec } from "@hk01/pi-ai-extra-internal";
 import { GOOGLE_PROVIDER_ID } from "./constants.ts";
 
-export type GoogleImageModelId = "gemini-nano-banana-2.1" | "gemini-3.1-flash-image" | "gemini-3-pro-image";
+export type GoogleImageModelId = "gemini-nano-banana-2.1" | "gemini-3-pro-image";
 
 export type GoogleProImageAspectRatio = "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "4:5" | "5:4" | "9:16" | "16:9" | "21:9";
-export type GoogleFlashImageAspectRatio = GoogleProImageAspectRatio | "1:4" | "4:1" | "1:8" | "8:1";
+export type GoogleNanoBanana21AspectRatio = GoogleProImageAspectRatio | "1:4" | "4:1" | "1:8" | "8:1";
 export type GoogleProImageSize = "1K" | "2K" | "4K";
-export type GoogleFlashImageSize = "512" | GoogleProImageSize;
 
 export type GoogleHarmCategory =
   | "HARM_CATEGORY_HARASSMENT"
@@ -44,9 +43,8 @@ interface GoogleModelDefinition {
 }
 
 const PRO_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"] as const;
-const FLASH_RATIOS = [...PRO_RATIOS, "1:4", "4:1", "1:8", "8:1"] as const;
+const NANO_BANANA_21_RATIOS = [...PRO_RATIOS, "1:4", "4:1", "1:8", "8:1"] as const;
 const PRO_SIZES = ["1K", "2K", "4K"] as const;
-const FLASH_SIZES = ["512", ...PRO_SIZES] as const;
 const HARM_CATEGORIES = [
   "HARM_CATEGORY_HARASSMENT",
   "HARM_CATEGORY_HATE_SPEECH",
@@ -127,15 +125,12 @@ const DEFINITIONS: Record<GoogleImageModelId, GoogleModelDefinition> = {
   "gemini-nano-banana-2.1": definition(
     "gemini-nano-banana-2.1",
     "Gemini Nano Banana 2.1",
-    FLASH_RATIOS,
+    NANO_BANANA_21_RATIOS,
     PRO_SIZES,
-    ["Up to 14 reference images."],
+    ["Up to 10 object and 4 character reference images."],
     "responseFormat",
     "v1",
   ),
-  "gemini-3.1-flash-image": definition("gemini-3.1-flash-image", "Gemini 3.1 Flash Image (Nano Banana 2)", FLASH_RATIOS, FLASH_SIZES, [
-    "Up to 10 object and 4 character reference images.",
-  ]),
   "gemini-3-pro-image": definition("gemini-3-pro-image", "Gemini 3 Pro Image (Nano Banana Pro)", PRO_RATIOS, PRO_SIZES, [
     "Up to 6 object, 5 character and 3 style reference images.",
   ]),

@@ -60,7 +60,7 @@ function request(
   overrides: { [K in keyof ImageRequest]?: ImageRequest[K] | undefined } = {},
 ): ImageRequest {
   const merged = {
-    appModelId: "google:gemini-3.1-flash-image",
+    appModelId: "google:gemini-3-pro-image",
     parts: [{ text: "TEMPLATE:" }, imagePart(PNG), { text: "Make a card." }],
     aspectRatio: "4:5",
     ...overrides,
@@ -153,24 +153,31 @@ describe("listModels", () => {
       models.map((model) => model.id),
       [
         "google:gemini-nano-banana-2.1",
-        "google:gemini-3.1-flash-image",
         "google:gemini-3-pro-image",
-        "toapis:gemini-3.1-flash-image-preview",
+        "toapis:gemini-nano-banana-2.1",
         "toapis:gpt-image-2",
         "toapis:gpt-image-2.5-flare",
         "toapis:gpt-image-2.5-sunburst",
         "toapis:doubao-seedream-5-0-pro",
         "kie:grok-imagine-image-2-0",
         "kie:gpt-image-2",
-        "kie:nano-banana-2",
+        "kie:nano-banana-2-1",
       ],
     );
     const byId = new Map(models.map((model) => [model.id, model]));
-    assert.deepEqual(byId.get("google:gemini-3.1-flash-image")?.resolutions, [
+    assert.deepEqual(byId.get("google:gemini-nano-banana-2.1")?.resolutions, [
       "1K",
       "2K",
       "4K",
     ]);
+    assert.deepEqual(byId.get("toapis:gemini-nano-banana-2.1")?.referenceLimit, {
+      min: 0,
+      max: 14,
+    });
+    assert.deepEqual(byId.get("kie:nano-banana-2-1")?.referenceLimit, {
+      min: 0,
+      max: 10,
+    });
     assert.deepEqual(byId.get("kie:gpt-image-2")?.referenceLimit, {
       min: 0,
       max: 16,
@@ -186,19 +193,40 @@ describe("listModels", () => {
     );
   });
 
+  it("rejects a policy that still names a removed Nano Banana 2 family", () => {
+    for (const key of [
+      "google:gemini-3.1-flash-image",
+      "toapis:gemini-3.1-flash-image-preview",
+      "kie:nano-banana-2",
+    ] as const) {
+      const policy: CataloguePolicy = {
+        overrides: { [key]: { label: "Nano Banana 2" } },
+        scopes: { test: {} },
+      };
+      assert.throws(
+        () =>
+          createImageClient({ app: "test-app", policy, env: KEYS })
+            .forScope("test")
+            .listModels(),
+        new RegExp(`unknown model family "${key}"`),
+        key,
+      );
+    }
+  });
+
   it("marks providers without a key as unavailable", () => {
     const models = client({ env: { GEMINI_API_KEY: "g" } }).listModels();
     assert.equal(
-      models.find((model) => model.id === "kie:nano-banana-2")?.available,
+      models.find((model) => model.id === "kie:nano-banana-2-1")?.available,
       false,
     );
     assert.equal(
-      models.find((model) => model.id === "kie:nano-banana-2")
+      models.find((model) => model.id === "kie:nano-banana-2-1")
         ?.unavailableReason,
       "伺服器未設定 KIE_API_KEY",
     );
     assert.equal(
-      models.find((model) => model.id === "google:gemini-3.1-flash-image")
+      models.find((model) => model.id === "google:gemini-nano-banana-2.1")
         ?.available,
       true,
     );
@@ -224,7 +252,7 @@ describe("prepare: validation before any provider call", () => {
 
   it("rejects a provider without a key with 503", async () => {
     const error = await rejectsWith(
-      client({ env: {} }).prepare(request({ appModelId: "kie:nano-banana-2" })),
+      client({ env: {} }).prepare(request({ appModelId: "kie:nano-banana-2-1" })),
       "missing_key",
       503,
     );
@@ -236,7 +264,7 @@ describe("prepare: validation before any provider call", () => {
     assert.equal(prepared.temperature, 0.7);
     await rejectsWith(
       client().prepare(
-        request({ appModelId: "kie:nano-banana-2", temperature: 0.7 }),
+        request({ appModelId: "kie:nano-banana-2-1", temperature: 0.7 }),
       ),
       "temperature_unsupported",
       400,
@@ -309,7 +337,7 @@ describe("prepare: resolution, aspect ratio and reference format", () => {
       (await client().prepare(request({ appModelId, aspectRatio, resolution })))
         .aspectRatio;
     assert.equal(
-      await aspect("google:gemini-3.1-flash-image", "300x250"),
+      await aspect("google:gemini-nano-banana-2.1", "300x250"),
       "5:4",
     );
     assert.equal(
@@ -335,8 +363,8 @@ describe("prepare: resolution, aspect ratio and reference format", () => {
           }),
         )
       ).aspectRatio;
-    assert.equal(await keep("google:gemini-3.1-flash-image"), undefined);
-    assert.equal(await keep("kie:nano-banana-2"), "auto");
+    assert.equal(await keep("google:gemini-nano-banana-2.1"), undefined);
+    assert.equal(await keep("kie:nano-banana-2-1"), "auto");
     assert.equal(await keep("kie:gpt-image-2", "1200:675", "2K"), "16:9");
   });
 
@@ -389,7 +417,7 @@ describe("partsToPrompt", () => {
 
 describe("run", () => {
   const GOOGLE_URL =
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent";
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image:generateContent";
 
   it("returns the generated image and sends app headers to Google", async () => {
     const fake = createFakeFetch([
@@ -454,14 +482,14 @@ describe("run", () => {
         assert.ok(error instanceof AppImageError);
         assert.match(
           error.message,
-          /^google\/gemini-3\.1-flash-image 金鑰無效或未授權/,
+          /^google\/gemini-3-pro-image 金鑰無效或未授權/,
         );
         assert.deepEqual(
           { ...error.details },
           {
-            appModelId: "google:gemini-3.1-flash-image",
+            appModelId: "google:gemini-3-pro-image",
             provider: "google",
-            model: "gemini-3.1-flash-image",
+            model: "gemini-3-pro-image",
             code: "auth",
             status: 401,
           },

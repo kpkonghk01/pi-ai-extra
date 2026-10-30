@@ -26,8 +26,8 @@ import {
   type KieGrokAspectRatio,
   type KieGrokEditAspectRatio,
   type KieImageModelId,
-  type KieNanoBanana2AspectRatio,
-  type KieNanoBanana2OutputFormat,
+  type KieNanoBanana21AspectRatio,
+  type KieNanoBanana21OutputFormat,
   type KieResolution,
 } from "./models.ts";
 import { waitForKieTask } from "./task.ts";
@@ -68,14 +68,14 @@ export interface KieGptImage2Request extends KieRequestBase {
   background?: KieGptImage2Background | undefined;
 }
 
-export interface KieNanoBanana2Request extends KieRequestBase {
-  model: "nano-banana-2";
-  aspectRatio?: KieNanoBanana2AspectRatio | undefined;
+export interface KieNanoBanana21Request extends KieRequestBase {
+  model: "nano-banana-2-1";
+  aspectRatio?: KieNanoBanana21AspectRatio | undefined;
   resolution?: KieResolution | undefined;
-  outputFormat?: KieNanoBanana2OutputFormat | undefined;
+  outputFormat?: KieNanoBanana21OutputFormat | undefined;
 }
 
-export type KieImageRequest = KieGrokTextToImageRequest | KieGrokImageEditRequest | KieGptImage2Request | KieNanoBanana2Request;
+export type KieImageRequest = KieGrokTextToImageRequest | KieGrokImageEditRequest | KieGptImage2Request | KieNanoBanana21Request;
 
 /** KIE recommends starting at 2-3 s, backing off gradually and stopping after 10-15 minutes. */
 const POLL_DEFAULTS: PollDefaults = { initialDelayMs: 2_500, maxDelayMs: 10_000, factor: 1.5, jitterRatio: 0.1, timeoutMs: 10 * 60_000 };

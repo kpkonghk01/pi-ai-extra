@@ -10,7 +10,7 @@ const RECORD_URL = /^https:\/\/api\.kie\.ai\/api\/v1\/jobs\/recordInfo\?taskId=t
 const RESULT_URL = "https://tempfile.aiquickdraw.com/r/result.png";
 
 const record = (data: Record<string, unknown>) => () =>
-  jsonResponse({ code: 200, msg: "success", data: { taskId: "task_1", model: "nano-banana-2", ...data } });
+  jsonResponse({ code: 200, msg: "success", data: { taskId: "task_1", model: "nano-banana-2-1", ...data } });
 const success = (extra: Record<string, unknown>) =>
   record({ state: "success", resultJson: JSON.stringify({ resultUrls: [RESULT_URL] }), ...extra });
 
@@ -22,7 +22,7 @@ function routes(recordResponder: FakeRoute["respond"]): FakeRoute[] {
   ];
 }
 
-const request = { apiKey: "kie-key", model: "nano-banana-2" as const, prompt: "x", poll: { initialDelayMs: 1, maxDelayMs: 1 } };
+const request = { apiKey: "kie-key", model: "nano-banana-2-1" as const, prompt: "x", poll: { initialDelayMs: 1, maxDelayMs: 1 } };
 
 describe("KIE usage", () => {
   it("returns creditsConsumed and costTime (milliseconds per recordInfo docs)", async () => {
@@ -52,7 +52,7 @@ describe("KIE usage", () => {
     const fake = createFakeFetch(routes(success({ creditsConsumed: 1, costTime: 10 })));
     const models = createModels();
     models.setProvider(createKieProvider({ apiKey: "kie-key", imageSettings: { poll: { initialDelayMs: 1, maxDelayMs: 1 } } }));
-    const model = models.getModelOfType("image", "kie", "nano-banana-2");
+    const model = models.getModelOfType("image", "kie", "nano-banana-2-1");
     assert.ok(model);
     const result = await models.generateImages(model, { input: [{ type: "text", text: "x" }] }, { fetch: fake.fetch });
     assert.equal(result.stopReason, "stop");
@@ -67,7 +67,7 @@ describe("getKieTask", () => {
     assert.deepEqual(task, {
       provider: "kie",
       taskId: "task_1",
-      model: "nano-banana-2",
+      model: "nano-banana-2-1",
       state: "success",
       resultUrls: [RESULT_URL],
       failCode: undefined,

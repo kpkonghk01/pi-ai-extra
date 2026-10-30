@@ -1,6 +1,6 @@
 # @hk01/pi-ai-extra-toapis
 
-Server-only extension to `@earendil-works/pi-ai`: ToAPIs chat (Codex and Claude, a chat provider with a live model list) and image generation. Image models: Gemini 3.1 Flash Image (`gemini-3.1-flash-image-preview`), GPT Image 2 (`gpt-image-2`), GPT Image 2.5 (`gpt-image-2.5-flare`, `gpt-image-2.5-sunburst`) and Seedream 5.0 Pro (`doubao-seedream-5-0-pro`).
+Server-only extension to `@earendil-works/pi-ai`: ToAPIs chat (Codex and Claude, a chat provider with a live model list) and image generation. Image models: Gemini Nano Banana 2.1 (`gemini-nano-banana-2.1`), GPT Image 2 (`gpt-image-2`), GPT Image 2.5 (`gpt-image-2.5-flare`, `gpt-image-2.5-sunburst`) and Seedream 5.0 Pro (`doubao-seedream-5-0-pro`).
 
 - Main entry (CommonJS and ESM): `generateToapisImage()`, `getToapisTask()`, `TOAPIS_IMAGE_MODELS`, `PiAiExtraError` / `isPiAiExtraError`.
 - `/pi-ai` subpath (ESM only, needs `@earendil-works/pi-ai@1.2.0`): `createToapisProvider()`, one chat provider (a pi-ai `Provider` with the chat kit's `chatKit` traits and a live model list) serving the chat models and `TOAPIS_IMAGE_MODELS` (image settings in `imageSettings`).

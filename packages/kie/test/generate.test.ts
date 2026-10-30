@@ -81,7 +81,7 @@ describe("generateKieImage", () => {
     const fake = createFakeFetch(kieRoutes());
     await generateKieImage({
       ...base,
-      model: "nano-banana-2",
+      model: "nano-banana-2-1",
       prompt: "combine",
       referenceImages: [dataUrl(PNG_BYTES, "image/png"), "https://cdn.example.com/logo.png", dataUrl(PNG_BYTES, "image/png")],
       resolution: "2K",
@@ -92,7 +92,9 @@ describe("generateKieImage", () => {
     const uploads = fake.callsTo(UPLOAD_URL);
     assert.equal(uploads.length, 2);
     assert.match(String(bodyOf(uploads[0]).base64Data), /^data:image\/png;base64,/);
-    const input = bodyOf(fake.callsTo(CREATE_URL)[0]).input as Record<string, unknown>;
+    const created = bodyOf(fake.callsTo(CREATE_URL)[0]);
+    assert.equal(created.model, "nano-banana-2-1");
+    const input = created.input as Record<string, unknown>;
     assert.deepEqual((input.image_input as string[]).map((url) => url.replace(/\/\d+\.png$/, "/N.png")), [
       "https://tempfile.redpandaai.co/u/N.png",
       "https://cdn.example.com/logo.png",
@@ -133,9 +135,11 @@ describe("generateKieImage", () => {
       [{ ...base, model: "gpt-image-2-text-to-image", prompt: "x", aspectRatio: "1:1", resolution: "4K" }, "invalid_request"],
       [{ ...base, model: "gpt-image-2-text-to-image", prompt: "x", resolution: "2K" }, "invalid_request"],
       [{ ...base, model: "gpt-image-2-text-to-image", prompt: "x", aspectRatio: "16:9", resolution: "2K", background: "transparent" }, "invalid_request"],
-      [{ ...base, model: "nano-banana-2", prompt: "x", aspect_ratio: "1:1" } as unknown as KieImageRequest, "invalid_request"],
+      [{ ...base, model: "nano-banana-2-1", prompt: "x", aspect_ratio: "1:1" } as unknown as KieImageRequest, "invalid_request"],
+      [{ ...base, model: "nano-banana-2-1", prompt: "x", referenceImages: refs(11) }, "reference_limit"],
       [{ ...base, model: "nano-banana-pro", prompt: "x" } as unknown as KieImageRequest, "invalid_request"],
-      [{ ...base, apiKey: " ", model: "nano-banana-2", prompt: "x" }, "invalid_request"],
+      [{ ...base, model: "nano-banana-2", prompt: "x" } as unknown as KieImageRequest, "invalid_request"],
+      [{ ...base, apiKey: " ", model: "nano-banana-2-1", prompt: "x" }, "invalid_request"],
     ];
     for (const [request, code] of cases) {
       await assert.rejects(generateKieImage({ ...request, fetch: fake.fetch }), isCode(code), `${request.model} should fail with ${code}`);
@@ -150,7 +154,7 @@ describe("generateKieImage", () => {
     }
     const fake = createFakeFetch(kieRoutes());
     for (const extra of [{ temperature: 0.7 }, { systemInstruction: "rules" }]) {
-      const request = { ...base, model: "nano-banana-2", prompt: "x", ...extra } as unknown as KieImageRequest;
+      const request = { ...base, model: "nano-banana-2-1", prompt: "x", ...extra } as unknown as KieImageRequest;
       await assert.rejects(generateKieImage({ ...request, fetch: fake.fetch }), isCode("invalid_request"), JSON.stringify(extra));
     }
     assert.equal(fake.calls.length, 0);
@@ -171,7 +175,7 @@ describe("generateKieImage", () => {
   it("surfaces KIE envelope errors on submission without retrying or falling back", async () => {
     const fake = createFakeFetch(kieRoutes({ create: () => jsonResponse({ code: 402, msg: "Credits insufficient", data: null }) }));
     await assert.rejects(
-      generateKieImage({ ...base, model: "nano-banana-2", prompt: "x", fetch: fake.fetch }),
+      generateKieImage({ ...base, model: "nano-banana-2-1", prompt: "x", fetch: fake.fetch }),
       (error: unknown) => isCode("insufficient_credits")(error) && /Credits insufficient/.test((error as Error).message),
     );
     assert.equal(fake.callsTo(CREATE_URL).length, 1);
@@ -181,7 +185,7 @@ describe("generateKieImage", () => {
   it("stops at the first failed upload without submitting a task", async () => {
     const fake = createFakeFetch(kieRoutes({ upload: () => jsonResponse({ success: false, code: 500, msg: "storage down" }, 500) }));
     await assert.rejects(
-      generateKieImage({ ...base, model: "nano-banana-2", prompt: "x", referenceImages: [dataUrl(PNG_BYTES, "image/png")], fetch: fake.fetch }),
+      generateKieImage({ ...base, model: "nano-banana-2-1", prompt: "x", referenceImages: [dataUrl(PNG_BYTES, "image/png")], fetch: fake.fetch }),
       isCode("http"),
     );
     assert.equal(fake.callsTo(CREATE_URL).length, 0);
@@ -190,7 +194,7 @@ describe("generateKieImage", () => {
 
   it("reports task failure with KIE's failMsg, failCode and the task id", async () => {
     const fake = createFakeFetch(kieRoutes({ record: record("fail", { failCode: "501", failMsg: "upstream timeout" }) }));
-    await assert.rejects(generateKieImage({ ...base, model: "nano-banana-2", prompt: "x", fetch: fake.fetch }), (error: unknown) => {
+    await assert.rejects(generateKieImage({ ...base, model: "nano-banana-2-1", prompt: "x", fetch: fake.fetch }), (error: unknown) => {
       return (
         isCode("task_failed")(error) &&
         (error as { taskId?: string }).taskId === "task_1" &&
@@ -200,15 +204,15 @@ describe("generateKieImage", () => {
     });
 
     const blocked = createFakeFetch(kieRoutes({ record: record("fail", { failCode: "400", failMsg: "The content violates our policy" }) }));
-    await assert.rejects(generateKieImage({ ...base, model: "nano-banana-2", prompt: "x", fetch: blocked.fetch }), isCode("content_blocked"));
+    await assert.rejects(generateKieImage({ ...base, model: "nano-banana-2-1", prompt: "x", fetch: blocked.fetch }), isCode("content_blocked"));
   });
 
   it("rejects unknown task states and malformed results instead of guessing", async () => {
     const unknownState = createFakeFetch(kieRoutes({ record: record("paused") }));
-    await assert.rejects(generateKieImage({ ...base, model: "nano-banana-2", prompt: "x", fetch: unknownState.fetch }), isCode("invalid_response"));
+    await assert.rejects(generateKieImage({ ...base, model: "nano-banana-2-1", prompt: "x", fetch: unknownState.fetch }), isCode("invalid_response"));
 
     const noUrls = createFakeFetch(kieRoutes({ record: record("success", { resultJson: JSON.stringify({ images: [RESULT_URL] }) }) }));
-    await assert.rejects(generateKieImage({ ...base, model: "nano-banana-2", prompt: "x", fetch: noUrls.fetch }), isCode("invalid_response"));
+    await assert.rejects(generateKieImage({ ...base, model: "nano-banana-2-1", prompt: "x", fetch: noUrls.fetch }), isCode("invalid_response"));
   });
 
   it("cancels while polling and reports the task id", async () => {
@@ -217,7 +221,7 @@ describe("generateKieImage", () => {
     const pending = generateKieImage({
       ...base,
       poll: { initialDelayMs: 5, maxDelayMs: 5 },
-      model: "nano-banana-2",
+      model: "nano-banana-2-1",
       prompt: "x",
       fetch: fake.fetch,
       signal: controller.signal,
@@ -237,7 +241,7 @@ describe("KIE catalogue and pi-ai adapters", () => {
       "grok-imagine-image-2-0/image-edit": [1, 5],
       "gpt-image-2-text-to-image": [0, 0],
       "gpt-image-2-image-to-image": [1, 16],
-      "nano-banana-2": [0, 14],
+      "nano-banana-2-1": [0, 10],
     });
   });
 
@@ -249,7 +253,7 @@ describe("KIE catalogue and pi-ai adapters", () => {
         ["grok-imagine-image-2-0/image-edit", "grok-imagine-image-2-0", "image-to-image"],
         ["gpt-image-2-text-to-image", "gpt-image-2", "text-to-image"],
         ["gpt-image-2-image-to-image", "gpt-image-2", "image-to-image"],
-        ["nano-banana-2", "nano-banana-2", "unified"],
+        ["nano-banana-2-1", "nano-banana-2-1", "unified"],
       ],
     );
   });
@@ -258,9 +262,9 @@ describe("KIE catalogue and pi-ai adapters", () => {
     const fake = createFakeFetch(kieRoutes());
     const models = createModels();
     models.setProvider(createKieProvider({ apiKey: "kie-key", imageSettings: { poll: FAST_POLL } }));
-    const model = models.getModelOfType("image", "kie", "nano-banana-2");
+    const model = models.getModelOfType("image", "kie", "nano-banana-2-1");
     assert.ok(model);
-    assert.equal(models.getModel("kie", "nano-banana-2"), undefined);
+    assert.equal(models.getModel("kie", "nano-banana-2-1"), undefined);
 
     const ok = await models.generateImages(model, { input: [{ type: "text", text: "a fox" }] }, { fetch: fake.fetch, metadata: { aspectRatio: "16:9" } });
     assert.equal(ok.stopReason, "stop");
@@ -269,7 +273,7 @@ describe("KIE catalogue and pi-ai adapters", () => {
 
     const bad = await models.generateImages(model, { input: [{ type: "text", text: "a fox" }] }, { fetch: fake.fetch, metadata: { ratio: "16:9" } });
     assert.equal(bad.stopReason, "error");
-    assert.match(bad.errorMessage ?? "", /\[kie\/nano-banana-2\].*ratio/);
+    assert.match(bad.errorMessage ?? "", /\[kie\/nano-banana-2-1\].*ratio/);
   });
 
   it("registers Codex on OpenAI Responses and Claude on Anthropic Messages with KIE base URLs", () => {

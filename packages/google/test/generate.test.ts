@@ -15,7 +15,6 @@ import { generateGoogleImage, GOOGLE_IMAGE_MODELS, isPiAiExtraError, type Google
 import { createGoogleProvider } from "../src/pi-ai/index.ts";
 
 const NANO_BANANA_21_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-nano-banana-2.1:generateContent";
-const FLASH_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent";
 const PRO_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image:generateContent";
 const PNG_B64 = Buffer.from(PNG_BYTES).toString("base64");
 
@@ -44,10 +43,10 @@ const isCode = (code: string) => (error: unknown) => isPiAiExtraError(error) && 
 
 describe("generateGoogleImage", () => {
   it("sends one generateContent request with imageConfig and returns only final images", async () => {
-    const fake = createFakeFetch([{ method: "POST", url: FLASH_URL, respond: imageResponse }]);
+    const fake = createFakeFetch([{ method: "POST", url: PRO_URL, respond: imageResponse }]);
     const result = await generateGoogleImage({
       apiKey: "gemini-key",
-      model: "gemini-3.1-flash-image",
+      model: "gemini-3-pro-image",
       prompt: "a poster",
       aspectRatio: "4:5",
       resolution: "2K",
@@ -110,8 +109,8 @@ describe("generateGoogleImage", () => {
   });
 
   it("omits temperature and the system instruction when unset or undefined, and keeps imageConfig beside temperature", async () => {
-    const fake = createFakeFetch([{ method: "POST", url: FLASH_URL, respond: imageResponse }]);
-    const base = { apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", aspectRatio: "1:1", fetch: fake.fetch } as const;
+    const fake = createFakeFetch([{ method: "POST", url: PRO_URL, respond: imageResponse }]);
+    const base = { apiKey: "k", model: "gemini-3-pro-image", prompt: "p", aspectRatio: "1:1", fetch: fake.fetch } as const;
     await generateGoogleImage({ ...base, temperature: undefined, systemInstruction: undefined });
     await generateGoogleImage({ ...base, temperature: 1.2 });
     const [unset, withTemperature] = fake.calls.map(bodyOf);
@@ -121,8 +120,8 @@ describe("generateGoogleImage", () => {
   });
 
   it("rejects temperature outside 0-2 and an empty system instruction before any network call", async () => {
-    const fake = createFakeFetch([{ method: "POST", url: FLASH_URL, respond: imageResponse }]);
-    const base = { apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", fetch: fake.fetch } as const;
+    const fake = createFakeFetch([{ method: "POST", url: PRO_URL, respond: imageResponse }]);
+    const base = { apiKey: "k", model: "gemini-3-pro-image", prompt: "p", fetch: fake.fetch } as const;
     for (const extra of [{ temperature: -0.1 }, { temperature: 2.1 }, { systemInstruction: "  " }]) {
       await assert.rejects(generateGoogleImage({ ...base, ...extra }), isCode("invalid_request"), JSON.stringify(extra));
     }
@@ -142,16 +141,16 @@ describe("generateGoogleImage", () => {
   });
 
   it("reports safety blocks and empty results distinctly", async () => {
-    const prompt = createFakeFetch([{ method: "POST", url: FLASH_URL, respond: () => jsonResponse({ promptFeedback: { blockReason: "PROHIBITED_CONTENT" } }) }]);
-    await assert.rejects(generateGoogleImage({ apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", fetch: prompt.fetch }), isCode("content_blocked"));
+    const prompt = createFakeFetch([{ method: "POST", url: PRO_URL, respond: () => jsonResponse({ promptFeedback: { blockReason: "PROHIBITED_CONTENT" } }) }]);
+    await assert.rejects(generateGoogleImage({ apiKey: "k", model: "gemini-3-pro-image", prompt: "p", fetch: prompt.fetch }), isCode("content_blocked"));
 
-    const image = createFakeFetch([{ method: "POST", url: FLASH_URL, respond: () => jsonResponse({ candidates: [{ finishReason: "IMAGE_SAFETY" }] }) }]);
-    await assert.rejects(generateGoogleImage({ apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", fetch: image.fetch }), isCode("content_blocked"));
+    const image = createFakeFetch([{ method: "POST", url: PRO_URL, respond: () => jsonResponse({ candidates: [{ finishReason: "IMAGE_SAFETY" }] }) }]);
+    await assert.rejects(generateGoogleImage({ apiKey: "k", model: "gemini-3-pro-image", prompt: "p", fetch: image.fetch }), isCode("content_blocked"));
 
     const textOnly = createFakeFetch([
-      { method: "POST", url: FLASH_URL, respond: () => jsonResponse({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: "I can't draw that." }] } }] }) },
+      { method: "POST", url: PRO_URL, respond: () => jsonResponse({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: "I can't draw that." }] } }] }) },
     ]);
-    await assert.rejects(generateGoogleImage({ apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", fetch: textOnly.fetch }), (error: unknown) => {
+    await assert.rejects(generateGoogleImage({ apiKey: "k", model: "gemini-3-pro-image", prompt: "p", fetch: textOnly.fetch }), (error: unknown) => {
       return isCode("no_output")(error) && /I can't draw that/.test((error as Error).message);
     });
   });
@@ -160,7 +159,7 @@ describe("generateGoogleImage", () => {
     const fake = createFakeFetch([
       {
         method: "POST",
-        url: FLASH_URL,
+        url: PRO_URL,
         respond: () =>
           jsonResponse(
             { error: { code: 400, message: "API key not valid. Please pass a valid API key.", status: "INVALID_ARGUMENT", details: [{ reason: "API_KEY_INVALID" }] } },
@@ -168,14 +167,14 @@ describe("generateGoogleImage", () => {
           ),
       },
     ]);
-    await assert.rejects(generateGoogleImage({ apiKey: "bad", model: "gemini-3.1-flash-image", prompt: "p", fetch: fake.fetch }), isCode("auth"));
+    await assert.rejects(generateGoogleImage({ apiKey: "bad", model: "gemini-3-pro-image", prompt: "p", fetch: fake.fetch }), isCode("auth"));
   });
 
   it("maps HTTP errors with Gemini's message and does not retry", async () => {
     const fake = createFakeFetch([
-      { method: "POST", url: FLASH_URL, respond: () => jsonResponse({ error: { code: 429, message: "Resource exhausted", status: "RESOURCE_EXHAUSTED" } }, 429) },
+      { method: "POST", url: PRO_URL, respond: () => jsonResponse({ error: { code: 429, message: "Resource exhausted", status: "RESOURCE_EXHAUSTED" } }, 429) },
     ]);
-    await assert.rejects(generateGoogleImage({ apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", fetch: fake.fetch }), (error: unknown) => {
+    await assert.rejects(generateGoogleImage({ apiKey: "k", model: "gemini-3-pro-image", prompt: "p", fetch: fake.fetch }), (error: unknown) => {
       return isCode("rate_limited")(error) && /Resource exhausted/.test((error as Error).message);
     });
     assert.equal(fake.calls.length, 1);
@@ -187,11 +186,11 @@ describe("generateGoogleImage", () => {
       [{ apiKey: "k", model: "gemini-nano-banana-2.1", prompt: "p", resolution: "512" } as unknown as GoogleImageRequest, "invalid_request"],
       [{ apiKey: "k", model: "gemini-3-pro-image", prompt: "p", aspectRatio: "1:8" } as unknown as GoogleImageRequest, "invalid_request"],
       [{ apiKey: "k", model: "gemini-3-pro-image", prompt: "p", resolution: "512" } as unknown as GoogleImageRequest, "invalid_request"],
-      [{ apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", referenceImages: Array(15).fill(dataUrl(PNG_BYTES, "image/png")) }, "reference_limit"],
-      [{ apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", referenceImages: [dataUrl(GIF_BYTES, "image/gif")] }, "invalid_reference"],
-      [{ apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", headers: { Authorization: "Bearer x" } }, "invalid_request"],
-      [{ apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", headers: { "x-api-key": "secret" } }, "invalid_request"],
-      [{ apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", headers: { "Proxy-Authorization": "Basic secret" } }, "invalid_request"],
+      [{ apiKey: "k", model: "gemini-3-pro-image", prompt: "p", referenceImages: Array(15).fill(dataUrl(PNG_BYTES, "image/png")) }, "reference_limit"],
+      [{ apiKey: "k", model: "gemini-3-pro-image", prompt: "p", referenceImages: [dataUrl(GIF_BYTES, "image/gif")] }, "invalid_reference"],
+      [{ apiKey: "k", model: "gemini-3-pro-image", prompt: "p", headers: { Authorization: "Bearer x" } }, "invalid_request"],
+      [{ apiKey: "k", model: "gemini-3-pro-image", prompt: "p", headers: { "x-api-key": "secret" } }, "invalid_request"],
+      [{ apiKey: "k", model: "gemini-3-pro-image", prompt: "p", headers: { "Proxy-Authorization": "Basic secret" } }, "invalid_request"],
     ];
     for (const [request, code] of cases) {
       await assert.rejects(generateGoogleImage({ ...request, fetch: fake.fetch }), isCode(code), `${code}`);
@@ -206,7 +205,6 @@ describe("Google catalogue and pi-ai adapter", () => {
       GOOGLE_IMAGE_MODELS.map((model) => [model.id, model.referenceImages.max]),
       [
         ["gemini-nano-banana-2.1", 14],
-        ["gemini-3.1-flash-image", 14],
         ["gemini-3-pro-image", 14],
       ],
     );
@@ -217,7 +215,6 @@ describe("Google catalogue and pi-ai adapter", () => {
       GOOGLE_IMAGE_MODELS.map((model) => [model.id, model.familyId, model.familyName, model.operationRole]),
       [
         ["gemini-nano-banana-2.1", "gemini-nano-banana-2.1", "Gemini Nano Banana 2.1", "unified"],
-        ["gemini-3.1-flash-image", "gemini-3.1-flash-image", "Gemini 3.1 Flash Image (Nano Banana 2)", "unified"],
         ["gemini-3-pro-image", "gemini-3-pro-image", "Gemini 3 Pro Image (Nano Banana Pro)", "unified"],
       ],
     );
@@ -231,10 +228,10 @@ describe("Google catalogue and pi-ai adapter", () => {
   });
 
   it("generates through pi-ai Models.generateImages", async () => {
-    const fake = createFakeFetch([{ method: "POST", url: FLASH_URL, respond: imageResponse }]);
+    const fake = createFakeFetch([{ method: "POST", url: PRO_URL, respond: imageResponse }]);
     const models = createModels();
     models.setProvider(createGoogleProvider({ apiKey: "gemini-key" }));
-    const model = models.getModelOfType("image", "google", "gemini-3.1-flash-image");
+    const model = models.getModelOfType("image", "google", "gemini-3-pro-image");
     assert.ok(model);
     const result = await models.generateImages(model, { input: [{ type: "text", text: "p" }] }, { fetch: fake.fetch, metadata: { aspectRatio: "16:9" } });
     assert.equal(result.stopReason, "stop");

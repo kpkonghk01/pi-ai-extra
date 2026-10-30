@@ -1,6 +1,6 @@
 # @hk01/pi-ai-extra-google
 
-Server-only extension to `@earendil-works/pi-ai`: Gemini chat (a chat provider with a live model list) and image generation. Image models: Gemini Nano Banana 2.1 (`gemini-nano-banana-2.1`), Gemini 3.1 Flash Image (`gemini-3.1-flash-image`) and Gemini 3 Pro Image (`gemini-3-pro-image`) through `generateContent`.
+Server-only extension to `@earendil-works/pi-ai`: Gemini chat (a chat provider with a live model list) and image generation. Image models: Gemini Nano Banana 2.1 (`gemini-nano-banana-2.1`) and Gemini 3 Pro Image (`gemini-3-pro-image`) through `generateContent`.
 
 - Main entry (CommonJS and ESM): `generateGoogleImage()`, `GOOGLE_IMAGE_MODELS`, `PiAiExtraError` / `isPiAiExtraError`.
 - `/pi-ai` subpath (ESM only, needs `@earendil-works/pi-ai@1.2.0`): `createGoogleProvider()`, one chat provider (a pi-ai `Provider` with the chat kit's `chatKit` traits and a live model list) serving Gemini chat and `GOOGLE_IMAGE_MODELS` (image settings in `imageSettings`).

@@ -1,18 +1,17 @@
 export {
   generateGoogleImage,
-  type GoogleFlashImageRequest,
   type GoogleImageRequest,
   type GoogleImageSettings,
+  type GoogleNanoBanana21ImageRequest,
   type GoogleProImageRequest,
 } from "./generate.ts";
 export {
   GOOGLE_IMAGE_MODEL_IDS,
   GOOGLE_IMAGE_MODELS,
-  type GoogleFlashImageAspectRatio,
-  type GoogleFlashImageSize,
   type GoogleHarmBlockThreshold,
   type GoogleHarmCategory,
   type GoogleImageModelId,
+  type GoogleNanoBanana21AspectRatio,
   type GoogleProImageAspectRatio,
   type GoogleProImageSize,
   type GoogleSafetySetting,
