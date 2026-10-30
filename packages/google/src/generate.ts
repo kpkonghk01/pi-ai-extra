@@ -27,7 +27,7 @@ import { GOOGLE_BASE_URL, GOOGLE_PROVIDER_ID, GOOGLE_V1_BASE_URL } from "./const
 import {
   GOOGLE_IMAGE_MODEL_IDS,
   googleModelDefinition,
-  type GoogleFlashImageAspectRatio,
+  type GoogleNanoBanana21AspectRatio,
   type GoogleImageModelId,
   type GoogleProImageAspectRatio,
   type GoogleProImageSize,
@@ -58,7 +58,7 @@ interface GoogleRequestBase extends ImageHelperOptions, GoogleImageSettings {
 
 export interface GoogleNanoBanana21ImageRequest extends GoogleRequestBase {
   model: "gemini-nano-banana-2.1";
-  aspectRatio?: GoogleFlashImageAspectRatio | undefined;
+  aspectRatio?: GoogleNanoBanana21AspectRatio | undefined;
   /** Gemini `responseFormat.image.imageSize`. Default 1K. */
   resolution?: GoogleProImageSize | undefined;
 }

@@ -118,7 +118,7 @@ const GEMINI_NANO_BANANA_21 = info({
   referenceImages: references(14),
   aspectRatio: option(GEMINI_RATIOS, null),
   resolution: option(RESOLUTIONS, "1K"),
-  notes: ["Standard tier: up to 14 reference images."],
+  notes: ["Up to 14 reference images."],
 });
 
 const GPT_IMAGE_2 = info({

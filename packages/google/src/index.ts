@@ -7,7 +7,7 @@ export {
 export {
   GOOGLE_IMAGE_MODEL_IDS,
   GOOGLE_IMAGE_MODELS,
-  type GoogleFlashImageAspectRatio,
+  type GoogleNanoBanana21AspectRatio,
   type GoogleHarmBlockThreshold,
   type GoogleHarmCategory,
   type GoogleImageModelId,

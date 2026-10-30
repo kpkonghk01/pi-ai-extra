@@ -9,8 +9,8 @@ Google、KIE 和 ToAPIs 準備淘汰它們的 Nano Banana 2 圖片模型。googl
 | open-graph-single | [DATA-4602](https://hk01-digital.atlassian.net/browse/DATA-4602) |
 | InfoCard 多功能製圖大師 | [DATA-4603](https://hk01-digital.atlassian.net/browse/DATA-4603) |
 | Auto OG（OG 拼貼大師自動駕駛版） | [DATA-4604](https://hk01-digital.atlassian.net/browse/DATA-4604) |
-| opengraph2（OpenGraph2 圖片製作大師，後備方案） | [DATA-4605](https://hk01-digital.atlassian.net/browse/DATA-4605) |
-| og-master（OG 拼貼大師，後備方案） | [DATA-4606](https://hk01-digital.atlassian.net/browse/DATA-4606) |
+| opengraph2（OpenGraph2 圖片製作大師，open-graph-single 的 Backup app） | [DATA-4605](https://hk01-digital.atlassian.net/browse/DATA-4605) |
+| og-master（OG 拼貼大師，Auto OG 的 Backup app） | [DATA-4606](https://hk01-digital.atlassian.net/browse/DATA-4606) |
 
 ## 版本
 
@@ -45,6 +45,8 @@ Prompt 不用逐字比對原文，而是按用途描述改動，所以五個 app
 | Auto OG | `server/imageModels.ts` 的 `NANO_BANANA_2_FAMILIES` 要剛好是 Google、KIE、ToAPIs 三個 2.1。這份清單決定拼貼時哪些 model 用 Nano Banana 專用的 prompt 文字。 |
 | opengraph2 | `package.json` 的 `overrides` 也寫了三條 URL。 |
 | og-master | 沒有特別的地方。`.env.example` 的說明文字會順帶更新。 |
+
+InfoCard（`pi-ai-migration/`）和 opengraph2（`pi-ai-extra-migration/`）裏有之前遷移留下的 `.ts` 快照，Auto OG 有一個叫 `'nano-banana-2'` 的 prompt profile 名稱。Prompt 已經叫 Gemini 不要改這些。
 
 ## 用戶會看到的改變
 
