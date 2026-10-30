@@ -5,7 +5,7 @@ import { createFakeFetch, jsonResponse, PNG_BYTES } from "@hk01/pi-ai-extra-inte
 import { generateGoogleImage } from "../src/index.ts";
 import { createGoogleProvider } from "../src/pi-ai/index.ts";
 
-const URL_FLASH = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent";
+const URL_PRO = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image:generateContent";
 
 const withUsage = (usageMetadata: unknown) => () =>
   jsonResponse({
@@ -27,8 +27,8 @@ const FULL = {
 };
 
 const run = async (usageMetadata: unknown) => {
-  const fake = createFakeFetch([{ method: "POST", url: URL_FLASH, respond: withUsage(usageMetadata) }]);
-  return generateGoogleImage({ apiKey: "k", model: "gemini-3.1-flash-image", prompt: "p", fetch: fake.fetch });
+  const fake = createFakeFetch([{ method: "POST", url: URL_PRO, respond: withUsage(usageMetadata) }]);
+  return generateGoogleImage({ apiKey: "k", model: "gemini-3-pro-image", prompt: "p", fetch: fake.fetch });
 };
 
 describe("Gemini usage", () => {
@@ -55,10 +55,10 @@ describe("Gemini usage", () => {
   });
 
   it("fills pi-ai usage with pi-ai's Gemini conventions", async () => {
-    const fake = createFakeFetch([{ method: "POST", url: URL_FLASH, respond: withUsage(FULL) }]);
+    const fake = createFakeFetch([{ method: "POST", url: URL_PRO, respond: withUsage(FULL) }]);
     const models = createModels();
     models.setProvider(createGoogleProvider({ apiKey: "k" }));
-    const model = models.getModelOfType("image", "google", "gemini-3.1-flash-image");
+    const model = models.getModelOfType("image", "google", "gemini-3-pro-image");
     assert.ok(model);
     const result = await models.generateImages(model, { input: [{ type: "text", text: "p" }] }, { fetch: fake.fetch });
     assert.deepEqual(

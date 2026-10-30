@@ -1,6 +1,5 @@
 export {
   generateGoogleImage,
-  type GoogleFlashImageRequest,
   type GoogleImageRequest,
   type GoogleImageSettings,
   type GoogleProImageRequest,
@@ -9,7 +8,6 @@ export {
   GOOGLE_IMAGE_MODEL_IDS,
   GOOGLE_IMAGE_MODELS,
   type GoogleFlashImageAspectRatio,
-  type GoogleFlashImageSize,
   type GoogleHarmBlockThreshold,
   type GoogleHarmCategory,
   type GoogleImageModelId,

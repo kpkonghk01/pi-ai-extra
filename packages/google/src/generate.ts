@@ -28,7 +28,6 @@ import {
   GOOGLE_IMAGE_MODEL_IDS,
   googleModelDefinition,
   type GoogleFlashImageAspectRatio,
-  type GoogleFlashImageSize,
   type GoogleImageModelId,
   type GoogleProImageAspectRatio,
   type GoogleProImageSize,
@@ -64,13 +63,6 @@ export interface GoogleNanoBanana21ImageRequest extends GoogleRequestBase {
   resolution?: GoogleProImageSize | undefined;
 }
 
-export interface GoogleFlashImageRequest extends GoogleRequestBase {
-  model: "gemini-3.1-flash-image";
-  aspectRatio?: GoogleFlashImageAspectRatio | undefined;
-  /** Gemini `imageSize`. Default 1K. */
-  resolution?: GoogleFlashImageSize | undefined;
-}
-
 export interface GoogleProImageRequest extends GoogleRequestBase {
   model: "gemini-3-pro-image";
   aspectRatio?: GoogleProImageAspectRatio | undefined;
@@ -78,7 +70,7 @@ export interface GoogleProImageRequest extends GoogleRequestBase {
   resolution?: GoogleProImageSize | undefined;
 }
 
-export type GoogleImageRequest = GoogleNanoBanana21ImageRequest | GoogleFlashImageRequest | GoogleProImageRequest;
+export type GoogleImageRequest = GoogleNanoBanana21ImageRequest | GoogleProImageRequest;
 
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 const REFERENCE_DOWNLOAD_TIMEOUT_MS = 30_000;

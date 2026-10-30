@@ -5,7 +5,7 @@ export {
   type KieGrokTextToImageRequest,
   type KieImageRequest,
   type KieImageSettings,
-  type KieNanoBanana2Request,
+  type KieNanoBanana21Request,
 } from "./generate.ts";
 export {
   KIE_IMAGE_MODEL_IDS,
@@ -15,8 +15,8 @@ export {
   type KieGrokAspectRatio,
   type KieGrokEditAspectRatio,
   type KieImageModelId,
-  type KieNanoBanana2AspectRatio,
-  type KieNanoBanana2OutputFormat,
+  type KieNanoBanana21AspectRatio,
+  type KieNanoBanana21OutputFormat,
   type KieResolution,
 } from "./models.ts";
 export { getKieTask, type GetKieTaskOptions, type KieTaskInfo } from "./get-task.ts";

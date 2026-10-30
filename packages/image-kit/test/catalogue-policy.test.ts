@@ -16,16 +16,15 @@ describe('catalogue policy', () => {
       catalogueFamilies().map((family) => family.key),
       [
         'google:gemini-nano-banana-2.1',
-        'google:gemini-3.1-flash-image',
         'google:gemini-3-pro-image',
-        'toapis:gemini-3.1-flash-image-preview',
+        'toapis:gemini-nano-banana-2.1',
         'toapis:gpt-image-2',
         'toapis:gpt-image-2.5-flare',
         'toapis:gpt-image-2.5-sunburst',
         'toapis:doubao-seedream-5-0-pro',
         'kie:grok-imagine-image-2-0',
         'kie:gpt-image-2',
-        'kie:nano-banana-2',
+        'kie:nano-banana-2-1',
       ],
     );
   });
@@ -49,6 +48,6 @@ describe('catalogue policy', () => {
     const keys = familiesForScope(policy, 'collage').map((family) => family.key);
     assert.equal(keys.includes('kie:gpt-image-2'), false);
     assert.equal(keys.includes('kie:grok-imagine-image-2-0'), false);
-    assert.equal(keys.includes('kie:nano-banana-2'), true);
+    assert.equal(keys.includes('kie:nano-banana-2-1'), true);
   });
 });

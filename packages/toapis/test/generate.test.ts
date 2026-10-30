@@ -64,8 +64,8 @@ describe("generateToapisImage", () => {
         { model: "gpt-image-2.5-sunburst", prompt: "p", n: 1, size: "1:1", resolution: "4K" },
       ],
       [
-        { ...base, model: "gemini-3.1-flash-image-preview", prompt: "p", aspectRatio: "4:5", resolution: "2K", referenceImages: ["https://cdn.example.com/a.png"] },
-        { model: "gemini-3.1-flash-image-preview", prompt: "p", n: 1, size: "4:5", image_urls: ["https://cdn.example.com/a.png"], metadata: { resolution: "2K" } },
+        { ...base, model: "gemini-nano-banana-2.1", prompt: "p", aspectRatio: "4:5", resolution: "2K", referenceImages: ["https://cdn.example.com/a.png"] },
+        { model: "gemini-nano-banana-2.1", prompt: "p", n: 1, size: "4:5", image_urls: ["https://cdn.example.com/a.png"], metadata: { resolution: "2K" } },
       ],
       [
         { ...base, model: "doubao-seedream-5-0-pro", prompt: "p", resolution: "1K", watermark: false },
@@ -107,18 +107,27 @@ describe("generateToapisImage", () => {
     const fake = createFakeFetch(routes());
     const refs = (count: number) => Array.from({ length: count }, (_, index) => `https://cdn.example.com/${index}.png`);
     const cases: Array<[ToapisImageRequest, string]> = [
-      [{ ...base, model: "gemini-3.1-flash-image-preview", prompt: "p", referenceImages: refs(7) }, "reference_limit"],
+      [{ ...base, model: "gemini-nano-banana-2.1", prompt: "p", referenceImages: refs(15) }, "reference_limit"],
       [{ ...base, model: "gpt-image-2", prompt: "p", referenceImages: refs(7) }, "reference_limit"],
       [{ ...base, model: "doubao-seedream-5-0-pro", prompt: "p", referenceImages: refs(11) }, "reference_limit"],
       [{ ...base, model: "doubao-seedream-5-0-pro", prompt: "p", referenceImages: [dataUrl(GIF_BYTES, "image/gif")] }, "invalid_reference"],
       [{ ...base, model: "doubao-seedream-5-0-pro", prompt: "p", resolution: "4K" } as unknown as ToapisImageRequest, "invalid_request"],
       [{ ...base, model: "gpt-image-2", prompt: "p", background: "opaque" } as unknown as ToapisImageRequest, "invalid_request"],
       [{ ...base, model: "gemini-2.5-flash-image-preview", prompt: "p" } as unknown as ToapisImageRequest, "invalid_request"],
+      [{ ...base, model: "gemini-3.1-flash-image-preview", prompt: "p" } as unknown as ToapisImageRequest, "invalid_request"],
+      [{ ...base, model: "gemini-3.1-flash-image", prompt: "p" } as unknown as ToapisImageRequest, "invalid_request"],
     ];
     for (const [request, code] of cases) {
       await assert.rejects(generateToapisImage({ ...request, fetch: fake.fetch }), isCode(code), `${request.model} → ${code}`);
     }
     assert.equal(fake.calls.length, 0);
+  });
+
+  it("sends up to 14 reference images to Gemini Nano Banana 2.1", async () => {
+    const fake = createFakeFetch(routes());
+    const urls = Array.from({ length: 14 }, (_, index) => `https://cdn.example.com/${index}.png`);
+    await generateToapisImage({ ...base, model: "gemini-nano-banana-2.1", prompt: "p", referenceImages: urls, fetch: fake.fetch });
+    assert.deepEqual(bodyOf(fake.callsTo(SUBMIT_URL)[0]).image_urls, urls);
   });
 
   it("does not list or accept temperature or a system instruction (undocumented by ToAPIs)", async () => {
@@ -128,7 +137,7 @@ describe("generateToapisImage", () => {
     }
     const fake = createFakeFetch(routes());
     for (const extra of [{ temperature: 0.7 }, { systemInstruction: "rules" }]) {
-      const request = { ...base, model: "gemini-3.1-flash-image-preview", prompt: "p", ...extra } as unknown as ToapisImageRequest;
+      const request = { ...base, model: "gemini-nano-banana-2.1", prompt: "p", ...extra } as unknown as ToapisImageRequest;
       await assert.rejects(generateToapisImage({ ...request, fetch: fake.fetch }), isCode("invalid_request"), JSON.stringify(extra));
     }
     assert.equal(fake.calls.length, 0);
@@ -175,10 +184,10 @@ describe("generateToapisImage", () => {
 });
 
 describe("ToAPIs catalogue and pi-ai adapters", () => {
-  it("exposes Gemini 3.1 (not 2.5) and the documented limits", () => {
+  it("exposes Gemini Nano Banana 2.1 (not 3.1 Flash Image) and the documented limits", () => {
     const limits = Object.fromEntries(TOAPIS_IMAGE_MODELS.map((model) => [model.id, model.referenceImages.max]));
     assert.deepEqual(limits, {
-      "gemini-3.1-flash-image-preview": 6,
+      "gemini-nano-banana-2.1": 14,
       "gpt-image-2": 6,
       "gpt-image-2.5-flare": null,
       "gpt-image-2.5-sunburst": null,

@@ -14,12 +14,12 @@ import {
 
 function view(overrides: Partial<ImageModelView> = {}): ImageModelView {
   return {
-    id: 'nano-banana-2',
-    label: 'Nano Banana 2',
+    id: 'google:gemini-nano-banana-2.1',
+    label: 'Nano Banana 2.1',
     description: '',
     provider: 'google',
     providerLabel: 'Google Gemini',
-    providerModel: 'gemini-3.1-flash-image',
+    providerModel: 'gemini-nano-banana-2.1',
     acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
     referenceLimit: { min: 0, max: 14 },
     temperature: { min: 0, max: 2 },

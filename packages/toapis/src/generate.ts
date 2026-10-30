@@ -55,8 +55,8 @@ interface ToapisRequestBase extends ImageHelperOptions, ToapisImageSettings {
   referenceImages?: readonly string[] | undefined;
 }
 
-export interface ToapisGeminiFlashImageRequest extends ToapisRequestBase {
-  model: "gemini-3.1-flash-image-preview";
+export interface ToapisGeminiNanoBanana21Request extends ToapisRequestBase {
+  model: "gemini-nano-banana-2.1";
   aspectRatio?: ToapisGeminiAspectRatio | undefined;
   resolution?: ToapisResolution | undefined;
 }
@@ -84,7 +84,7 @@ export interface ToapisSeedreamRequest extends ToapisRequestBase {
   watermark?: boolean | undefined;
 }
 
-export type ToapisImageRequest = ToapisGeminiFlashImageRequest | ToapisGptImage2Request | ToapisGptImage25Request | ToapisSeedreamRequest;
+export type ToapisImageRequest = ToapisGeminiNanoBanana21Request | ToapisGptImage2Request | ToapisGptImage25Request | ToapisSeedreamRequest;
 
 /** ToAPIs recommends waiting at least 5-10 s with jitter between status queries. */
 const POLL_DEFAULTS: PollDefaults = { initialDelayMs: 5_000, maxDelayMs: 10_000, factor: 1.5, jitterRatio: 0.2, timeoutMs: 6 * 60_000 };
