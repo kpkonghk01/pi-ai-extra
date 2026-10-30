@@ -27,8 +27,8 @@ import { GOOGLE_BASE_URL, GOOGLE_PROVIDER_ID, GOOGLE_V1_BASE_URL } from "./const
 import {
   GOOGLE_IMAGE_MODEL_IDS,
   googleModelDefinition,
-  type GoogleNanoBanana21AspectRatio,
   type GoogleImageModelId,
+  type GoogleNanoBanana21AspectRatio,
   type GoogleProImageAspectRatio,
   type GoogleProImageSize,
   type GoogleSafetySetting,

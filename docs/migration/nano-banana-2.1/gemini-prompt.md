@@ -77,7 +77,7 @@ If the entry has no `price` at all, do not add one here. The app then prices mod
 
 ## Step 3: find every other use of the removed models
 
-Search all `.ts` and `.tsx` files, and `.env.example`, for these texts. Skip `node_modules`, `dist`, `*.md` and every folder whose name contains `migration`:
+Search all `.ts` and `.tsx` files for these texts. Skip `node_modules`, `dist`, `*.md` and every folder whose name contains `migration`:
 
 - `gemini-3.1-flash-image` (this also finds `gemini-3.1-flash-image-preview`)
 - `kie:nano-banana-2'` and `kie:nano-banana-2"`
@@ -92,7 +92,9 @@ Handle each match by what the code does with it:
 | A price or cost calculation by model ID, outside the policy | Delete the branch for the removed model. If this code also prices `google:gemini-nano-banana-2.1`, change its per-image prices to 0.0336 USD (1K), 0.0504 USD (2K) and 0.113 USD (4K); add 1.50 USD per 1M input tokens only if this code already prices input tokens. If this code prices other models by ID, also add the two new models with the per-image prices from Step 2b and 2c. Do not widen the app's own resolution types: use the 4K price only where the code already handles 4K. |
 | A default model ID | If it is a removed key, change it to `'google:gemini-nano-banana-2.1'`. |
 | A TypeScript type that lists model IDs | Replace each removed key with its replacement key. |
-| A comment, or text in `.env.example` | Update the model name, for example "Nano Banana 2 (KIE)" → "Nano Banana 2.1 (KIE)". |
+| A comment | Update the model name, for example "Nano Banana 2 (KIE)" → "Nano Banana 2.1 (KIE)". |
+
+Then open `.env.example`, if the app has one. Where a comment lists the KIE or ToAPIs image models, change "Nano Banana 2" and "Nano Banana 2 Preview" to "Nano Banana 2.1". Change nothing else in that file.
 
 The model a user selected before is saved in their browser. You do not need to migrate it: when it is no longer in the list, the image kit's model selector switches back to the app's default model by itself.
 

@@ -21,6 +21,12 @@ Google、KIE 和 ToAPIs 準備淘汰它們的 Nano Banana 2 圖片模型。googl
 | `@hk01/pi-ai-extra-toapis` | 0.6.0 | `gemini-3.1-flash-image-preview` 換成 `gemini-nano-banana-2.1` |
 | `@hk01/pi-ai-extra-image-kit` | 0.2.0（不變） | 沒有改動 |
 
+這個組合已在本機實際測試：用 npm 把 image-kit 0.2.0 的 release 和三個新版 provider 裝到空項目（沒有裝 pi-ai）。測試結果：
+- ESM 和 CommonJS 都能載入；
+- 選單列出兩個新 model，參考圖上限、遮罩設定和價錢都正確；
+- policy 寫舊 key 時報 `unknown model family`；
+- 用舊 ID 請求回 `unsupported_model`。
+
 ## 怎樣使用
 
 1. 確認三個 release 已經發佈，三條 URL 都可以下載（見 `gemini-prompt.md` Step 1）。
