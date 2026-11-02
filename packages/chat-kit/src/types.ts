@@ -134,7 +134,7 @@ export interface ChatUsage {
    * reported cache counts, left out when negative. The whole prompt is `input + cacheRead + cacheWrite`.
    * On Gemini the prompt includes the tool-use prompt tokens of grounding (`toolUsePromptTokenCount`),
    * and a prompt count Gemini left out (a document by URL on AI Studio) is its total minus its
-   * answer, thinking and tool-use counts.
+   * answer, thinking and tool-use counts, unless one of them is malformed or they add up to more.
    */
   input?: number;
   /** Every generated token, reasoning included. Gemini leaves zero-valued counters out of its JSON, so a blocked prompt there has none. */

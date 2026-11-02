@@ -538,7 +538,7 @@ Only the initial request is retried, before the response stream starts: by pi-ai
 
 | Field | Meaning | Present in `usage` |
 | --- | --- | --- |
-| `input` | Prompt tokens not read from or written to the cache: the reported prompt count minus the reported cache counts, left out if negative. The whole prompt is `input + cacheRead + cacheWrite`. On Gemini the prompt includes the tool-use prompt tokens of grounding (`toolUsePromptTokenCount`), and a prompt count Gemini left out is its total minus its answer, thinking and tool-use counts: on AI Studio, the usage of a turn with a document by URL had no prompt count | When reported, or on Gemini derived from the total |
+| `input` | Prompt tokens not read from or written to the cache: the reported prompt count minus the reported cache counts, left out if negative. The whole prompt is `input + cacheRead + cacheWrite`. On Gemini the prompt includes the tool-use prompt tokens of grounding (`toolUsePromptTokenCount`), and a prompt count Gemini left out is its total minus its answer, thinking and tool-use counts, unless one of them is malformed or they add up to more (then `input` is the tool-use prompt alone, if reported): on AI Studio, the usage of a turn with a document by URL had no prompt count | When reported, or on Gemini derived from the total |
 | `output` | Every generated token, reasoning included | When reported (a Gemini blocked prompt has none) |
 | `totalTokens` | The provider's own total | When reported (never on Anthropic, which reports none) |
 | `cacheRead` | Prompt tokens read from the prompt cache | When reported |

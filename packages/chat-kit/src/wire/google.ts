@@ -65,8 +65,8 @@ export function transformGooglePayload(payload: unknown, plan: PayloadPlan): unk
  * `toolUsePromptTokenCount`: the tool results grounding
  * feeds back to the model, billed as input. The answer is `candidatesTokenCount` plus
  * `thoughtsTokenCount`. Gemini's `totalTokenCount` is the sum of all four, so a `promptTokenCount`
- * the stream left out is the total minus the other three, unless they add up to more: on AI Studio,
- * the usage of a turn with a document by URL had no `promptTokenCount`. Each side sums only the
+ * the stream left out is derived from the total (`promptFromTotal`): on AI Studio, the usage of a
+ * turn with a document by URL had no `promptTokenCount`. Each side sums only the
  * counts Gemini reported and is omitted when it reported none of them, as in the Gemini image
  * client: Gemini's JSON leaves zero-valued counters out, so a blocked prompt's usage has no
  * `output`. Gemini has no cache-write count.
@@ -76,7 +76,7 @@ function googleUsage(usageMetadata: Record<string, unknown>): ChatUsage | undefi
   const candidates = tokenCount(usageMetadata.candidatesTokenCount);
   const toolUsePrompt = tokenCount(usageMetadata.toolUsePromptTokenCount);
   const total = tokenCount(usageMetadata.totalTokenCount);
-  const prompt = tokenCount(usageMetadata.promptTokenCount) ?? remainderReported(total, candidates, thoughts, toolUsePrompt);
+  const prompt = tokenCount(usageMetadata.promptTokenCount) ?? promptFromTotal(usageMetadata);
   return toChatUsage(
     {
       prompt: sumReported(prompt, toolUsePrompt),
@@ -87,6 +87,18 @@ function googleUsage(usageMetadata: Record<string, unknown>): ChatUsage | undefi
     },
     { usageMetadata },
   );
+}
+
+/**
+ * `totalTokenCount` minus the answer, thinking and tool-use counts. One Gemini left out is 0, since
+ * its JSON leaves zero-valued counters out; one that is not a token count leaves the prompt
+ * unknown, as does a negative result.
+ */
+function promptFromTotal(usageMetadata: Record<string, unknown>): number | undefined {
+  const parts = [usageMetadata.candidatesTokenCount, usageMetadata.thoughtsTokenCount, usageMetadata.toolUsePromptTokenCount].map(
+    (value) => (value === undefined ? 0 : tokenCount(value)),
+  );
+  return parts.includes(undefined) ? undefined : remainderReported(tokenCount(usageMetadata.totalTokenCount), ...parts);
 }
 
 /**

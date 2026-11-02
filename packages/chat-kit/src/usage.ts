@@ -39,12 +39,12 @@ export interface ReportedCounts {
 }
 
 /**
- * The turn's `ChatUsage`, from what the provider reported and nothing else (ADR 0005): a count it
- * did not report, and the wire API could not derive from those it did, is omitted, never estimated
- * or set to zero, and `totalTokens` is only the provider's own total. `input` is derived, the
- * prompt count minus the reported cache counts, and left out when negative. Any reported count, or a cost or credit in `raw`, makes a
- * usage record, which keeps `raw`. With neither, the turn carries no usage, just as a usage block
- * with an unexpected shape is dropped rather than failing a finished turn.
+ * The turn's `ChatUsage`, from the counts the provider reported, or the wire API derived from
+ * them, and nothing else (ADR 0005): any other count is omitted, never estimated or set to zero,
+ * and `totalTokens` is only the provider's own total. `input` is derived, the prompt count minus
+ * the reported cache counts, and left out when negative. Any reported count, or a cost or credit in
+ * `raw`, makes a usage record, which keeps `raw`. With neither, the turn carries no usage, just as
+ * a usage block with an unexpected shape is dropped rather than failing a finished turn.
  */
 export function toChatUsage(counts: ReportedCounts, raw: Record<string, unknown>): ChatUsage | undefined {
   const input = remainderReported(counts.prompt, counts.cacheRead, counts.cacheWrite);
