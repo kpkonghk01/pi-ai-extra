@@ -4,7 +4,7 @@ import type { ChatDocument, ChatUsage } from "../types.ts";
 import { sumReported, tokenCount, toChatUsage } from "../usage.ts";
 import { encodeDocument, replaceDocumentMarker, textOfUntypedPart, type DocumentEncoder } from "./document-parts.ts";
 import { sanitizeSchemaForGemini } from "./gemini-schema.ts";
-import type { BlockedTurn, ClassifiedFailure, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
+import type { BlockedTurn, ClassifiedFailure, PayloadPlan, ProviderFailure, StreamObserver, WireApi } from "./types.ts";
 
 /** Gemini fetches an external (HTTP or signed) URL only up to 15 MB per file. */
 export const GEMINI_URL_MAX_BYTES = 15_000_000;
@@ -117,7 +117,8 @@ export function createGoogleObserver(): StreamObserver {
 /**
  * Google answers a document URL it could not fetch with a 400 whose message says so. Seen on Agent
  * Platform on 2026-11-02, for an S3 presigned link whose fetch timed out (status URL rejected,
- * fetch timeout) and for a link whose host does not resolve.
+ * fetch timeout) and for a link whose host does not resolve. Not yet seen on AI Studio, whose
+ * `fileData` fetch is taken to fail the same way, so both Google APIs read it.
  */
 const UNFETCHABLE_URL = /Cannot fetch content from the provided URL/i;
 
@@ -125,7 +126,7 @@ const UNFETCHABLE_URL = /Cannot fetch content from the provided URL/i;
  * Google's 400 for a document URL it could not fetch is `DOCUMENT_FETCH_FAILED`, when the turn sent
  * a document by URL; any other failure stays as it is.
  */
-function classifyGoogleFailure(failure: { errorMessage: string; status: number | undefined }, plan: PayloadPlan): ClassifiedFailure | undefined {
+function classifyGoogleFailure(failure: ProviderFailure, plan: PayloadPlan): ClassifiedFailure | undefined {
   const byUrl = plan.documents.some((document) => document.kind !== "text" && document.source.type === "url");
   if (!byUrl || failure.status !== 400 || !UNFETCHABLE_URL.test(failure.errorMessage)) return undefined;
   return { code: "DOCUMENT_FETCH_FAILED", account: "The provider could not fetch a document from its URL" };

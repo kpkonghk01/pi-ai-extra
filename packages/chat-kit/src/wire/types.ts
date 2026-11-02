@@ -80,10 +80,16 @@ export interface WireApi {
    * from pi-ai's error text, the response's HTTP status and what the request carried; undefined for
    * any other failure.
    */
-  classifyFailure?(failure: { errorMessage: string; status: number | undefined }, plan: PayloadPlan): ClassifiedFailure | undefined;
+  classifyFailure?(failure: ProviderFailure, plan: PayloadPlan): ClassifiedFailure | undefined;
 }
 
-/** A provider failure the wire API recognized: its code, one of a sent request, and the kit's account of it, put before the provider's text. */
+/** A failed request as pi-ai reports it: its error text, and the HTTP status of the response when there was one. */
+export interface ProviderFailure {
+  errorMessage: string;
+  status: number | undefined;
+}
+
+/** A provider failure the wire API recognized in a request that was sent: its code, and the kit's account of it, put before the provider's text. */
 export interface ClassifiedFailure {
   code: Extract<ChatTurnErrorCode, "DOCUMENT_FETCH_FAILED">;
   account: string;

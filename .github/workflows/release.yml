@@ -143,8 +143,8 @@ jobs:
           const providers = [createGoogleProvider({ apiKey: "smoke", fetch }), createGoogleVertexProvider({ apiKey: "smoke" }), createOpenRouterProvider({ apiKey: "smoke", fetch }), createKieProvider({ apiKey: "smoke", fetch }), createToapisProvider({ apiKey: "smoke", fetch })];
           const chat = createChatKit({ providers, fetch });
           const lists = await chat.listModels();
-          const unread = (entry) => (entry.provider === "google-vertex" ? undefined : "offline");
-          if (lists.length !== 5 || lists.some((entry) => !entry.models?.length || entry.source !== "installed" || entry.refreshError !== unread(entry))) throw new Error(`listModels is broken: ${JSON.stringify(lists.map(({ models, ...entry }) => ({ ...entry, models: models?.length })))}`);
+          const expectedRefreshError = (entry) => (entry.provider === "google-vertex" ? undefined : "offline");
+          if (lists.length !== 5 || lists.some((entry) => !entry.models?.length || entry.source !== "installed" || entry.refreshError !== expectedRefreshError(entry))) throw new Error(`listModels is broken: ${JSON.stringify(lists.map(({ models, ...entry }) => ({ ...entry, models: models?.length })))}`);
           const message = await chat.completeSimple({ provider: "kie", id: "no-such-model" }, { messages: [{ role: "user", content: "hi", timestamp: 1 }] });
           if (message.stopReason !== "error" || message.chatKit.error?.code !== "UNKNOWN_MODEL") throw new Error(`ESM entry is broken: ${JSON.stringify(message)}`);
           SMOKE
