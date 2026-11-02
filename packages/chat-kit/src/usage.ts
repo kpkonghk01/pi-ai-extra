@@ -12,7 +12,20 @@ export function sumReported(...counts: readonly (number | undefined)[]): number 
   return reported.length === 0 ? undefined : reported.reduce((sum, count) => sum + count, 0);
 }
 
-/** The counts one wire API read from its provider's raw usage record; undefined means not reported. */
+/**
+ * A reported `whole` less the reported `parts` it contains; undefined when the whole was not
+ * reported or the parts add up to more than it.
+ */
+export function remainderReported(whole: number | undefined, ...parts: readonly (number | undefined)[]): number | undefined {
+  if (whole === undefined) return undefined;
+  const remainder = whole - (sumReported(...parts) ?? 0);
+  return remainder < 0 ? undefined : remainder;
+}
+
+/**
+ * The counts one wire API read from its provider's raw usage record; undefined means not reported.
+ * A wire API may derive a count the provider left out, but only from the counts it reported.
+ */
 export interface ReportedCounts {
   /** The whole prompt: cache reads and writes included, and Gemini's tool-use prompt tokens. */
   prompt?: number | undefined;
@@ -26,17 +39,17 @@ export interface ReportedCounts {
 }
 
 /**
- * The turn's `ChatUsage`, from what the provider reported and nothing else (ADR 0005): a count it
- * did not report is omitted, never estimated or set to zero, and `totalTokens` is only the
- * provider's own total. `input` is derived, the reported prompt count minus the reported cache
- * counts, and left out when negative. Any reported count, or a cost or credit in `raw`, makes a
- * usage record, which keeps `raw`. With neither, the turn carries no usage, just as a usage block
- * with an unexpected shape is dropped rather than failing a finished turn.
+ * The turn's `ChatUsage`, from the counts the provider reported, or the wire API derived from
+ * them, and nothing else (ADR 0005): any other count is omitted, never estimated or set to zero,
+ * and `totalTokens` is only the provider's own total. `input` is derived, the prompt count minus
+ * the reported cache counts, and left out when negative. Any reported count, or a cost or credit in
+ * `raw`, makes a usage record, which keeps `raw`. With neither, the turn carries no usage, just as
+ * a usage block with an unexpected shape is dropped rather than failing a finished turn.
  */
 export function toChatUsage(counts: ReportedCounts, raw: Record<string, unknown>): ChatUsage | undefined {
-  const input = counts.prompt === undefined ? undefined : counts.prompt - (counts.cacheRead ?? 0) - (counts.cacheWrite ?? 0);
+  const input = remainderReported(counts.prompt, counts.cacheRead, counts.cacheWrite);
   const reported = {
-    ...(input === undefined || input < 0 ? {} : { input }),
+    ...(input === undefined ? {} : { input }),
     ...(counts.output === undefined ? {} : { output: counts.output }),
     ...(counts.cacheRead === undefined ? {} : { cacheRead: counts.cacheRead }),
     ...(counts.cacheWrite === undefined ? {} : { cacheWrite: counts.cacheWrite }),
@@ -70,6 +83,12 @@ function reportsBilling(raw: Record<string, unknown>): boolean {
   return billed(raw) || Object.values(raw).some((value) => isRecord(value) && billed(value));
 }
 
+/** `next`'s fields over `base`'s, except those `next` leaves `null` or `undefined`: each keeps its last reported value. */
+export function overlayReported(base: Record<string, unknown> | undefined, next: Record<string, unknown>): Record<string, unknown> {
+  const reported = Object.fromEntries(Object.entries(next).filter(([, value]) => value !== null && value !== undefined));
+  return { ...base, ...reported };
+}
+
 /**
  * Collects a turn's raw usage record and the cost or credit fields reported next to it, from the
  * provider's stream events, as one wire's observer sees them.
@@ -96,8 +115,7 @@ export function createUsageCapture(): UsageCapture {
       usage = next;
     },
     overlay(next) {
-      const reported = Object.fromEntries(Object.entries(next).filter(([, value]) => value !== null && value !== undefined));
-      usage = { ...usage, ...reported };
+      usage = overlayReported(usage, next);
     },
     addBilling(container) {
       billing = { ...billing, ...billingFields(container) };

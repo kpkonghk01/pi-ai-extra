@@ -1,7 +1,7 @@
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { isRecord } from "@hk01/pi-ai-extra-internal/util";
 import type { ChatDocument, ChatUsage } from "../types.ts";
-import { sumReported, tokenCount, toChatUsage } from "../usage.ts";
+import { overlayReported, remainderReported, sumReported, tokenCount, toChatUsage } from "../usage.ts";
 import { encodeDocument, replaceDocumentMarker, textOfUntypedPart, type DocumentEncoder } from "./document-parts.ts";
 import { sanitizeSchemaForGemini } from "./gemini-schema.ts";
 import type { BlockedTurn, ClassifiedFailure, PayloadPlan, ProviderFailure, StreamObserver, WireApi } from "./types.ts";
@@ -60,22 +60,28 @@ export function transformGooglePayload(payload: unknown, plan: PayloadPlan): unk
 }
 
 /**
- * Usage from the last chunk's `usageMetadata`. The prompt is `promptTokenCount`, which already
+ * Usage from the stream's `usageMetadata`. The prompt is `promptTokenCount`, which already
  * includes `cachedContentTokenCount` (so `input` is the prompt without it), plus
  * `toolUsePromptTokenCount`: the tool results grounding
  * feeds back to the model, billed as input. The answer is `candidatesTokenCount` plus
- * `thoughtsTokenCount`. Gemini's `totalTokenCount` is the sum of all four. Each side sums only the
+ * `thoughtsTokenCount`. Gemini's `totalTokenCount` is the sum of all four, so a `promptTokenCount`
+ * the stream left out is derived from the total (`promptFromTotal`): on AI Studio, the usage of a
+ * turn with a document by URL had no `promptTokenCount`. Each side sums only the
  * counts Gemini reported and is omitted when it reported none of them, as in the Gemini image
  * client: Gemini's JSON leaves zero-valued counters out, so a blocked prompt's usage has no
  * `output`. Gemini has no cache-write count.
  */
 function googleUsage(usageMetadata: Record<string, unknown>): ChatUsage | undefined {
   const thoughts = tokenCount(usageMetadata.thoughtsTokenCount);
+  const candidates = tokenCount(usageMetadata.candidatesTokenCount);
+  const toolUsePrompt = tokenCount(usageMetadata.toolUsePromptTokenCount);
+  const total = tokenCount(usageMetadata.totalTokenCount);
+  const prompt = tokenCount(usageMetadata.promptTokenCount) ?? promptFromTotal(usageMetadata);
   return toChatUsage(
     {
-      prompt: sumReported(tokenCount(usageMetadata.promptTokenCount), tokenCount(usageMetadata.toolUsePromptTokenCount)),
-      output: sumReported(tokenCount(usageMetadata.candidatesTokenCount), thoughts),
-      total: tokenCount(usageMetadata.totalTokenCount),
+      prompt: sumReported(prompt, toolUsePrompt),
+      output: sumReported(candidates, thoughts),
+      total,
       cacheRead: tokenCount(usageMetadata.cachedContentTokenCount),
       reasoning: thoughts,
     },
@@ -84,9 +90,24 @@ function googleUsage(usageMetadata: Record<string, unknown>): ChatUsage | undefi
 }
 
 /**
+ * `totalTokenCount` minus the answer, thinking and tool-use counts. One Gemini left out is 0, since
+ * its JSON leaves zero-valued counters out; one that is not a token count leaves the prompt
+ * unknown, as does a negative result.
+ */
+function promptFromTotal(usageMetadata: Record<string, unknown>): number | undefined {
+  const parts = [usageMetadata.candidatesTokenCount, usageMetadata.thoughtsTokenCount, usageMetadata.toolUsePromptTokenCount].map(
+    (value) => (value === undefined ? 0 : tokenCount(value)),
+  );
+  return parts.includes(undefined) ? undefined : remainderReported(tokenCount(usageMetadata.totalTokenCount), ...parts);
+}
+
+/**
  * Gemini reports a blocked prompt only as `promptFeedback.blockReason` on a chunk without
  * candidates, which pi-ai surfaces as "Google stream ended without a finish reason"; the raw
- * chunk is the only place it shows. Usage comes from `usageMetadata` (Gemini bills blocked prompts).
+ * chunk is the only place it shows. Usage comes from `usageMetadata` (Gemini bills blocked prompts),
+ * each field at the last value a chunk reported, so a count only an earlier chunk carried is kept.
+ * Whether AI Studio sends the prompt count in an earlier chunk of a turn whose last chunk leaves
+ * it out has not been seen.
  */
 export function createGoogleObserver(): StreamObserver {
   let usageMetadata: Record<string, unknown> | undefined;
@@ -94,7 +115,7 @@ export function createGoogleObserver(): StreamObserver {
   return {
     observe(chunk) {
       if (!isRecord(chunk)) return;
-      if (isRecord(chunk.usageMetadata)) usageMetadata = chunk.usageMetadata;
+      if (isRecord(chunk.usageMetadata)) usageMetadata = overlayReported(usageMetadata, chunk.usageMetadata);
       const feedback = chunk.promptFeedback;
       if (isRecord(feedback) && typeof feedback.blockReason === "string" && feedback.blockReason) {
         promptBlockReason = feedback.blockReason;
