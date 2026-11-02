@@ -25,6 +25,8 @@ Amended 2026-10-16 ([DATA-4566](https://hk01-digital.atlassian.net/browse/DATA-4
 
 Amended 2026-10-21 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4583)): [ADR 0009](0009-chat-kit-contract-aligned-with-pi-ai.md) adds `@hk01/pi-ai-extra-openrouter`, which has the pi-ai layer only. pi-ai already serves OpenRouter's image generation (`openrouter-images`), so there is no helper for a main entry to hold. Its one factory, `createOpenRouterProvider()`, extends pi-ai's `openrouterProvider()`. Each package's factory now returns a chat provider: a pi-ai `Provider` with a `chatKit` member and a `refreshModels` live list. There is still one factory per package.
 
+Amended 2026-11-02 ([DATA-4612](https://hk01-digital.atlassian.net/browse/DATA-4612)): `@hk01/pi-ai-extra-google` gets a second factory, `createGoogleVertexProvider()`, for Gemini on Google Agent Platform (formerly Vertex AI) in express mode. "One factory per package" was there to keep a provider id, its key and its no-fallback boundary in one place, and Agent Platform is a separate provider: its key is refused by AI Studio's endpoint (403), it is served by pi-ai's Vertex adapter, and it has pi-ai's own id for it, `google-vertex`. So the rule now reads one factory per provider id. The Vertex factory serves chat only: its key cannot call AI Studio's image endpoint, and the image helpers stay on `createGoogleProvider()`.
+
 ## Consequences
 
 Consumer applications do not need to duplicate provider wiring. They select the appropriate layer based on their existing application boundary.

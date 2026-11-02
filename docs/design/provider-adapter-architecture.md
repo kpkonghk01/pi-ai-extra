@@ -26,7 +26,7 @@ pi-ai-extra/
 Each provider package (`kie`, `toapis`, `google`) has:
 
 - **Main entry** (CommonJS and ESM): the image helper, catalogue, task lookup and errors. It has no pi-ai import.
-- **`/pi-ai`** (ESM only): one pi-ai `Provider` factory serving the package's chat and image models. It returns a chat provider, with a `chatKit` member and a live model list ([ADR 0009](../adr/0009-chat-kit-contract-aligned-with-pi-ai.md)).
+- **`/pi-ai`** (ESM only): one pi-ai `Provider` factory per provider id, serving the package's chat and image models. It returns a chat provider, with a `chatKit` member and a live model list ([ADR 0009](../adr/0009-chat-kit-contract-aligned-with-pi-ai.md)). `google` has a second one, `createGoogleVertexProvider()`, for Gemini chat on Google Agent Platform (`google-vertex`), with no image models and no live list (ADR 0002's DATA-4612 amendment).
 
 `openrouter` has only `/pi-ai`, because pi-ai already serves OpenRouter's images. See [ADR 0004](../adr/0004-dual-format-helper-esm-pi-ai-subpath.md) and its DATA-4583 amendment.
 
@@ -73,7 +73,7 @@ There is no provider fallback, model fallback, cross-provider upload fallback, o
 | --- | --- | --- | --- |
 | KIE | Grok Imagine Image 2.0 text/edit; GPT Image 2 text/image; Nano Banana 2.1 | Codex via OpenAI Responses (`/openai/v1`); Claude via Anthropic Messages (`/anthropic`, Bearer) | `creditsConsumed`, `costTime` |
 | ToAPIs | Gemini Nano Banana 2.1; GPT Image 2; GPT Image 2.5 Flare/Sunburst; Seedream 5.0 Pro | Codex via OpenAI Responses; Claude via Anthropic Messages | `billing`, token `usage` |
-| Google | Gemini Nano Banana 2.1; Gemini 3 Pro Image | Gemini via pi-ai's Gemini adapter and catalogue (explicit key) | `usageMetadata` |
+| Google | Gemini Nano Banana 2.1; Gemini 3 Pro Image | Gemini on AI Studio via pi-ai's Gemini adapter and catalogue (explicit key); Gemini on Agent Platform via pi-ai's Vertex adapter (express-mode key) | `usageMetadata` |
 | OpenRouter | None (pi-ai already serves OpenRouter's image generation) | OpenAI Completions and Anthropic Messages via pi-ai's OpenRouter provider (explicit key, live model list) | `usage` with `cost` |
 
 Wokey is intentionally excluded from the first release because of the observed image-generation failure rate.

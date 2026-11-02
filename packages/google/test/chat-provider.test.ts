@@ -5,7 +5,7 @@ import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { createFakeFetch, jsonResponse } from "@hk01/pi-ai-extra-internal/testing";
 import { createGoogleProvider } from "../src/pi-ai/index.ts";
 import { isOfferedGeminiId } from "../src/pi-ai/live-models.ts";
-import { googleChatStreams, withGroundingTools } from "../src/pi-ai/streams.ts";
+import { GEMINI_SAFETY_OFF, googleChatStreams, withGroundingTools, withSafetyOff } from "../src/pi-ai/streams.ts";
 
 const MODELS_URL = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\?pageSize=1000/;
 const models = () => createModels({ authContext: { env: async () => undefined, fileExists: async () => false } });
@@ -120,6 +120,24 @@ describe("Google chat provider: grounding", () => {
   });
 });
 
+describe("Google chat provider: safety filters", () => {
+  it("turns the 4 adjustable categories OFF, over a caller's own setting for one of them, and keeps a caller's setting for any other", () => {
+    const civic = { category: "HARM_CATEGORY_CIVIC_INTEGRITY", threshold: "BLOCK_ONLY_HIGH" };
+    const next = withSafetyOff({
+      model: "m",
+      config: { safetySettings: [{ category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_LOW_AND_ABOVE" }, civic], systemInstruction: "Be brief." },
+    }) as { config: Record<string, unknown> };
+    assert.deepEqual(next.config.safetySettings, [
+      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" },
+      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "OFF" },
+      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
+      civic,
+    ]);
+    assert.equal(next.config.systemInstruction, "Be brief.");
+  });
+});
+
 describe("googleChatStreams", () => {
   const message = (extra: Record<string, unknown> = {}) => ({
     role: "assistant" as const,
@@ -156,7 +174,7 @@ describe("googleChatStreams", () => {
     const result = await streams.streamSimple({} as never, {} as never, { onProviderStreamEvent: (event: unknown) => void observed.push(event) } as never).result();
     assert.equal(result.rawStopReason, "BLOCKLIST");
     assert.equal(observed.length, 1, "the caller's observer still sees the chunk");
-    assert.deepEqual(sent.payload, { model: "m", config: {} }, "no grounding tools without grounding");
+    assert.deepEqual(sent.payload, { model: "m", config: { safetySettings: GEMINI_SAFETY_OFF } }, "safety filters off, and no grounding tools without grounding");
   });
 
   it("keeps a stop reason pi-ai already set, and adds the grounding tools when grounding is on", async () => {

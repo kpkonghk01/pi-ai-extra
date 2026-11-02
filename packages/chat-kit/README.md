@@ -3,7 +3,7 @@
 Server-only chat kit on `@earendil-works/pi-ai`. `createChatKit({ providers })` registers the chat providers you build with the provider packages' factories (each bound to its own key), `streamSimple()` and `completeSimple()` run one turn from pi-ai's `Context` on exactly the provider and model you name (`{ provider, id }`), streaming pi-ai's events, and `listModels()` lists each provider's live models as pi-ai `Model`s. Every provider gets the same extras pi-ai lacks: reference documents (text, PDF, images), a JSON response schema, safety-block reporting, a usage record with the turn's cost (provider-reported, or estimated from the model's dated rate), and tools that pass through to pi-ai. It never chooses a provider and never falls back.
 
 - ESM only (pi-ai is ESM-only). No browser or React entry: never import it from browser code.
-- Peers: `@earendil-works/pi-ai@1.2.0`, and the provider packages you register (optional each): `@hk01/pi-ai-extra-google` (0.6+), `@hk01/pi-ai-extra-openrouter` (0.1+), `@hk01/pi-ai-extra-kie` and `@hk01/pi-ai-extra-toapis` (0.5+).
+- Peers: `@earendil-works/pi-ai@1.2.0`, and the provider packages you register (optional each): `@hk01/pi-ai-extra-google` (0.6+; 0.8+ for Gemini on Google Agent Platform, `google-vertex`), `@hk01/pi-ai-extra-openrouter` (0.1+), `@hk01/pi-ai-extra-kie` and `@hk01/pi-ai-extra-toapis` (0.5+).
 
 ```ts
 import { createChatKit } from "@hk01/pi-ai-extra-chat-kit";

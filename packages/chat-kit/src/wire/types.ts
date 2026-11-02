@@ -1,6 +1,6 @@
 import type { Api, AssistantMessage, Model, ThinkingLevel } from "@earendil-works/pi-ai";
 import type { DocumentPlacement, PreparedDocument } from "../documents.ts";
-import type { ChatDocument, ChatResponseSchema, ChatUsage } from "../types.ts";
+import type { ChatDocument, ChatResponseSchema, ChatTurnErrorCode, ChatUsage } from "../types.ts";
 
 /** Everything a payload transform adds to the request pi-ai built. */
 export interface PayloadPlan {
@@ -58,7 +58,7 @@ export interface StreamObserver {
  */
 export interface WireApi {
   readonly api: Api;
-  /** Whether pi-ai's adapter for this API accepts a custom fetch (its Gemini adapter rejects one). */
+  /** Whether pi-ai's adapter for this API accepts a custom fetch (its Gemini and Vertex adapters reject one). */
   readonly acceptsFetch: boolean;
   /**
    * Headers the request must not carry, as `null` values (pi-ai's way to suppress a header an SDK
@@ -75,4 +75,22 @@ export interface WireApi {
   /** Pure transform of the payload pi-ai built; it must not mutate its input. */
   transform(payload: unknown, plan: PayloadPlan): unknown;
   createObserver(): StreamObserver;
+  /**
+   * A failure this API's provider reports that has a more specific account than `PROVIDER_ERROR`,
+   * from pi-ai's error text, the response's HTTP status and what the request carried; undefined for
+   * any other failure.
+   */
+  classifyFailure?(failure: ProviderFailure, plan: PayloadPlan): ClassifiedFailure | undefined;
+}
+
+/** A failed request as pi-ai reports it: its error text, and the HTTP status of the response when there was one. */
+export interface ProviderFailure {
+  errorMessage: string;
+  status: number | undefined;
+}
+
+/** A provider failure the wire API recognized in a request that was sent: its code, and the kit's account of it, put before the provider's text. */
+export interface ClassifiedFailure {
+  code: Extract<ChatTurnErrorCode, "DOCUMENT_FETCH_FAILED">;
+  account: string;
 }

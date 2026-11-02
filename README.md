@@ -6,7 +6,7 @@ Server-only extensions to [`@earendil-works/pi-ai`](https://www.npmjs.com/packag
 | --- | --- | --- |
 | `@hk01/pi-ai-extra-kie` | Grok Imagine Image 2.0 (text-to-image, image edit), GPT Image 2 (text-to-image, image-to-image), Nano Banana 2.1 | Codex (OpenAI Responses), Claude (Anthropic Messages) |
 | `@hk01/pi-ai-extra-toapis` | Gemini Nano Banana 2.1, GPT Image 2, GPT Image 2.5 Flare / Sunburst, Seedream 5.0 Pro | Codex (OpenAI Responses), Claude (Anthropic Messages) |
-| `@hk01/pi-ai-extra-google` | Nano Banana 2.1, Gemini 3 Pro Image | Gemini (pi-ai's Gemini adapter and catalogue, explicit key) |
+| `@hk01/pi-ai-extra-google` | Nano Banana 2.1, Gemini 3 Pro Image | Gemini on Google AI Studio (pi-ai's Gemini adapter and catalogue, explicit key, live model list) and on Google Agent Platform (pi-ai's Vertex adapter, express-mode key) |
 | `@hk01/pi-ai-extra-openrouter` | None (pi-ai already serves OpenRouter's image generation) | OpenAI Completions, Anthropic Messages (pi-ai's OpenRouter provider, explicit key, live model list) |
 
 Each package has two entry points (OpenRouter's has only the second):
@@ -14,7 +14,7 @@ Each package has two entry points (OpenRouter's has only the second):
 | Import | Format | Contents | Needs pi-ai |
 | --- | --- | --- | --- |
 | `@hk01/pi-ai-extra-<provider>` | CommonJS **and** ESM | `generate<Provider>Image()`, model catalogue, task lookup, errors | No |
-| `@hk01/pi-ai-extra-<provider>/pi-ai` | ESM only | pi-ai `Provider` factory serving the chat and image models | Yes (`@earendil-works/pi-ai@1.2.0`, optional peer) |
+| `@hk01/pi-ai-extra-<provider>/pi-ai` | ESM only | pi-ai `Provider` factory serving the chat and image models (Google's second factory, for Agent Platform, serves chat only) | Yes (`@earendil-works/pi-ai@1.2.0`, optional peer) |
 
 The `/pi-ai` subpath is ESM-only because pi-ai itself is ESM-only; a CommonJS server that does not use pi-ai can `require()` the main entry. `@hk01/pi-ai-extra-openrouter` has only the `/pi-ai` entry, and needs pi-ai (a required, exact peer), because pi-ai already serves OpenRouter's images and there is no helper for a main entry to hold ([ADR 0004](docs/adr/0004-dual-format-helper-esm-pi-ai-subpath.md)).
 
@@ -35,10 +35,10 @@ Install the exact release asset on the server (build) side and pin the full URL:
 ```sh
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.6.0/hk01-pi-ai-extra-kie-0.6.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.6.0/hk01-pi-ai-extra-toapis-0.6.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.7.0/hk01-pi-ai-extra-google-0.7.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.8.0/hk01-pi-ai-extra-google-0.8.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.1.0/hk01-pi-ai-extra-openrouter-0.1.0.tgz   # optional, chat only, needs pi-ai
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/image-kit-v0.2.0/hk01-pi-ai-extra-image-kit-0.2.0.tgz   # optional, needs all three
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.3.0/hk01-pi-ai-extra-chat-kit-0.3.0.tgz     # optional, needs pi-ai and the providers you register
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.4.0/hk01-pi-ai-extra-chat-kit-0.4.0.tgz     # optional, needs pi-ai and the providers you register
 ```
 
 npm works the same way (`npm install <url>`). Upgrade or roll back by changing the URL. `zod@4.6.5` is installed automatically; install `@earendil-works/pi-ai@1.2.0` only if you use the `/pi-ai` subpath.
@@ -171,11 +171,36 @@ const output = await models.generateImages(
 // output.stopReason: "stop" | "error" | "aborted"; errors never throw at this layer.
 ```
 
-pi-ai 1.2 keeps chat and image models in one `Models` collection, so each package exports one factory, `create<Provider>Provider()`, which registers its chat models and its image catalogue (`KIE_IMAGE_MODELS`, `TOAPIS_IMAGE_MODELS`, `GOOGLE_IMAGE_MODELS`) under one provider id (`kie`, `toapis`, `google`) with one explicit key. `getModels()` and `getModel()` return chat models only; look image models up with `getModelOfType("image", provider, id)` or `getModelsOfType("image", provider)`, and run them with `models.generateImages()`. Image helper settings (for example a poll cadence, KIE `uploadBaseUrl` or ToAPIs `clientBusinessId`) go in the factory's `imageSettings`; the image host is set there, independently of the chat base URL. Image options go in `ImagesOptions.metadata` using the helper option names and are validated strictly; unknown keys fail the request rather than being ignored. pi-ai's `ImagesContext` has no system prompt and `ImagesOptions` no temperature, so Google's `temperature` and `systemInstruction` also go in `metadata`.
+pi-ai 1.2 keeps chat and image models in one `Models` collection, so each package exports one factory per provider id, `create<Provider>Provider()`, which registers its chat models and its image catalogue (`KIE_IMAGE_MODELS`, `TOAPIS_IMAGE_MODELS`, `GOOGLE_IMAGE_MODELS`) under one provider id (`kie`, `toapis`, `google`) with one explicit key. The Google package also exports `createGoogleVertexProvider()`, for Gemini chat on Google Agent Platform under its own id (`google-vertex`) and key, without image models. `getModels()` and `getModel()` return chat models only; look image models up with `getModelOfType("image", provider, id)` or `getModelsOfType("image", provider)`, and run them with `models.generateImages()`. Image helper settings (for example a poll cadence, KIE `uploadBaseUrl` or ToAPIs `clientBusinessId`) go in the factory's `imageSettings`; the image host is set there, independently of the chat base URL. Image options go in `ImagesOptions.metadata` using the helper option names and are validated strictly; unknown keys fail the request rather than being ignored. pi-ai's `ImagesContext` has no system prompt and `ImagesOptions` no temperature, so Google's `temperature` and `systemInstruction` also go in `metadata`.
 
 `createGoogleProvider({ apiKey, modelIds?, baseUrl?, imageSettings?, grounding?, fetch? })` serves pi-ai's own Gemini adapter and model catalogue (`GOOGLE_CHAT_MODEL_IDS`), but authenticates only with the explicit key: unlike pi-ai's `googleProvider()`, it never reads `GEMINI_API_KEY`. `modelIds` restricts the chat list; unknown ids throw. A model in the Gemini rate table (`GEMINI_CHAT_RATES`, see [Chat rates](#chat-rates)) gets its `cost` from that schedule; every other model keeps pi-ai's list price.
 
+`createGoogleVertexProvider({ apiKey, modelIds?, models?, grounding? })` serves Gemini on Google Agent Platform under the provider id `google-vertex`, with pi-ai's own Vertex adapter and an express-mode key only: see [Gemini on Google Agent Platform](#gemini-on-google-agent-platform-express-mode).
+
+Both Google factories turn Gemini's four adjustable safety filters off on every chat request: `safetySettings` sets `HARM_CATEGORY_HATE_SPEECH`, `HARM_CATEGORY_HARASSMENT`, `HARM_CATEGORY_SEXUALLY_EXPLICIT` and `HARM_CATEGORY_DANGEROUS_CONTENT` to `OFF`, after a caller's own `onPayload`, replacing any setting it made for those four and keeping any other. Google's built-in protections, which a request cannot adjust (child safety, for example), still apply, and a turn they stop still fails with `CONTENT_BLOCKED`. Image generation keeps its own `safetySettings` option.
+
 KIE and ToAPIs chat models use pi-ai's own OpenAI Responses and Anthropic Messages adapters. Capability metadata (context window, thinking levels) is copied from pi-ai's catalogue when the id, or `ChatModelDefinition.catalogueId`, matches; KIE's dashed Codex ids (`gpt-5-6-sol`) point at pi-ai's dotted ones (`gpt-5.6-sol`). Prices are never copied from pi-ai's catalogue, because KIE and ToAPIs prices differ from list prices.
+
+### Gemini on Google Agent Platform (express mode)
+
+Google Agent Platform (formerly Vertex AI) serves the same Gemini models to a Google Cloud API key in express mode. Google AI Studio's endpoint refuses that key (403), and pi-ai's Gemini adapter speaks only AI Studio, so the key has its own factory, on pi-ai's Vertex adapter:
+
+```ts
+import { createGoogleVertexProvider } from "@hk01/pi-ai-extra-google/pi-ai";
+
+const gemini = createGoogleVertexProvider({
+  apiKey: agentPlatformKey,                                  // express-mode API key, from server-side secrets
+  modelIds: ["gemini-3.8-flash", "gemini-3.5-flash-lite"],   // optional: narrow the list; an unknown id throws
+  grounding: true,                                           // optional: Google Search and URL context on every request
+});
+// Provider id "google-vertex": chat.streamSimple({ provider: "google-vertex", id: "gemini-3.8-flash" }, context)
+```
+
+- **Endpoint and key.** Every request goes to the express-mode global endpoint, `https://aiplatform.googleapis.com/v1/publishers/google/models/<id>:streamGenerateContent`, with the key in `x-goog-api-key`: no project, location or regional endpoint. Unlike pi-ai's `googleVertexProvider()`, the factory never reads environment variables or Application Default Credentials. Every request carries the explicit key, even one sent through the provider directly, where pi-ai resolves no key and its adapter would fall back to ADC with the project and location from the environment. Each model names the endpoint, so the Google GenAI SDK does not take one from `GOOGLE_VERTEX_BASE_URL`. A key that pi-ai's adapter would read as no key (`gcp-vertex-credentials`, or a `<placeholder>`) throws a `TypeError`.
+- **No live model list.** An API key cannot list Agent Platform models: `publishers.models.list` (v1beta1) takes OAuth credentials only. The models are pi-ai's `google-vertex` catalogue plus this package's Gemini definitions (`GEMINI_CHAT_MODELS`), fixed for each release, and `listModels()` reports them with `source: "installed"`. The catalogue still has models Google has retired (the 2.5 models, retired on 2026-10-20): a turn on one fails with Google's 404 (`PROVIDER_ERROR`). Pass `modelIds` with the models Agent Platform's "Model versions and lifecycle" page lists.
+- **Model definitions.** `GEMINI_CHAT_MODELS` defines models the KIE way: an `id`, an optional `catalogueId` and a required `rate`. A definition with a catalogue id replaces that entry's price with its rate. A definition with a new id copies the capabilities (input, reasoning, limits, thinking levels) of its `catalogueId`, so a new model ships with a pi-ai-extra-google release, without waiting for pi-ai. A definition with nothing in the catalogue to copy from throws a `TypeError`. The factory's `models` option replaces the definitions; pi-ai's catalogue stays. A model without a definition keeps pi-ai's Vertex list price. The global endpoint charges what AI Studio charges.
+- **Documents by URL.** A PDF or image with a `url` (and a known size of at most 15 MB) goes as `fileData`, and Google fetches it, so the URL must be readable without credentials: a public link, or a presigned one valid for the whole turn. Fetches do fail. In a check with an S3 presigned PDF on 2026-11-02 ([DATA-4592](https://hk01-digital.atlassian.net/browse/DATA-4592)), `gemini-3.5-flash` read it 3 times out of 3. On `gemini-3.1-flash-lite`, one attempt failed with a 400, "Cannot fetch content from the provided URL" (URL rejected, fetch timeout), two failed at connection level, and two finished without showing that the PDF was read. In the release check the same day, a link whose host does not resolve got the same 400 at once. The chat kit ends a turn with `DOCUMENT_FETCH_FAILED` when Google answers with that 400 (see [Errors](#errors)); a failure at connection level stays `PROVIDER_ERROR`. Without a `url`, the kit sends the bytes inline.
+- **Safety filters and grounding** work as with `createGoogleProvider`: the four adjustable filters are off, and `grounding` adds Google Search and URL context. In a live check on 2026-11-02, Agent Platform accepted the explicit `OFF` on all 8 models it was sent to.
 
 ### Chat rates
 
@@ -227,7 +252,7 @@ const rate: ModelRate = {
 - **ToAPIs**: `GET https://toapis.com/api/pricing`. Input is 2 × `model_ratio` and output is 2 × `model_ratio` × `completion_ratio` (every group ratio is 1).
 - \* Cache read and † cache write not published: derived as described above.
 
-`GEMINI_CHAT_RATES` (`@hk01/pi-ai-extra-google/pi-ai`) is the Gemini text-model schedule: Standard tier, paid, text, image and video input, output including thinking, from [ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing) as of 2026-10-16. Cached input is Google's "Caching" price. Gemini publishes no per-token cache-write price and reports no cache-write tokens.
+`GEMINI_CHAT_MODELS` (`@hk01/pi-ai-extra-google/pi-ai`) defines Gemini text models with their schedules, and `GEMINI_CHAT_RATES` holds the same rates by id. The schedule is Standard tier, paid, text, image and video input, output including thinking, from [ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing) as of 2026-10-16. Cached input is Google's "Caching" price. Gemini publishes no per-token cache-write price and reports no cache-write tokens.
 
 | Model | Input | Output | Cached input | From 2027-01-01 (input / output / cached) |
 | --- | ---: | ---: | ---: | --- |
@@ -235,9 +260,9 @@ const rate: ModelRate = {
 | `gemini-3.7-flash` | 0.75 | 3.75 | — | 1.50 / 7.50 / — |
 | `gemini-3.5-flash-lite` | 0.30 | 2.50 | 0.03 | |
 | `gemini-3.1-flash-lite` | 0.25 | 1.50 | 0.025 | |
-| `gemini-3.1-pro-preview` | 2.00 (4.00 over 200k) | 12.00 (18.00) | 0.20 (0.40) | |
+| `gemini-3.1-pro-preview`, `gemini-3.1-pro-preview-customtools` | 2.00 (4.00 over 200k) | 12.00 (18.00) | 0.20 (0.40) | |
 
-`googleChatRate(id)` looks a model up. A `-preview` id the table does not list takes the rate of the id without the suffix: the API has served `-preview` ids for models the price page lists without it. An id outside the table takes pi-ai's catalogue list price for that id, as one period, where a zero price is no rate. Any other id has no rate. 3.7 Flash is no longer on Google's page; its rates are the portal's, and its cached input, with no published rate, is derived as described above.
+The custom-tools variant of 3.1 Pro Preview has 3.1 Pro Preview's rates, as pi-ai's Gemini catalogue lists them. `googleChatRate(id)` looks a model up. A `-preview` id the table does not list takes the rate of the id without the suffix: the API has served `-preview` ids for models the price page lists without it. An id outside the table takes pi-ai's catalogue list price for that id, as one period, where a zero price is no rate. Any other id has no rate. 3.7 Flash is no longer on Google's page; its rates are the portal's, and its cached input, with no published rate, is derived as described above. On Agent Platform (`createGoogleVertexProvider`), a model takes its definition's rate, else pi-ai's Vertex list price.
 
 Only models with a published rate are in the KIE and ToAPIs default lists. ToAPIs also documents `gpt-5.3-codex` and `gpt-5.3-codex-spark` as chat models, but they have no published price and are not in its public model catalogue, so `TOAPIS_CHAT_MODELS` leaves them out. To use one anyway, pass it in the factory's `models` option. Without a `rate` it has no rate: the chat kit reports no cost for it, and pi-ai's `usage.cost` for it is zero but is not a cost:
 
@@ -316,10 +341,10 @@ Pass `cacheRetention` explicitly: when it is omitted, pi-ai falls back to the `P
 ### Install
 
 ```sh
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.3.0/hk01-pi-ai-extra-chat-kit-0.3.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.4.0/hk01-pi-ai-extra-chat-kit-0.4.0.tgz
 pnpm add @earendil-works/pi-ai@1.2.0   # peer
 # and the provider packages you register (each its own release asset, see Install above):
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.7.0/hk01-pi-ai-extra-google-0.7.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.8.0/hk01-pi-ai-extra-google-0.8.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.1.0/hk01-pi-ai-extra-openrouter-0.1.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.6.0/hk01-pi-ai-extra-kie-0.6.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.6.0/hk01-pi-ai-extra-toapis-0.6.0.tgz
@@ -349,20 +374,21 @@ const chat = createChatKit({
 | Factory | Provider id | Options beyond `apiKey` | PDF and image documents | Tools |
 | --- | --- | --- | --- | --- |
 | `createGoogleProvider` | `google` | `grounding`, `baseUrl`, `modelIds`, `fetch` | Yes | Yes |
+| `createGoogleVertexProvider` (Gemini on [Agent Platform](#gemini-on-google-agent-platform-express-mode), google 0.8+) | `google-vertex` | `grounding`, `modelIds`, `models` | Yes | Yes |
 | `createOpenRouterProvider` (`@hk01/pi-ai-extra-openrouter`) | `openrouter` | `baseUrl`, `fetch` | Yes | Yes |
 | `createKieProvider` | `kie` | `responsesBaseUrl`, `claudeBaseUrl`, `models`, `fetch` | Not yet | Not yet |
 | `createToapisProvider` | `toapis` | `baseUrl`, `models`, `fetch` | Not yet | Not yet |
 
 - The kit knows a provider by its pi-ai id (`provider.id`). A name a consumer gives a provider (for example the portal's `gemini` for `google`) is the consumer's own: it maps the name before calling the kit, and keeps its own table from configuration to factories.
-- Every key goes to a factory, so the kit never handles one. Each provider resolves only the key its factory bound: the kit registers them in a pi-ai `Models` collection with an empty auth context, so none of the kit's providers reads `GEMINI_API_KEY`, `OPENROUTER_API_KEY` or any other key from the environment. `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL` have no effect either.
+- Every key goes to a factory, so the kit never handles one. Each provider resolves only the key its factory bound: the kit registers them in a pi-ai `Models` collection with an empty auth context, so none of the kit's providers reads `GEMINI_API_KEY`, `GOOGLE_CLOUD_API_KEY`, `OPENROUTER_API_KEY` or any other key from the environment, or Application Default Credentials. `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL` have no effect either.
 - **Environment settings the SDKs still read.** The SDKs underneath (OpenAI, Anthropic, Google GenAI) read a few settings from the environment, and pi-ai creates their clients, so the kit controls only what it passes in. The kit overrides one pair: the OpenAI SDK would send `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` as headers to OpenRouter, KIE and ToAPIs, so the kit sends those two headers as `null`, which drops them even when `OPENAI_CUSTOM_HEADERS` names them. These still take effect:
   - `OPENAI_CUSTOM_HEADERS` (newline-separated `Name: value` lines) adds headers to every OpenAI-SDK request (OpenRouter Completions, KIE and ToAPIs Responses), and can replace `Authorization`, and so the explicit key. `ANTHROPIC_CUSTOM_HEADERS` does the same on OpenRouter and ToAPIs Claude, where it replaces `x-api-key`. On KIE Claude the explicit `Authorization` header normally wins, but with `@anthropic-ai/sdk` 0.129.0 a value that names the header twice, `Authorization:` first and then `authorization:`, replaces it. Leave both variables unset unless you set them on purpose: they can replace the key's header, which the kit cannot guard without passing the key itself, and it never does.
   - `OPENAI_LOG` and `ANTHROPIC_LOG` turn on SDK logging. `ANTHROPIC_LOG=debug` writes request bodies, prompt text included, to the console (the key is masked); the OpenAI SDK logs the size of a body, not its text. Keep debug logging off in production.
-  - `GOOGLE_GENAI_USE_VERTEXAI` and `GOOGLE_GENAI_USE_ENTERPRISE` make the Gemini SDK use a Vertex request path on the AI Studio host. `GOOGLE_API_KEY` set beside `GEMINI_API_KEY` logs a warning on every turn. Leave the two switches unset, and `GOOGLE_API_KEY` too if you want no warning.
+  - `GOOGLE_GENAI_USE_VERTEXAI` and `GOOGLE_GENAI_USE_ENTERPRISE` make the Gemini SDK use a Vertex request path on the AI Studio host (`google`); on `google-vertex`, pi-ai's adapter sets the Vertex path itself, so they have no effect. `GOOGLE_API_KEY` set beside `GEMINI_API_KEY` logs a warning on every Gemini turn, on either. On `google-vertex`, `GOOGLE_CLOUD_PROJECT` or `GOOGLE_CLOUD_LOCATION` make the SDK log a debug line that the explicit key takes precedence over them. Leave the two switches unset, and `GOOGLE_API_KEY` too if you want no warning.
   - Node's own settings apply to every request, as in any Node process: `NODE_USE_ENV_PROXY=1` sends requests through `HTTPS_PROXY`, except to hosts in `NO_PROXY`; `NODE_EXTRA_CA_CERTS` and `NODE_TLS_REJECT_UNAUTHORIZED` change TLS. Set them on purpose only.
 - **One kit per tenant.** A chat provider binds one key, so two keys for the same provider are two kits. A multi-tenant service creates a kit per tenant; a kit has no timers of its own between calls, so it needs no `dispose()`. After a call it may leave a model-list read running: the background refresh of a stale list (up to 15 s), or a first read whose caller stopped waiting (up to 5 s). Each runs under a deadline timer that is unref'd, so the timer alone never keeps a process alive; the list request in flight does, as any request does. During a call, pi-ai and the SDKs use their own retry and timeout timers.
 - `createChatKit` throws a `TypeError` for a value that is not a chat provider (no `chatKit` traits, for example a provider from an older package), for two providers with the same id, and for an invalid `fetch`.
-- `fetch` (optional) is for tests or instrumentation: every turn's requests use it instead of the provider's own, except Gemini's, whose pi-ai adapter rejects a custom fetch. Model lists use each factory's `fetch` option.
+- `fetch` (optional) is for tests or instrumentation: every turn's requests use it instead of the provider's own, except Gemini's (`google` and `google-vertex`), whose pi-ai adapters reject a custom fetch. Model lists use each factory's `fetch` option.
 
 ### Turns: `streamSimple` and `completeSimple`
 
@@ -419,6 +445,7 @@ Each provider's live list is its own `refreshModels`, so `models.refresh()` read
 | --- | --- | --- |
 | `openrouter` | Public `GET <root>/v1/models` (no key) | Every model that answers in text, tool support or not. The kit offers all but the [excluded models](#excluded-models) |
 | `google` | `models.list` (`GET <base>/models`) with the key | `generateContent` models, `models/` prefix stripped; narrowed to `modelIds` when set. The kit offers plain text chat models only: not embedding, Imagen, Veo, TTS, Live (`-live-`), computer use or Deep Research models, and not the [excluded models](#excluded-models) |
+| `google-vertex` | None: an API key cannot list Agent Platform models | pi-ai's `google-vertex` catalogue plus `GEMINI_CHAT_MODELS`, narrowed to `modelIds` when set, always `source: "installed"`. The kit offers the same kinds of models as on `google` |
 | `kie` | `GET <responsesBaseUrl>/models` (Codex) and `GET <claudeBaseUrl>/v1/models` (Claude) with the key | Only ids with a package definition (`KIE_CHAT_MODELS`), matched across `.` and `-` spellings |
 | `toapis` | `GET <host>/v1/models?type=text` with the key | Only ids with a package definition (`TOAPIS_CHAT_MODELS`) |
 
@@ -458,6 +485,7 @@ What each listed model says about itself, under `model.chatKit`:
 
 - Plain-text documents are loaded, decoded as UTF-8 and sent on every provider as a text block labelled with the file name (`<document name="notes.md">…</document>`).
 - PDFs and images use each API's native file input: by URL when `url` is set (on Gemini only when `size` is known to be at most 15 MB, and never on Gemini 2.0), inline otherwise.
+- By URL, the provider fetches the file itself, so the URL must be readable without credentials: a public link, or a presigned one valid for the whole turn. When Google (`google` or `google-vertex`) reports that it could not fetch it, the turn fails with `DOCUMENT_FETCH_FAILED`. Agent Platform has failed such fetches in live checks (see [Gemini on Google Agent Platform](#gemini-on-google-agent-platform-express-mode)).
 - On Google, the [document processing](https://ai.google.dev/gemini-api/docs/document-processing) page names Gemini models only and does not mention Gemma. A model that reads images but is not a `gemini-*` model, such as the Gemma 4 ids in pi-ai's catalogue, takes image documents, and a PDF fails with `UNSUPPORTED` before anything is sent. Its `chatKit.fileDocuments` is `false` then, because that field means both PDF and image documents; any other id that reads no images takes neither.
 - KIE and ToAPIs do not document file input, so PDFs and images fail there with `UNSUPPORTED` until a live smoke test enables them. Elsewhere a PDF needs a model with native file input (`chatKit.fileInput`; on OpenRouter, from the live list's `input_modalities`) and an image one with image input; otherwise it fails with `UNSUPPORTED` before anything is sent, as does any other MIME type. So an image-only model such as OpenRouter's `moondream/moondream3-preview` takes images but not PDFs. While OpenRouter's list cannot be read, its models come from pi-ai's catalogue, which has no file input: a PDF fails with `UNSUPPORTED`, while an image still goes to a model that reads images. A Gemini model from the installed catalogue is taken to read PDFs when it reads images.
 - Every OpenRouter request, on its Completions route and on its Anthropic Messages route (`anthropic/*`), pins the `file-parser` plugin to the `native` PDF engine, so a PDF never falls through to OpenRouter's paid `mistral-ocr` engine. OpenRouter's [Anthropic Messages reference](https://openrouter.ai/docs/api/api-reference/anthropic-messages/create-a-message) takes the same `plugins` array as Completions. KIE and ToAPIs never get the plugin.
@@ -494,6 +522,7 @@ An error turn has `stopReason: "error"` and `message.chatKit.error`: `{ code, st
 | `chatKit.error.code` | Meaning | Sent? |
 | --- | --- | --- |
 | `CONTENT_BLOCKED` | A safety system blocked the prompt or the answer. `rawStopReason` is the provider's value: Gemini `SAFETY`, `PROHIBITED_CONTENT`, `BLOCKLIST` or `SPII` (finish reason) or the prompt's `promptFeedback.blockReason`; `content_filter` on the OpenAI APIs, and `refusal` on OpenAI Responses; `refusal` or `sensitive` on Anthropic | Yes |
+| `DOCUMENT_FETCH_FAILED` | The provider could not fetch a document the turn sent by its URL. Agent Platform (`google-vertex`) answers so with a 400 whose message says `Cannot fetch content from the provided URL`; the kit reads the same 400 on AI Studio (`google`), where it has not been seen yet, and uses the code only when the turn sent a PDF or image by URL; `status` is 400, and `errorMessage` carries Google's text after the kit's account. Any other 400 stays `PROVIDER_ERROR`. Only Google reports it so far | Yes |
 | `PROVIDER_ERROR` | The provider failed (`status` is its HTTP status, when there was one), or the answer stopped early: Gemini `RECITATION`, a broken stream, or a `responseSchema` answer cut off at `maxTokens` (`rawStopReason`: `MAX_TOKENS`, `length`, `max_tokens` or `incomplete.max_output_tokens`), including a forced tool call on Anthropic Messages | Yes |
 | `UNSUPPORTED` | The provider or model cannot take the turn's documents, images, tools, schema or settings | No |
 | `UNKNOWN_MODEL` | No provider has that id, or the model is not offered (see `listModels`; the message says when the live list could not be read) | No |
@@ -522,8 +551,15 @@ Only the initial request is retried, before the response stream starts: by pi-ai
 The cost comes from the first source that applies:
 
 1. **Provider-reported** (`costSource: "provider"`): OpenRouter's `usage.cost`, or KIE's `credits_consumed` × $0.005. KIE's cost always comes from its credits, because its token counts are unreliable (hidden prompt tokens, some zero input counts), so a KIE turn without credits has no cost. On KIE Codex (OpenAI Responses) the credits are read wherever the stream carries them: next to `type` on the `response.completed` event (where KIE documents them), on the response object, or in a usage object; `raw` keeps them at its top level.
-2. **Estimated** (`costSource: "estimated"`): the model's [rate](#chat-rates) in force when the turn started, priced with pi-ai's `calculateCost`. The large-prompt tier is chosen by the whole prompt (`input + cacheRead + cacheWrite`). Cached and cache-write tokens are charged at their rates, an unpublished one derived as described in [Chat rates](#chat-rates), cache writes as 5-minute writes, and the rest of the prompt at the input rate. `output`, reasoning included, is charged at the output rate. A count the provider did not report adds nothing. Rates come from the KIE and ToAPIs definitions, the Gemini rate table (`googleChatRate`) and OpenRouter's live price (pi-ai's catalogue price while no live list could be read).
+2. **Estimated** (`costSource: "estimated"`): the model's [rate](#chat-rates) in force when the turn started, priced with pi-ai's `calculateCost`. The large-prompt tier is chosen by the whole prompt (`input + cacheRead + cacheWrite`). Cached and cache-write tokens are charged at their rates, an unpublished one derived as described in [Chat rates](#chat-rates), cache writes as 5-minute writes, and the rest of the prompt at the input rate. `output`, reasoning included, is charged at the output rate. A count the provider did not report adds nothing. Rates come from the KIE and ToAPIs definitions, the Gemini rate table (`googleChatRate`) on AI Studio, the Gemini definitions on Agent Platform (else pi-ai's Vertex list price), and OpenRouter's live price (pi-ai's catalogue price while no live list could be read).
 3. **None**: no rate, or no counts to price. `costUsd` and `costSource` are absent, never `0`.
+
+### Upgrading to chat-kit 0.4 and Google 0.8
+
+Both releases are additive, and a `google-vertex` turn needs both: chat-kit 0.3 refuses it with `UNSUPPORTED`.
+
+- chat-kit 0.4.0 runs Gemini turns on Agent Platform (`google-vertex`) the way it runs them on AI Studio (`google`), and adds the error code `DOCUMENT_FETCH_FAILED`. A consumer that treats an unknown code as `PROVIDER_ERROR`, as the contract asks, keeps working; one that wants its own message for the failed fetch handles the new code.
+- google 0.8.0 adds `createGoogleVertexProvider` and `GEMINI_CHAT_MODELS`. `GEMINI_CHAT_RATES` keeps its rates and adds `gemini-3.1-pro-preview-customtools` at 3.1 Pro Preview's rates, which a turn on AI Studio was already priced at (from pi-ai's catalogue); its `Model.cost` now shows the derived cache-write rate, which no Gemini turn uses. Both Google factories now turn the four adjustable safety filters off, so a turn that Gemini's default filters stopped before (`CONTENT_BLOCKED` with `SAFETY`) may now be answered.
 
 ### Upgrading from chat-kit 0.2
 

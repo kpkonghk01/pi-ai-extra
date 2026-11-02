@@ -10,12 +10,17 @@ import {
 } from "@earendil-works/pi-ai";
 import { isRecord } from "@hk01/pi-ai-extra-internal";
 import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
+import type { GoogleSafetySetting } from "../models.ts";
 
 /**
- * pi-ai's Gemini streams with two Gemini quirks, and one guarantee:
+ * pi-ai's Gemini streams (AI Studio or Agent Platform) with a safety policy, two Gemini quirks,
+ * and one guarantee:
  *
+ * - **Safety filters off**: every request turns the four adjustable harm categories `OFF`
+ *   (`GEMINI_SAFETY_OFF`), set through `onPayload` after the caller's own `onPayload`. Filters
+ *   Gemini does not let a request adjust still apply, and still end a turn as a block.
  * - **Grounding** (`grounding`): every request gets the Google Search and URL context tools,
- *   appended through `onPayload` after the caller's own `onPayload`.
+ *   appended the same way.
  * - **Prompt blocks**: Gemini reports a blocked prompt only as `promptFeedback.blockReason` on a
  *   chunk without candidates, which pi-ai surfaces as a stream that ended without a finish reason.
  *   The block reason is copied to the final message's `rawStopReason` when pi-ai set none.
@@ -41,14 +46,11 @@ function withGeminiQuirks<T extends StreamOptions | SimpleStreamOptions>(
   let blockReason: string | undefined;
   const hooked = {
     ...options,
-    ...(grounding
-      ? {
-          onPayload: async (payload: unknown, model: Model<Api>) => {
-            const next = await options?.onPayload?.(payload, model);
-            return withGroundingTools(next === undefined ? payload : next);
-          },
-        }
-      : {}),
+    onPayload: async (payload: unknown, model: Model<Api>) => {
+      const next = await options?.onPayload?.(payload, model);
+      const safe = withSafetyOff(next === undefined ? payload : next);
+      return grounding ? withGroundingTools(safe) : safe;
+    },
     onProviderStreamEvent: async (event: unknown, model: Model<Api>) => {
       const reason = promptBlockReason(event);
       if (reason !== undefined) blockReason = reason;
@@ -58,6 +60,28 @@ function withGeminiQuirks<T extends StreamOptions | SimpleStreamOptions>(
   return mapFinalMessage(run(hooked), requested, options?.signal, (message) =>
     blockReason === undefined || message.rawStopReason !== undefined ? message : { ...message, rawStopReason: blockReason },
   );
+}
+
+/** The four harm categories Gemini lets a request adjust, each with its filter off. */
+export const GEMINI_SAFETY_OFF: readonly GoogleSafetySetting[] = [
+  { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
+  { category: "HARM_CATEGORY_HARASSMENT", threshold: "OFF" },
+  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "OFF" },
+  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "OFF" },
+];
+
+/**
+ * Sets `GEMINI_SAFETY_OFF` in a `GenerateContentParameters` payload's `config.safetySettings`,
+ * replacing a setting already there for one of those categories and keeping any other.
+ */
+export function withSafetyOff(payload: unknown): unknown {
+  if (!isRecord(payload)) return payload;
+  const config = isRecord(payload.config) ? payload.config : {};
+  const adjusted = new Set<unknown>(GEMINI_SAFETY_OFF.map((setting) => setting.category));
+  const others = (Array.isArray(config.safetySettings) ? config.safetySettings : []).filter(
+    (setting: unknown) => !(isRecord(setting) && adjusted.has(setting.category)),
+  );
+  return { ...payload, config: { ...config, safetySettings: [...GEMINI_SAFETY_OFF, ...others] } };
 }
 
 /** Appends the Google Search and URL context tools to a `GenerateContentParameters` payload's `config.tools`. */
