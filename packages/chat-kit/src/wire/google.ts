@@ -117,7 +117,7 @@ export function createGoogleObserver(): StreamObserver {
 /**
  * Google answers a document URL it could not fetch with a 400 whose message says so. Seen on Agent
  * Platform on 2026-11-02, for an S3 presigned link whose fetch timed out (status URL rejected,
- * fetch timeout).
+ * fetch timeout) and for a link whose host does not resolve.
  */
 const UNFETCHABLE_URL = /Cannot fetch content from the provided URL/i;
 
