@@ -10,6 +10,8 @@ import { brokenSseResponse, jsonBody, outcome,
 
 const STREAM_URL = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-3\.5-flash:streamGenerateContent\b/;
 const SCHEMA = { type: "object", properties: { tags: { type: "array", items: { type: "string" }, maxItems: 3 } } };
+/** A PDF the kit sends by URL (`fileData`): its URL is set and its size is within Gemini's limit. */
+const pdfByUrl = () => testDocument("brief.pdf", "application/pdf", "%PDF-1.7", { url: "https://cdn.example.com/brief.pdf", size: 1_000 });
 
 /**
  * pi-ai's Gemini adapter rejects a custom fetch, so these tests replace the global fetch the
@@ -205,6 +207,50 @@ describe("streamSimple on Gemini", () => {
     });
   });
 
+  /** A grounded turn with a PDF by URL, whose one chunk reports `usageMetadata`. */
+  async function groundedUsage(usageMetadata: Record<string, unknown>) {
+    const { chat } = kit(
+      [
+        {
+          method: "POST",
+          url: STREAM_URL,
+          respond: () =>
+            sseResponse([JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "Found it." }] }, finishReason: "STOP" }], usageMetadata })]),
+        },
+      ],
+      true,
+    );
+    return outcome(chat, turn({ provider: "google", model: "gemini-3.5-flash", documents: [pdfByUrl()] }));
+  }
+
+  it("derives a grounded, thinking turn's missing prompt count from the total, and counts its cached tokens in it", async () => {
+    const usageMetadata = { cachedContentTokenCount: 30, candidatesTokenCount: 12, thoughtsTokenCount: 8, toolUsePromptTokenCount: 300, totalTokenCount: 360 };
+    assert.deepEqual(await groundedUsage(usageMetadata), {
+      type: "done",
+      usage: {
+        // The prompt is 360 - 12 - 8 - 300 = 40 tokens, 30 of them cached, plus the 300 tool-use prompt tokens.
+        input: 310,
+        output: 20,
+        cacheRead: 30,
+        reasoning: 8,
+        totalTokens: 360,
+        // 310 × 1.5 + 30 × 0.15 + 20 × 9 per 1M tokens.
+        costUsd: 0.0006495,
+        costSource: "estimated",
+        raw: { usageMetadata },
+      },
+    });
+  });
+
+  it("derives no prompt count from a total smaller than the other counts", async () => {
+    const usageMetadata = { candidatesTokenCount: 50, toolUsePromptTokenCount: 80, totalTokenCount: 100 };
+    assert.deepEqual(await groundedUsage(usageMetadata), {
+      type: "done",
+      // 100 - 50 - 80 is below 0, so the prompt stays unreported, and input is the tool-use prompt alone: 80 × 1.5 + 50 × 9 per 1M tokens.
+      usage: { input: 80, output: 50, totalTokens: 100, costUsd: 0.00057, costSource: "estimated", raw: { usageMetadata } },
+    });
+  });
+
   it("omits usage Gemini did not report: no cache or thinking counts without them, no usage without usageMetadata", async () => {
     const answer = (extra: Record<string, unknown>) => () =>
       sseResponse([
@@ -368,10 +414,8 @@ describe("streamSimple on Agent Platform (google-vertex)", () => {
     assert.deepEqual(vertex.sent.safetySettings, gemini.sent.safetySettings);
   });
 
-  const byUrl = () => testDocument("brief.pdf", "application/pdf", "%PDF-1.7", { url: "https://cdn.example.com/brief.pdf", size: 1_000 });
-
   it("reads usage from the last chunk when every chunk reports the counts, on both Google APIs", async () => {
-    // As Agent Platform answered a PDF by URL on 2026-11-02: every chunk carries usageMetadata, the counts only the last.
+    // The fields Agent Platform reported for a PDF by URL on 2026-11-02, as running counts in every chunk.
     const usageMetadata = {
       promptTokenCount: 567,
       candidatesTokenCount: 3,
@@ -380,18 +424,21 @@ describe("streamSimple on Agent Platform (google-vertex)", () => {
       promptTokensDetails: [{ modality: "IMAGE", tokenCount: 532 }, { modality: "TEXT", tokenCount: 35 }],
       candidatesTokensDetails: [{ modality: "TEXT", tokenCount: 3 }],
     };
+    const runningCounts = (candidates: number) => ({
+      ...usageMetadata,
+      candidatesTokenCount: candidates,
+      totalTokenCount: 567 + candidates,
+      candidatesTokensDetails: [{ modality: "TEXT", tokenCount: candidates }],
+    });
     const answer = () =>
       sseResponse([
-        JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "Dummy" }] } }], usageMetadata: { trafficType: "ON_DEMAND" } }),
-        JSON.stringify({
-          candidates: [{ content: { role: "model", parts: [{ text: " PDF file" }] } }],
-          usageMetadata: { ...usageMetadata, candidatesTokenCount: 2, totalTokenCount: 569, candidatesTokensDetails: [{ modality: "TEXT", tokenCount: 2 }] },
-        }),
+        JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "Dummy" }] } }], usageMetadata: runningCounts(1) }),
+        JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: " PDF file" }] } }], usageMetadata: runningCounts(2) }),
         JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "" }] }, finishReason: "STOP" }], usageMetadata }),
       ]);
     for (const provider of ["google", "google-vertex"] as const) {
       assert.deepEqual(
-        (await runOn(provider, { documents: [byUrl()] }, answer)).outcome,
+        (await runOn(provider, { documents: [pdfByUrl()] }, answer)).outcome,
         // 567 × 1.5 + 3 × 9 per 1M tokens.
         { type: "done", usage: { input: 567, output: 3, totalTokens: 570, costUsd: 0.0008775, costSource: "estimated", raw: { usageMetadata } } },
         provider,
@@ -413,7 +460,7 @@ describe("streamSimple on Agent Platform (google-vertex)", () => {
       ]);
     for (const provider of ["google", "google-vertex"] as const) {
       assert.deepEqual(
-        (await runOn(provider, { documents: [byUrl()] }, answer)).outcome,
+        (await runOn(provider, { documents: [pdfByUrl()] }, answer)).outcome,
         {
           type: "done",
           usage: {
@@ -440,33 +487,12 @@ describe("streamSimple on Agent Platform (google-vertex)", () => {
       ]);
     for (const provider of ["google", "google-vertex"] as const) {
       assert.deepEqual(
-        (await runOn(provider, { documents: [byUrl()] }, answer)).outcome,
+        (await runOn(provider, { documents: [pdfByUrl()] }, answer)).outcome,
         // 27,180 - 3,070 prompt tokens, priced as in the turn above; raw keeps what Gemini sent.
         { type: "done", usage: { input: 24_110, output: 3_070, totalTokens: 27_180, costUsd: 0.063795, costSource: "estimated", raw: { usageMetadata } } },
         provider,
       );
     }
-  });
-
-  it("derives the prompt count of a grounded, thinking turn without the answer, thinking and tool-use counts, cached tokens included", async () => {
-    const usageMetadata = { cachedContentTokenCount: 30, candidatesTokenCount: 12, thoughtsTokenCount: 8, toolUsePromptTokenCount: 300, totalTokenCount: 360 };
-    const answer = () =>
-      sseResponse([JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "Found it." }] }, finishReason: "STOP" }], usageMetadata })]);
-    assert.deepEqual((await runOn("google", { documents: [byUrl()] }, answer)).outcome, {
-      type: "done",
-      usage: {
-        // The prompt is 360 - 12 - 8 - 300 = 40 tokens, 30 of them cached, plus the 300 tool-use prompt tokens.
-        input: 310,
-        output: 20,
-        cacheRead: 30,
-        reasoning: 8,
-        totalTokens: 360,
-        // 310 × 1.5 + 30 × 0.15 + 20 × 9 per 1M tokens.
-        costUsd: 0.0006495,
-        costSource: "estimated",
-        raw: { usageMetadata },
-      },
-    });
   });
 
   it("fails a turn whose document URL Google could not fetch with DOCUMENT_FETCH_FAILED, on both Google APIs, and leaves any other 400, or one for a turn with no document by URL, a PROVIDER_ERROR", async () => {

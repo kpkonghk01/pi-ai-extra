@@ -2833,7 +2833,7 @@ Fields `promptTokenCount` `integer` Number of tokens in the prompt. When `cached
 `candidatesTokenCount` `integer` Total number of tokens across all the generated response candidates.
 `toolUsePromptTokenCount` `integer` Output only. Number of tokens present in tool-use prompt(s).
 `thoughtsTokenCount` `integer` Output only. Number of tokens of thoughts for thinking models.
-`totalTokenCount` `integer` Total token count for the generation request (prompt + thoughts + response candidates).
+`totalTokenCount` `integer` Total token count for the generation request (prompt + tool-use prompt + thoughts + response candidates).
 `promptTokensDetails[]` ``object (`https://ai.google.dev/api/generate-content#v1beta.ModalityTokenCount`)`` Output only. List of modalities that were processed in the request input.
 `cacheTokensDetails[]` ``object (`https://ai.google.dev/api/generate-content#v1beta.ModalityTokenCount`)`` Output only. List of modalities of the cached content in the request input.
 `candidatesTokensDetails[]` ``object (`https://ai.google.dev/api/generate-content#v1beta.ModalityTokenCount`)`` Output only. List of modalities that were returned in the response.
