@@ -132,7 +132,9 @@ export interface ChatUsage {
   /**
    * The prompt tokens not read from or written to the cache: the reported prompt count minus the
    * reported cache counts, left out when negative. The whole prompt is `input + cacheRead + cacheWrite`.
-   * On Gemini the prompt includes the tool-use prompt tokens of grounding (`toolUsePromptTokenCount`).
+   * On Gemini the prompt includes the tool-use prompt tokens of grounding (`toolUsePromptTokenCount`),
+   * and a prompt count Gemini left out (a document by URL on AI Studio) is its total minus its
+   * answer, thinking and tool-use counts.
    */
   input?: number;
   /** Every generated token, reasoning included. Gemini leaves zero-valued counters out of its JSON, so a blocked prompt there has none. */
@@ -158,9 +160,10 @@ export interface ChatUsage {
    */
   costSource?: "provider" | "estimated";
   /**
-   * The provider's own usage record, under its own field names: `{ usageMetadata }` on Gemini,
-   * otherwise `{ usage }` when it sent a usage object, plus any cost or credit field reported in or
-   * next to it (for example OpenRouter `usage.cost`, KIE `credits_consumed`).
+   * The provider's own usage record, under its own field names: `{ usageMetadata }` on Gemini, each
+   * field at the last value the stream reported, otherwise `{ usage }` when it sent a usage object,
+   * plus any cost or credit field reported in or next to it (for example OpenRouter `usage.cost`,
+   * KIE `credits_consumed`).
    */
   raw: Record<string, unknown>;
 }

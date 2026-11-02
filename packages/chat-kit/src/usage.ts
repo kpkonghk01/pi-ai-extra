@@ -70,6 +70,12 @@ function reportsBilling(raw: Record<string, unknown>): boolean {
   return billed(raw) || Object.values(raw).some((value) => isRecord(value) && billed(value));
 }
 
+/** `next`'s fields over `base`'s, except those `next` sends as `null`: each keeps its last reported value. */
+export function overlayReported(base: Record<string, unknown> | undefined, next: Record<string, unknown>): Record<string, unknown> {
+  const reported = Object.fromEntries(Object.entries(next).filter(([, value]) => value !== null && value !== undefined));
+  return { ...base, ...reported };
+}
+
 /**
  * Collects a turn's raw usage record and the cost or credit fields reported next to it, from the
  * provider's stream events, as one wire's observer sees them.
@@ -96,8 +102,7 @@ export function createUsageCapture(): UsageCapture {
       usage = next;
     },
     overlay(next) {
-      const reported = Object.fromEntries(Object.entries(next).filter(([, value]) => value !== null && value !== undefined));
-      usage = { ...usage, ...reported };
+      usage = overlayReported(usage, next);
     },
     addBilling(container) {
       billing = { ...billing, ...billingFields(container) };

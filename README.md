@@ -38,7 +38,7 @@ pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.6
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.8.0/hk01-pi-ai-extra-google-0.8.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.1.0/hk01-pi-ai-extra-openrouter-0.1.0.tgz   # optional, chat only, needs pi-ai
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/image-kit-v0.2.0/hk01-pi-ai-extra-image-kit-0.2.0.tgz   # optional, needs all three
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.4.0/hk01-pi-ai-extra-chat-kit-0.4.0.tgz     # optional, needs pi-ai and the providers you register
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.4.1/hk01-pi-ai-extra-chat-kit-0.4.1.tgz     # optional, needs pi-ai and the providers you register
 ```
 
 npm works the same way (`npm install <url>`). Upgrade or roll back by changing the URL. `zod@4.6.5` is installed automatically; install `@earendil-works/pi-ai@1.2.0` only if you use the `/pi-ai` subpath.
@@ -341,7 +341,7 @@ Pass `cacheRetention` explicitly: when it is omitted, pi-ai falls back to the `P
 ### Install
 
 ```sh
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.4.0/hk01-pi-ai-extra-chat-kit-0.4.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.4.1/hk01-pi-ai-extra-chat-kit-0.4.1.tgz
 pnpm add @earendil-works/pi-ai@1.2.0   # peer
 # and the provider packages you register (each its own release asset, see Install above):
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.8.0/hk01-pi-ai-extra-google-0.8.0.tgz
@@ -534,11 +534,11 @@ Only the initial request is retried, before the response stream starts: by pi-ai
 
 ### Usage and cost
 
-`message.chatKit.usage` holds what the provider reported, read from its own usage record, never pi-ai's zero-filled counts ([ADR 0005](docs/adr/0005-provider-reported-usage.md)), and the turn's cost. It uses pi-ai's count names. Every count is optional: one the provider did not report is absent, never `0` and never computed from the others. A turn has `usage` whenever the provider reported any token count or a cost or credit, and `raw` then keeps the provider's record, so a reported cost or credit survives a missing count. Only a turn whose provider reported none of these has no `usage` at all. Billing reads `chatKit.usage`; `message.usage` stays pi-ai's.
+`message.chatKit.usage` holds what the provider reported, read from its own usage record, never pi-ai's zero-filled counts ([ADR 0005](docs/adr/0005-provider-reported-usage.md)), and the turn's cost. It uses pi-ai's count names. Every count is optional: one the provider did not report is absent, never `0` and never computed from the others, except `input`, which is derived as the table says. A turn has `usage` whenever the provider reported any token count or a cost or credit, and `raw` then keeps the provider's record, so a reported cost or credit survives a missing count. Only a turn whose provider reported none of these has no `usage` at all. Billing reads `chatKit.usage`; `message.usage` stays pi-ai's.
 
 | Field | Meaning | Present in `usage` |
 | --- | --- | --- |
-| `input` | Prompt tokens not read from or written to the cache: the reported prompt count minus the reported cache counts, left out if negative. The whole prompt is `input + cacheRead + cacheWrite`. On Gemini the prompt includes the tool-use prompt tokens of grounding (`toolUsePromptTokenCount`) | When reported |
+| `input` | Prompt tokens not read from or written to the cache: the reported prompt count minus the reported cache counts, left out if negative. The whole prompt is `input + cacheRead + cacheWrite`. On Gemini the prompt includes the tool-use prompt tokens of grounding (`toolUsePromptTokenCount`), and a prompt count Gemini left out is its total minus its answer, thinking and tool-use counts: on AI Studio, the usage of a turn with a document by URL had no prompt count | When reported, or on Gemini derived from the total |
 | `output` | Every generated token, reasoning included | When reported (a Gemini blocked prompt has none) |
 | `totalTokens` | The provider's own total | When reported (never on Anthropic, which reports none) |
 | `cacheRead` | Prompt tokens read from the prompt cache | When reported |
@@ -546,7 +546,7 @@ Only the initial request is retried, before the response stream starts: by pi-ai
 | `reasoning` | Thinking tokens (part of `output`) | When reported |
 | `costUsd` | The turn's cost in USD | When the provider reported one or the model has a rate and a count to price |
 | `costSource` | `provider` or `estimated` | With `costUsd` |
-| `raw` | The provider's own record under its own field names: `{ usageMetadata }` on Gemini, otherwise `{ usage }`, plus any cost or credit field reported beside it | Always |
+| `raw` | The provider's own record under its own field names: `{ usageMetadata }` on Gemini, each field at the last value the stream reported, otherwise `{ usage }`, plus any cost or credit field reported beside it | Always |
 
 The cost comes from the first source that applies:
 
@@ -559,6 +559,7 @@ The cost comes from the first source that applies:
 Both releases are additive, and a `google-vertex` turn needs both: chat-kit 0.3 refuses it with `UNSUPPORTED`.
 
 - chat-kit 0.4.0 runs Gemini turns on Agent Platform (`google-vertex`) the way it runs them on AI Studio (`google`), and adds the error code `DOCUMENT_FETCH_FAILED`. A consumer that treats an unknown code as `PROVIDER_ERROR`, as the contract asks, keeps working; one that wants its own message for the failed fetch handles the new code.
+- chat-kit 0.4.1 fixes the prompt count of a Gemini turn whose last chunk has no `promptTokenCount`, as on AI Studio for a turn with a document by URL. 0.4.0 left `input` out, so the estimated cost covered the answer only. Each `usageMetadata` field now keeps the last value the stream reported, and a prompt count no chunk reported is derived from the total (see [Usage and cost](#usage-and-cost)). Usage records already stored without `input` are not corrected.
 - google 0.8.0 adds `createGoogleVertexProvider` and `GEMINI_CHAT_MODELS`. `GEMINI_CHAT_RATES` keeps its rates and adds `gemini-3.1-pro-preview-customtools` at 3.1 Pro Preview's rates, which a turn on AI Studio was already priced at (from pi-ai's catalogue); its `Model.cost` now shows the derived cache-write rate, which no Gemini turn uses. Both Google factories now turn the four adjustable safety filters off, so a turn that Gemini's default filters stopped before (`CONTENT_BLOCKED` with `SAFETY`) may now be answered.
 
 ### Upgrading from chat-kit 0.2
