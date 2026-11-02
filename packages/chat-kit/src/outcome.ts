@@ -82,7 +82,7 @@ function stoppedOutcome(turn: PreparedTurn, message: AssistantMessage, usage: Ch
 function providerErrorOutcome(run: TurnRun, message: AssistantMessage, usage: ChatUsage | undefined): ChatFinalEvent {
   const errorMessage = message.errorMessage ?? "The provider request failed.";
   const status = run.state.httpStatus ?? statusFromMessage(errorMessage);
-  const classified = run.turn.wire.classifyFailure?.(errorMessage, status);
+  const classified = run.turn.wire.classifyFailure?.({ errorMessage, status }, run.turn.plan);
   const code = classified?.code ?? "PROVIDER_ERROR";
   const text = classified === undefined ? errorMessage : `${classified.account}: ${errorMessage}`;
   return failure(run.turn.target, message, code, text, { usage, rawStopReason: message.rawStopReason, status });

@@ -130,20 +130,21 @@ jobs:
             npm install --no-audit --no-fund "$tarball" "$GITHUB_WORKSPACE"/smoke-peers/*.tgz @earendil-works/pi-ai@1.2.0
             node -e 'try { require(process.env.PACKAGE_NAME); } catch (error) { if (error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED") process.exit(0); throw error; } throw new Error("the chat kit must not load from CommonJS");'
             # Registers every chat provider with an offline fetch: no live list can be read, so every
-            # provider uses its installed catalogue or definitions, and an unknown model fails
-            # before any turn request.
+            # provider uses its installed catalogue or definitions (google-vertex has no live list at
+            # all), and an unknown model fails before any turn request.
             # Written in the consumer directory: ESM resolves the packages' imports relative to the script's own location.
             cat > ./smoke.mjs <<'SMOKE'
           const { createChatKit } = await import(process.env.PACKAGE_NAME);
           const fetch = async () => { throw new Error("offline"); };
-          const { createGoogleProvider } = await import("@hk01/pi-ai-extra-google/pi-ai");
+          const { createGoogleProvider, createGoogleVertexProvider } = await import("@hk01/pi-ai-extra-google/pi-ai");
           const { createOpenRouterProvider } = await import("@hk01/pi-ai-extra-openrouter/pi-ai");
           const { createKieProvider } = await import("@hk01/pi-ai-extra-kie/pi-ai");
           const { createToapisProvider } = await import("@hk01/pi-ai-extra-toapis/pi-ai");
-          const providers = [createGoogleProvider({ apiKey: "smoke", fetch }), createOpenRouterProvider({ apiKey: "smoke", fetch }), createKieProvider({ apiKey: "smoke", fetch }), createToapisProvider({ apiKey: "smoke", fetch })];
+          const providers = [createGoogleProvider({ apiKey: "smoke", fetch }), createGoogleVertexProvider({ apiKey: "smoke" }), createOpenRouterProvider({ apiKey: "smoke", fetch }), createKieProvider({ apiKey: "smoke", fetch }), createToapisProvider({ apiKey: "smoke", fetch })];
           const chat = createChatKit({ providers, fetch });
           const lists = await chat.listModels();
-          if (lists.length !== 4 || lists.some((entry) => !entry.models?.length || entry.source !== "installed" || entry.refreshError !== "offline")) throw new Error(`listModels is broken: ${JSON.stringify(lists.map(({ models, ...entry }) => ({ ...entry, models: models?.length })))}`);
+          const unread = (entry) => (entry.provider === "google-vertex" ? undefined : "offline");
+          if (lists.length !== 5 || lists.some((entry) => !entry.models?.length || entry.source !== "installed" || entry.refreshError !== unread(entry))) throw new Error(`listModels is broken: ${JSON.stringify(lists.map(({ models, ...entry }) => ({ ...entry, models: models?.length })))}`);
           const message = await chat.completeSimple({ provider: "kie", id: "no-such-model" }, { messages: [{ role: "user", content: "hi", timestamp: 1 }] });
           if (message.stopReason !== "error" || message.chatKit.error?.code !== "UNKNOWN_MODEL") throw new Error(`ESM entry is broken: ${JSON.stringify(message)}`);
           SMOKE

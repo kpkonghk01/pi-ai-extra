@@ -368,7 +368,7 @@ describe("streamSimple on Agent Platform (google-vertex)", () => {
     assert.deepEqual(vertex.sent.safetySettings, gemini.sent.safetySettings);
   });
 
-  it("fails a turn whose document URL Google could not fetch with DOCUMENT_FETCH_FAILED, on both Google APIs, and leaves any other 400 a PROVIDER_ERROR", async () => {
+  it("fails a turn whose document URL Google could not fetch with DOCUMENT_FETCH_FAILED, on both Google APIs, and leaves any other 400, or one for a turn with no document by URL, a PROVIDER_ERROR", async () => {
     const googleError = (message: string) => () => jsonResponse({ error: { code: 400, message, status: "INVALID_ARGUMENT" } }, 400);
     const unfetchable = googleError("Cannot fetch content from the provided URL. Please ensure the URL is valid and accessible.");
     const document = () => testDocument("brief.pdf", "application/pdf", "%PDF-1.7", { url: "https://bucket.example.com/brief.pdf?X-Amz-Signature=s", size: 1_000 });
@@ -382,6 +382,11 @@ describe("streamSimple on Agent Platform (google-vertex)", () => {
       const other = (await runOn(provider, { documents: [document()] }, googleError("Request contains an invalid argument."))).outcome;
       assert.equal(other.type === "failed" && other.error.code, "PROVIDER_ERROR", provider);
       assert.equal(other.type === "failed" && other.error.status, 400, provider);
+
+      // The same answer to a turn that sent no document by URL (the PDF goes inline: its size is unknown) is not about a document.
+      const inline = testDocument("brief.pdf", "application/pdf", "%PDF-1.7", { url: "https://bucket.example.com/brief.pdf" });
+      const unrelated = (await runOn(provider, { documents: [inline] }, unfetchable)).outcome;
+      assert.equal(unrelated.type === "failed" && unrelated.error.code, "PROVIDER_ERROR", provider);
     }
   });
 

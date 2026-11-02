@@ -105,8 +105,9 @@ function selectModels(models: readonly VertexChatModel[], modelIds: readonly str
 }
 
 /**
- * The key, unless pi-ai's Vertex adapter would take it for no key and use ADC instead: blank, its
- * ADC marker `gcp-vertex-credentials`, or a `<placeholder>`.
+ * The key, unless pi-ai's Vertex adapter would take it for no key and use ADC instead: its ADC
+ * marker `gcp-vertex-credentials`, or a `<placeholder>`. A blank key is left to
+ * `explicitApiKeyAuth`, which rejects it.
  */
 function expressApiKey(apiKey: string): string {
   const trimmed = typeof apiKey === "string" ? apiKey.trim() : "";

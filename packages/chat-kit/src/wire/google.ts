@@ -115,14 +115,19 @@ export function createGoogleObserver(): StreamObserver {
 }
 
 /**
- * Google answers a document URL it could not fetch with a 400 whose message says so, on AI Studio
- * and Agent Platform alike: for example a link that timed out (`URL_REJECTED-REJECTED_FC_TIMEOUT`).
+ * Google answers a document URL it could not fetch with a 400 whose message says so. Seen on Agent
+ * Platform on 2026-11-02, for an S3 presigned link whose fetch timed out (status URL rejected,
+ * fetch timeout).
  */
 const UNFETCHABLE_URL = /Cannot fetch content from the provided URL/i;
 
-/** Google's 400 for a document URL it could not fetch is `DOCUMENT_FETCH_FAILED`; any other failure stays as it is. */
-function classifyGoogleFailure(errorMessage: string, status: number | undefined): ClassifiedFailure | undefined {
-  if (status !== 400 || !UNFETCHABLE_URL.test(errorMessage)) return undefined;
+/**
+ * Google's 400 for a document URL it could not fetch is `DOCUMENT_FETCH_FAILED`, when the turn sent
+ * a document by URL; any other failure stays as it is.
+ */
+function classifyGoogleFailure(failure: { errorMessage: string; status: number | undefined }, plan: PayloadPlan): ClassifiedFailure | undefined {
+  const byUrl = plan.documents.some((document) => document.kind !== "text" && document.source.type === "url");
+  if (!byUrl || failure.status !== 400 || !UNFETCHABLE_URL.test(failure.errorMessage)) return undefined;
   return { code: "DOCUMENT_FETCH_FAILED", account: "The provider could not fetch a document from its URL" };
 }
 

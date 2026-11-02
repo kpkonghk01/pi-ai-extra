@@ -137,6 +137,10 @@ describe("createGoogleVertexProvider: models", () => {
     const rateOf = (id: string) => vertex.chatKit.describe(vertex.getModels().find((model) => model.id === id)!).rate;
     assert.deepEqual(rateOf("gemini-3.8-flash")?.periods[1], { from: "2027-01-01", input: 1.5, output: 7.5, cacheRead: 0.15 });
     assert.deepEqual(rateOf("gemini-3.5-flash"), { periods: [{ input: 1.5, output: 9, cacheRead: 0.15 }] });
+    // pi-ai's Vertex catalogue leaves out the over-200k tier that its Gemini catalogue and Google's price page have.
+    for (const id of ["gemini-3.1-pro-preview", "gemini-3.1-pro-preview-customtools"]) {
+      assert.deepEqual(rateOf(id)?.periods[0]?.largePrompt, { overPromptTokens: 200_000, input: 4, output: 18, cacheRead: 0.4 }, id);
+    }
     const offered = vertex.getModels().filter((model) => vertex.chatKit.offers(model)).map((model) => model.id);
     assert.ok(offered.includes("gemini-3.1-pro-preview-customtools") && !offered.includes("gemini-3.1-flash-lite-image"));
   });

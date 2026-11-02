@@ -5,6 +5,14 @@ import { catalogueRate, singleRate, type ModelRate } from "@hk01/pi-ai-extra-int
 /** Every rate in the Gemini 3.8, 3.7 and 3.6 Flash schedules doubles on this day. */
 const FLASH_DOUBLING_DAY = "2027-01-01";
 
+/** Gemini 3.1 Pro Preview, with its rates over 200k prompt tokens. */
+const PRO_31_RATE: ModelRate = singleRate({
+  input: 2,
+  output: 12,
+  cacheRead: 0.2,
+  largePrompt: { overPromptTokens: 200_000, input: 4, output: 18, cacheRead: 0.4 },
+});
+
 /**
  * A Gemini chat model this package defines itself, beside pi-ai's catalogue, so a new model or a
  * new price ships without waiting for a pi-ai release.
@@ -13,7 +21,7 @@ export interface GeminiChatModelDefinition {
   id: string;
   /**
    * The pi-ai `google-vertex` catalogue id to copy capabilities from (input, reasoning, limits,
-   * thinking levels) when this id has no entry of its own there. Defaults to `id`.
+   * thinking levels). Defaults to `id`, so only a new id needs one.
    */
   catalogueId?: string | undefined;
   /** The model's published rate schedule, in USD per 1M tokens. */
@@ -32,6 +40,8 @@ export interface GeminiChatModelDefinition {
  *   31, 2026", "starting January 1, 2027").
  * - 3.7 Flash is no longer on the page. Its rates are the portal's, which double on the same day;
  *   it has no published cached-input rate, so pricing derives one (`toModelCost`).
+ * - 3.1 Pro Preview's custom-tools variant has 3.1 Pro Preview's rates, as pi-ai's Gemini
+ *   catalogue lists them; pi-ai's Vertex catalogue leaves out the over-200k tier of both.
  * - Gemini publishes no per-token cache-write price (cache storage is billed per hour) and reports
  *   no cache-write tokens, so no cache-write rate is given.
  * - Audio input, priced higher on some models, is not modelled.
@@ -66,15 +76,8 @@ export const GEMINI_CHAT_MODELS: readonly GeminiChatModelDefinition[] = [
   },
   { id: "gemini-3.5-flash-lite", rate: singleRate({ input: 0.3, output: 2.5, cacheRead: 0.03 }) },
   { id: "gemini-3.1-flash-lite", rate: singleRate({ input: 0.25, output: 1.5, cacheRead: 0.025 }) },
-  {
-    id: "gemini-3.1-pro-preview",
-    rate: singleRate({
-      input: 2,
-      output: 12,
-      cacheRead: 0.2,
-      largePrompt: { overPromptTokens: 200_000, input: 4, output: 18, cacheRead: 0.4 },
-    }),
-  },
+  { id: "gemini-3.1-pro-preview", rate: PRO_31_RATE },
+  { id: "gemini-3.1-pro-preview-customtools", rate: PRO_31_RATE },
 ];
 
 /** The Gemini rate table: each model's rate from `GEMINI_CHAT_MODELS`, by id. */

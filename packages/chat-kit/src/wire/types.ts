@@ -77,13 +77,14 @@ export interface WireApi {
   createObserver(): StreamObserver;
   /**
    * A failure this API's provider reports that has a more specific account than `PROVIDER_ERROR`,
-   * from pi-ai's error text and the response's HTTP status; undefined for any other failure.
+   * from pi-ai's error text, the response's HTTP status and what the request carried; undefined for
+   * any other failure.
    */
-  classifyFailure?(errorMessage: string, status: number | undefined): ClassifiedFailure | undefined;
+  classifyFailure?(failure: { errorMessage: string; status: number | undefined }, plan: PayloadPlan): ClassifiedFailure | undefined;
 }
 
-/** A provider failure the wire API recognized: its code, and the kit's account of it, put before the provider's text. */
+/** A provider failure the wire API recognized: its code, one of a sent request, and the kit's account of it, put before the provider's text. */
 export interface ClassifiedFailure {
-  code: ChatTurnErrorCode;
+  code: Extract<ChatTurnErrorCode, "DOCUMENT_FETCH_FAILED">;
   account: string;
 }
