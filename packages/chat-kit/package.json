@@ -1,6 +1,6 @@
 {
   "name": "@hk01/pi-ai-extra-chat-kit",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Server-side chat kit on pi-ai: registers chat providers and runs a turn from pi-ai's Context the same way on each (documents, response schema, safety blocks, usage and cost), and lists their live models",
   "license": "UNLICENSED",
   "type": "module",

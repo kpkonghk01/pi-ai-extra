@@ -78,13 +78,14 @@ function stoppedOutcome(turn: PreparedTurn, message: AssistantMessage, usage: Ch
   return failure(turn.target, message, "PROVIDER_ERROR", text, { usage, rawStopReason });
 }
 
+/** A provider failure: `PROVIDER_ERROR`, unless the wire API recognizes it as something more specific. */
 function providerErrorOutcome(run: TurnRun, message: AssistantMessage, usage: ChatUsage | undefined): ChatFinalEvent {
   const errorMessage = message.errorMessage ?? "The provider request failed.";
-  return failure(run.turn.target, message, "PROVIDER_ERROR", errorMessage, {
-    usage,
-    rawStopReason: message.rawStopReason,
-    status: run.state.httpStatus ?? statusFromMessage(errorMessage),
-  });
+  const status = run.state.httpStatus ?? statusFromMessage(errorMessage);
+  const classified = run.turn.wire.classifyFailure?.(errorMessage, status);
+  const code = classified?.code ?? "PROVIDER_ERROR";
+  const text = classified === undefined ? errorMessage : `${classified.account}: ${errorMessage}`;
+  return failure(run.turn.target, message, code, text, { usage, rawStopReason: message.rawStopReason, status });
 }
 
 const ABORTED_TEXT = "The turn was aborted.";

@@ -20,7 +20,7 @@ export interface ChatKitOptions {
   providers: readonly ChatProvider[];
   /**
    * Custom fetch for tests or instrumentation. Every turn's requests use it instead of the
-   * provider's own, except Gemini's: pi-ai's Gemini adapter rejects a custom fetch. Model lists
+   * provider's own, except Gemini's: pi-ai's Gemini and Vertex adapters reject a custom fetch. Model lists
    * use each provider's own fetch (its factory's `fetch` option).
    */
   fetch?: typeof globalThis.fetch | undefined;
@@ -105,6 +105,7 @@ export type ChatAssistantMessage = AssistantMessage &
 
 /**
  * - `CONTENT_BLOCKED`: a provider safety system blocked the prompt or the answer (`rawStopReason` is the provider's own value). Sent.
+ * - `DOCUMENT_FETCH_FAILED`: the provider could not fetch a document the turn sent by its URL (`status` is the provider's, 400 on Google). Only Google reports it so far. Sent.
  * - `PROVIDER_ERROR`: the provider failed, or a response-schema answer could not be complete (it hit `maxTokens`, or Anthropic answered without the schema tool call). Sent.
  * - `UNSUPPORTED`: the provider or model cannot take the turn's documents, images, tools, schema or settings. Nothing was sent.
  * - `UNKNOWN_MODEL`: no provider has that id, or the model is not offered. Nothing was sent.
@@ -112,7 +113,7 @@ export type ChatAssistantMessage = AssistantMessage &
  *
  * A new code may come in a minor release: treat an unknown code as `PROVIDER_ERROR`.
  */
-export type ChatTurnErrorCode = "CONTENT_BLOCKED" | "PROVIDER_ERROR" | "UNSUPPORTED" | "UNKNOWN_MODEL" | "INVALID_REQUEST";
+export type ChatTurnErrorCode = "CONTENT_BLOCKED" | "DOCUMENT_FETCH_FAILED" | "PROVIDER_ERROR" | "UNSUPPORTED" | "UNKNOWN_MODEL" | "INVALID_REQUEST";
 
 /** The chat kit's account of a failed turn, on the final message as `chatKit.error`. */
 export interface ChatTurnError {

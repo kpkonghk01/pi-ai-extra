@@ -2,7 +2,7 @@ import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { jsonResponse, type FakeFetch } from "@hk01/pi-ai-extra-internal/testing";
 import type { AssistantMessage, AssistantMessageEvent, Context, Message, ThinkingLevel, Tool } from "@earendil-works/pi-ai";
 import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
-import { createGoogleProvider } from "@hk01/pi-ai-extra-google/pi-ai";
+import { createGoogleProvider, createGoogleVertexProvider } from "@hk01/pi-ai-extra-google/pi-ai";
 import { createKieProvider } from "@hk01/pi-ai-extra-kie/pi-ai";
 import { createOpenRouterProvider } from "@hk01/pi-ai-extra-openrouter/pi-ai";
 import { createToapisProvider } from "@hk01/pi-ai-extra-toapis/pi-ai";
@@ -275,7 +275,7 @@ export function jsonBody(body: unknown): Record<string, unknown> {
   return JSON.parse(body) as Record<string, unknown>;
 }
 
-type ProviderName = "google" | "openrouter" | "kie" | "toapis";
+type ProviderName = "google" | "google-vertex" | "openrouter" | "kie" | "toapis";
 
 /** One chat provider per name, each bound to its key and `fetch` (which serves its model list). */
 export function chatProviders(
@@ -286,6 +286,7 @@ export function chatProviders(
   const key = (name: ProviderName, fallback: string) => extra.keys?.[name] ?? fallback;
   const factories: Record<ProviderName, () => ChatProvider> = {
     google: () => createGoogleProvider({ apiKey: key("google", "g-key"), fetch, ...(extra.grounding ? { grounding: true } : {}) }),
+    "google-vertex": () => createGoogleVertexProvider({ apiKey: key("google-vertex", "gv-key"), ...(extra.grounding ? { grounding: true } : {}) }),
     openrouter: () => createOpenRouterProvider({ apiKey: key("openrouter", "or-key"), fetch }),
     kie: () => createKieProvider({ apiKey: key("kie", "kie-key"), fetch }),
     toapis: () => createToapisProvider({ apiKey: key("toapis", "t-key"), fetch }),

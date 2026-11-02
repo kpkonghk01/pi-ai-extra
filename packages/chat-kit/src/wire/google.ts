@@ -4,7 +4,7 @@ import type { ChatDocument, ChatUsage } from "../types.ts";
 import { sumReported, tokenCount, toChatUsage } from "../usage.ts";
 import { encodeDocument, replaceDocumentMarker, textOfUntypedPart, type DocumentEncoder } from "./document-parts.ts";
 import { sanitizeSchemaForGemini } from "./gemini-schema.ts";
-import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
+import type { BlockedTurn, ClassifiedFailure, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
 /** Gemini fetches an external (HTTP or signed) URL only up to 15 MB per file. */
 export const GEMINI_URL_MAX_BYTES = 15_000_000;
@@ -114,6 +114,19 @@ export function createGoogleObserver(): StreamObserver {
   };
 }
 
+/**
+ * Google answers a document URL it could not fetch with a 400 whose message says so, on AI Studio
+ * and Agent Platform alike: for example a link that timed out (`URL_REJECTED-REJECTED_FC_TIMEOUT`).
+ */
+const UNFETCHABLE_URL = /Cannot fetch content from the provided URL/i;
+
+/** Google's 400 for a document URL it could not fetch is `DOCUMENT_FETCH_FAILED`; any other failure stays as it is. */
+function classifyGoogleFailure(errorMessage: string, status: number | undefined): ClassifiedFailure | undefined {
+  if (status !== 400 || !UNFETCHABLE_URL.test(errorMessage)) return undefined;
+  return { code: "DOCUMENT_FETCH_FAILED", account: "The provider could not fetch a document from its URL" };
+}
+
+/** Gemini on Google AI Studio: pi-ai's Gemini adapter, which rejects a custom fetch. */
 export const GOOGLE_WIRE_API: WireApi = {
   api: "google-generative-ai",
   acceptsFetch: false,
@@ -122,4 +135,12 @@ export const GOOGLE_WIRE_API: WireApi = {
   unsupported: () => undefined,
   transform: transformGooglePayload,
   createObserver: createGoogleObserver,
+  classifyFailure: classifyGoogleFailure,
 };
+
+/**
+ * Gemini on Google Agent Platform: pi-ai's Vertex adapter builds the same `@google/genai` request
+ * and reads the same stream as its Gemini adapter, and rejects a custom fetch too, so the kit
+ * handles it the same way.
+ */
+export const GOOGLE_VERTEX_WIRE_API: WireApi = { ...GOOGLE_WIRE_API, api: "google-vertex" };

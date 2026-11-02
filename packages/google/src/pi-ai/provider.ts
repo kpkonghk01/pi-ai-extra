@@ -6,7 +6,8 @@ import { explicitApiKeyAuth, helperImages, modelCostAt, withLiveChatModels, type
 import { GOOGLE_BASE_URL, GOOGLE_IMAGES_API, GOOGLE_PROVIDER_ID, GOOGLE_PROVIDER_NAME } from "../constants.ts";
 import { generateGoogleImage, type GoogleImageRequest, type GoogleImageSettings } from "../generate.ts";
 import { GOOGLE_IMAGE_MODELS } from "../models.ts";
-import { fetchGeminiModels, isOfferedGeminiId } from "./live-models.ts";
+import { geminiChatTraits } from "./chat-traits.ts";
+import { fetchGeminiModels } from "./live-models.ts";
 import { googleChatRate, tableRate } from "./rates.ts";
 import { googleChatStreams } from "./streams.ts";
 
@@ -55,12 +56,8 @@ export interface GoogleProviderOptions {
  *   models with it (`fetchGeminiModels`), narrowed to `modelIds` when set.
  * - `grounding` adds Google Search and URL context to every chat request, and a prompt Gemini
  *   blocks ends with its `promptFeedback.blockReason` as `rawStopReason` (`googleChatStreams`).
- * - `chatKit`: Gemini takes PDF and image documents and tools; the chat kit offers its plain
- *   text chat models (`isOfferedGeminiId`). A `gemini-*` model reads PDFs when it reads images and
- *   takes tools. A `gemma-4-*` model takes tools too (Google documents function calling for Gemma 4
- *   on the Gemini API), but no PDFs: Google's document-processing page names Gemini models only. Any other
- *   id takes neither, until Google documents it. A model is priced from the Gemini rate table, else
- *   pi-ai's list price. Gemini reports no charge, so every turn is estimated.
+ * - `chatKit`: Gemini's traits (`geminiChatTraits`). A model is priced from the Gemini rate table,
+ *   else pi-ai's list price.
  *
  * It also serves `GOOGLE_IMAGE_MODELS` (`models.getModelOfType("image", "google", id)`),
  * generated through `generateGoogleImage`. Image options go in `ImagesOptions.metadata`
@@ -99,22 +96,7 @@ export function createGoogleProvider(options: GoogleProviderOptions): ChatProvid
       signal,
     }),
   );
-  return {
-    ...provider,
-    chatKit: {
-      takes: { fileDocuments: true, tools: true, nativeStructuredOutput: false },
-      offers: (model) => (model.type ?? "chat") === "chat" && isOfferedGeminiId(model.id),
-      describe: (model) => {
-        const rate = googleChatRate(model.id);
-        // Off until documented: function calling for Gemini and Gemma 4, PDF input for Gemini.
-        const gemini = model.id.startsWith("gemini-");
-        const tools = gemini || model.id.startsWith("gemma-4-");
-        return { fileInput: gemini && model.input.includes("image"), tools, ...(rate === undefined ? {} : { rate }) };
-      },
-      reportedCostUsd: () => undefined,
-      estimatesCost: true,
-    },
-  };
+  return { ...provider, chatKit: geminiChatTraits(googleChatRate) };
 }
 
 function selectModels(modelIds: readonly string[] | undefined): readonly GoogleChatModel[] {
