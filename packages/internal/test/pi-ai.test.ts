@@ -9,7 +9,7 @@ import {
   explicitApiKeyAuth,
   helperImages,
 } from "../src/pi-ai/index.ts";
-import { dataUrl, PNG_BYTES } from "../src/testing/fake-fetch.ts";
+import { createFakeFetch, dataUrl, PNG_BYTES } from "../src/testing/fake-fetch.ts";
 
 const MODEL: ImageModelInfo = {
   id: "img-1",
@@ -186,5 +186,62 @@ describe("chat provider helpers", () => {
     bearerAuthStreams(inner).stream(undefined as never, undefined as never, { apiKey: "k-2", headers: { "x-extra": "1" } });
     assert.equal(captured?.apiKey, undefined);
     assert.deepEqual(captured?.headers, { "x-extra": "1", Authorization: "Bearer k-2" });
+  });
+});
+
+describe("chat models on the OpenAI Completions route", () => {
+  it("builds a model with its own base URL, its thinking levels and conservative limits", () => {
+    const model = buildChatModel("kie", "https://unused.example.com", {
+      id: "gemini-3-8-flash",
+      protocol: "openai-completions",
+      baseUrl: "https://api.kie.ai/gemini-3-8-flash-openai/v1",
+      reasoning: true,
+      thinkingLevelMap: { off: null, low: "low", high: "high" },
+    });
+    assert.equal(model.api, "openai-completions");
+    assert.equal(model.baseUrl, "https://api.kie.ai/gemini-3-8-flash-openai/v1");
+    assert.equal(model.contextWindow, 128_000);
+    assert.equal(model.maxTokens, 16_384);
+    assert.deepEqual(model.input, ["text", "image"]);
+    assert.deepEqual(model.thinkingLevelMap, { off: null, low: "low", high: "high" });
+  });
+
+  it("needs a base URL, from the model or from the provider, and names the model that lacks one", () => {
+    const options = { id: "test", name: "Test", apiKey: "k", anthropicAuth: "x-api-key" as const };
+    assert.throws(
+      () => createChatProvider({ ...options, baseUrls: {}, models: [{ id: "m-1", protocol: "openai-completions" }] }),
+      /chat model m-1.*openai-completions.*base URL/,
+    );
+    const provided = createChatProvider({ ...options, baseUrls: { "openai-completions": "https://api.example.com/v1" }, models: [{ id: "m-1", protocol: "openai-completions" }] });
+    assert.equal(provided.getModels()[0]?.baseUrl, "https://api.example.com/v1");
+    const own = createChatProvider({ ...options, baseUrls: {}, models: [{ id: "m-2", protocol: "openai-completions", baseUrl: "https://own.example.com/v1" }] });
+    assert.equal(own.getModels()[0]?.baseUrl, "https://own.example.com/v1");
+  });
+
+  it("serves a completions model through pi-ai's OpenAI Completions adapter, at the model's own base URL", async () => {
+    const sse = [
+      'data: {"choices":[{"delta":{"role":"assistant","content":"pong"},"index":0}],"created":1,"id":"c-1","object":"chat.completion.chunk"}',
+      'data: {"choices":[{"delta":{},"finish_reason":"stop","index":0}],"created":1,"id":"c-2","object":"chat.completion.chunk"}',
+      "data: [DONE]",
+    ].join("\n\n") + "\n\n";
+    const fake = createFakeFetch([
+      { method: "POST", url: "https://own.example.com/v1/chat/completions", respond: () => new Response(sse, { headers: { "content-type": "text/event-stream" } }) },
+    ]);
+    const chat = createChatProvider({
+      id: "test",
+      name: "Test",
+      apiKey: "factory-key",
+      baseUrls: {},
+      models: [{ id: "m-2", protocol: "openai-completions", baseUrl: "https://own.example.com/v1" }],
+      anthropicAuth: "x-api-key",
+      fetch: fake.fetch,
+    });
+    const collection = createModels({ authContext: { env: async () => undefined, fileExists: async () => false } });
+    collection.setProvider(chat);
+    const model = chat.getModels()[0]!;
+    const message = await collection.completeSimple(model, { messages: [{ role: "user", content: "ping", timestamp: 1 }] }, { maxRetries: 0 });
+    assert.equal(message.stopReason, "stop");
+    assert.deepEqual(message.content.map((block) => (block.type === "text" ? block.text : block.type)), ["pong"]);
+    assert.equal(fake.calls[0]?.headers.authorization, "Bearer factory-key");
   });
 });

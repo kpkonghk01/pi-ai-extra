@@ -4,7 +4,7 @@ Server-only extensions to [`@earendil-works/pi-ai`](https://www.npmjs.com/packag
 
 | Package | Image models | Chat (pi-ai `Models`) |
 | --- | --- | --- |
-| `@hk01/pi-ai-extra-kie` | Grok Imagine Image 2.0 (text-to-image, image edit), GPT Image 2 (text-to-image, image-to-image), Nano Banana 2.1 | Codex (OpenAI Responses), Claude (Anthropic Messages) |
+| `@hk01/pi-ai-extra-kie` | Grok Imagine Image 2.0 (text-to-image, image edit), GPT Image 2 (text-to-image, image-to-image), Nano Banana 2.1 | Codex (OpenAI Responses), Claude (Anthropic Messages), Gemini (OpenAI Chat Completions) |
 | `@hk01/pi-ai-extra-toapis` | Gemini Nano Banana 2.1, GPT Image 2, GPT Image 2.5 Flare / Sunburst, Seedream 5.0 Pro | Codex (OpenAI Responses), Claude (Anthropic Messages) |
 | `@hk01/pi-ai-extra-google` | Nano Banana 2.1, Gemini 3 Pro Image | Gemini on Google AI Studio (pi-ai's Gemini adapter and catalogue, explicit key, live model list) and on Google Agent Platform (pi-ai's Vertex adapter, express-mode key) |
 | `@hk01/pi-ai-extra-openrouter` | None (pi-ai already serves OpenRouter's image generation) | OpenAI Completions, Anthropic Messages (pi-ai's OpenRouter provider, explicit key, live model list) |
@@ -157,7 +157,7 @@ import { createToapisProvider } from "@hk01/pi-ai-extra-toapis/pi-ai";
 import { createGoogleProvider } from "@hk01/pi-ai-extra-google/pi-ai";
 
 const models = createModels();
-models.setProvider(createKieProvider({ apiKey: kieKey }));       // Codex on https://api.kie.ai/openai/v1, Claude on https://api.kie.ai/anthropic (Bearer)
+models.setProvider(createKieProvider({ apiKey: kieKey }));       // Codex on https://api.kie.ai/openai/v1, Claude on https://api.kie.ai/anthropic (Bearer), Gemini on https://api.kie.ai/<id>-openai/v1
 models.setProvider(createToapisProvider({ apiKey: toapisKey })); // Codex on https://toapis.com/v1, Claude on https://toapis.com
 models.setProvider(createGoogleProvider({ apiKey: geminiKey }));  // Gemini chat; never reads GEMINI_API_KEY
 
@@ -179,7 +179,7 @@ pi-ai 1.2 keeps chat and image models in one `Models` collection, so each packag
 
 Both Google factories turn Gemini's four adjustable safety filters off on every chat request: `safetySettings` sets `HARM_CATEGORY_HATE_SPEECH`, `HARM_CATEGORY_HARASSMENT`, `HARM_CATEGORY_SEXUALLY_EXPLICIT` and `HARM_CATEGORY_DANGEROUS_CONTENT` to `OFF`, after a caller's own `onPayload`, replacing any setting it made for those four and keeping any other. Google's built-in protections, which a request cannot adjust (child safety, for example), still apply, and a turn they stop still fails with `CONTENT_BLOCKED`. Image generation keeps its own `safetySettings` option.
 
-KIE and ToAPIs chat models use pi-ai's own OpenAI Responses and Anthropic Messages adapters. Capability metadata (context window, thinking levels) is copied from pi-ai's catalogue when the id, or `ChatModelDefinition.catalogueId`, matches; KIE's dashed Codex ids (`gpt-5-6-sol`) point at pi-ai's dotted ones (`gpt-5.6-sol`). Prices are never copied from pi-ai's catalogue, because KIE and ToAPIs prices differ from list prices.
+KIE and ToAPIs chat models use pi-ai's own OpenAI Responses and Anthropic Messages adapters, and KIE's Gemini models its OpenAI Completions adapter ([ADR 0010](docs/adr/0010-kie-gemini-chat-completions-route.md)). Capability metadata (context window, thinking levels) is copied from pi-ai's catalogue when the id, or `ChatModelDefinition.catalogueId`, matches; KIE's dashed Codex ids (`gpt-5-6-sol`) point at pi-ai's dotted ones (`gpt-5.6-sol`). Prices are never copied from pi-ai's catalogue, because KIE and ToAPIs prices differ from list prices.
 
 ### Gemini on Google Agent Platform (express mode)
 
@@ -293,6 +293,10 @@ createToapisProvider({
 | Gemini models at pi-ai's list prices | Models in `GEMINI_CHAT_RATES` at its schedule, including the 2027-01-01 doubling |
 
 KIE adds `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `gpt-6-sol`, `gpt-6-luna` and `gpt-6-1-sol`, and exports its credit price as `KIE_USD_PER_CREDIT`. The rate types (`ModelRate`, `RatePeriod`, `TokenRates`, `LargePromptRates`) are exported by each `/pi-ai` entry.
+
+### Upgrading to KIE 0.7
+
+KIE 0.7.0 is additive: it adds `gemini-3-8-flash`, `gemini-3-6-flash` and `gemini-4-argon` on KIE's OpenAI Chat Completions route ([ADR 0010](docs/adr/0010-kie-gemini-chat-completions-route.md)). Each is offered with its published rate and reads images; a turn's cost is KIE's `credits_consumed`. The chat kit 0.4.1 runs them unchanged. `createKieProvider({ geminiBaseUrl })` replaces the host (default `https://api.kie.ai`). KIE names no Gemini model in its model lists, so the models are always offered, and a withdrawn model fails with KIE's message. A reply cut off at `maxTokens` ends `stop`, because KIE reports no finish reason.
 
 ### Upgrading to KIE/ToAPIs 0.5 and Google 0.6
 
@@ -446,7 +450,7 @@ Each provider's live list is its own `refreshModels`, so `models.refresh()` read
 | `openrouter` | Public `GET <root>/v1/models` (no key) | Every model that answers in text, tool support or not. The kit offers all but the [excluded models](#excluded-models) |
 | `google` | `models.list` (`GET <base>/models`) with the key | `generateContent` models, `models/` prefix stripped; narrowed to `modelIds` when set. The kit offers plain text chat models only: not embedding, Imagen, Veo, TTS, Live (`-live-`), computer use or Deep Research models, and not the [excluded models](#excluded-models) |
 | `google-vertex` | None: an API key cannot list Agent Platform models | pi-ai's `google-vertex` catalogue plus `GEMINI_CHAT_MODELS`, narrowed to `modelIds` when set, always `source: "installed"`. The kit offers the same kinds of models as on `google` |
-| `kie` | `GET <responsesBaseUrl>/models` (Codex) and `GET <claudeBaseUrl>/v1/models` (Claude) with the key | Only ids with a package definition (`KIE_CHAT_MODELS`), matched across `.` and `-` spellings |
+| `kie` | `GET <responsesBaseUrl>/models` (Codex) and `GET <claudeBaseUrl>/v1/models` (Claude) with the key | Only ids with a package definition (`KIE_CHAT_MODELS`), matched across `.` and `-` spellings. The Gemini models are always offered: no KIE list names them |
 | `toapis` | `GET <host>/v1/models?type=text` with the key | Only ids with a package definition (`TOAPIS_CHAT_MODELS`) |
 
 - **Refresh.** While no live list has been read, `listModels()` and turns read it and wait for it. A live list is fresh for 30 minutes. After that, `listModels()` and turns answer from it at once and read it again in the background; the calls after that read see the new list, and no call waits for it. A failed refresh keeps the last good list (`source: "live"`), or uses the installed catalogue or definitions when no live list has been read (`source: "installed"`), and reports why in `refreshError`; the next attempt waits a minute. Concurrent callers share one refresh. Aborting `signal` makes `listModels()` reject with its reason; the refresh itself completes for the others.

@@ -1,5 +1,6 @@
 import { createProvider, type Model, type Provider, type ProviderHeaders, type ProviderStreams } from "@earendil-works/pi-ai";
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import { ANTHROPIC_MODELS } from "@earendil-works/pi-ai/providers/anthropic.models";
 import { OPENAI_MODELS } from "@earendil-works/pi-ai/providers/openai.models";
@@ -8,12 +9,17 @@ import { withDefaultFetch } from "./default-fetch.ts";
 import { assertModelRate, modelCostAt, type ModelRate } from "./rates.ts";
 import type { HelperImages } from "./images-provider.ts";
 
-export type ChatProtocol = "openai-responses" | "anthropic-messages";
+export type ChatProtocol = "openai-responses" | "anthropic-messages" | "openai-completions";
 
-/** A chat model offered through a provider's OpenAI Responses or Anthropic Messages endpoint. */
+/** A chat model offered through a provider's OpenAI Responses, Anthropic Messages or OpenAI Completions endpoint. */
 export interface ChatModelDefinition {
   id: string;
   protocol: ChatProtocol;
+  /**
+   * The model's own base URL, for a provider that names the model in the URL path (KIE's Gemini
+   * models on OpenAI Completions). Without it, the provider's base URL for the protocol is used.
+   */
+  baseUrl?: string | undefined;
   /**
    * pi-ai built-in catalogue id to copy capability metadata from, when the provider spells the
    * model id differently (for example KIE `gpt-5-6-sol` is pi-ai `gpt-5.6-sol`). Defaults to `id`.
@@ -21,6 +27,8 @@ export interface ChatModelDefinition {
   catalogueId?: string | undefined;
   name?: string | undefined;
   reasoning?: boolean | undefined;
+  /** Which thinking levels the model takes, and what each is sent as; `null` is a level it does not take (pi-ai's `thinkingLevelMap`). */
+  thinkingLevelMap?: Model<ChatProtocol>["thinkingLevelMap"] | undefined;
   input?: ("text" | "image")[] | undefined;
   contextWindow?: number | undefined;
   maxTokens?: number | undefined;
@@ -39,7 +47,8 @@ export interface ChatProviderInput {
   id: string;
   name: string;
   apiKey: string;
-  baseUrls: Record<ChatProtocol, string>;
+  /** The base URL per protocol. A protocol may be left out when every model on it has its own `baseUrl`. */
+  baseUrls: Partial<Record<ChatProtocol, string>>;
   models: readonly ChatModelDefinition[];
   /** How the Anthropic Messages endpoint authenticates. KIE requires `Authorization: Bearer`. */
   anthropicAuth: "x-api-key" | "bearer";
@@ -54,6 +63,7 @@ export interface ChatProviderInput {
 const DEFAULTS: Record<ChatProtocol, { contextWindow: number; maxTokens: number }> = {
   "openai-responses": { contextWindow: 400_000, maxTokens: 128_000 },
   "anthropic-messages": { contextWindow: 200_000, maxTokens: 64_000 },
+  "openai-completions": { contextWindow: 128_000, maxTokens: 16_384 },
 };
 
 export function createChatProvider(input: ChatProviderInput): Provider<ChatProtocol> {
@@ -66,15 +76,25 @@ export function createChatProvider(input: ChatProviderInput): Provider<ChatProto
     name: input.name,
     auth: explicitApiKeyAuth(input.name, input.apiKey),
     models: [
-      ...input.models.map((definition) => buildChatModel(input.id, input.baseUrls[definition.protocol], definition)),
+      ...input.models.map((definition) => buildChatModel(input.id, baseUrlOf(input, definition), definition)),
       ...(input.images?.models ?? []),
     ],
     api: {
       "openai-responses": wrap(openAIResponsesApi()),
+      "openai-completions": wrap(openAICompletionsApi()),
       "anthropic-messages": input.anthropicAuth === "bearer" ? bearerAuthStreams(anthropic) : anthropic,
     },
     ...(input.images ? { images: input.images.images } : {}),
   });
+}
+
+/** The model's own base URL, else the provider's for its protocol; a model with neither is a `TypeError`. */
+function baseUrlOf(input: ChatProviderInput, definition: ChatModelDefinition): string {
+  const baseUrl = definition.baseUrl ?? input.baseUrls[definition.protocol];
+  if (baseUrl === undefined) {
+    throw new TypeError(`${input.id} chat model ${definition.id} on ${definition.protocol} has no base URL: give the model a baseUrl or the provider one for the protocol.`);
+  }
+  return baseUrl;
 }
 
 /**
@@ -89,18 +109,19 @@ export function buildChatModel(provider: string, baseUrl: string, definition: Ch
   if (definition.rate !== undefined) assertModelRate(definition.rate, `${provider} chat model ${definition.id}`);
   const builtin = findBuiltinModel(definition);
   const defaults = DEFAULTS[definition.protocol];
+  const thinkingLevelMap = definition.thinkingLevelMap ?? builtin?.thinkingLevelMap;
   const model: Model<ChatProtocol> = {
     id: definition.id,
     name: definition.name ?? builtin?.name ?? definition.id,
     api: definition.protocol,
     provider,
-    baseUrl,
+    baseUrl: definition.baseUrl ?? baseUrl,
     reasoning: definition.reasoning ?? builtin?.reasoning ?? true,
     input: definition.input ?? builtin?.input ?? ["text", "image"],
     cost: modelCostAt(definition.rate, at),
     contextWindow: definition.contextWindow ?? builtin?.contextWindow ?? defaults.contextWindow,
     maxTokens: definition.maxTokens ?? builtin?.maxTokens ?? defaults.maxTokens,
-    ...(builtin?.thinkingLevelMap ? { thinkingLevelMap: builtin.thinkingLevelMap } : {}),
+    ...(thinkingLevelMap ? { thinkingLevelMap } : {}),
     ...(builtin?.inputLimits ? { inputLimits: builtin.inputLimits } : {}),
     ...(builtin?.compat ? { compat: withoutFallbackModels(builtin.compat) as NonNullable<Model<ChatProtocol>["compat"]> } : {}),
   };

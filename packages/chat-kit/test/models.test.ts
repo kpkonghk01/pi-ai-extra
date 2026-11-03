@@ -274,7 +274,7 @@ describe("turns resolve against the live list", () => {
     const snapshot = await registry.providers.get("kie")!.models.read();
     assert.deepEqual(
       [snapshot.source, snapshot.refreshError, ids(snapshot.models)],
-      ["live", "the model list was not read within 15 s", ["gpt-5-6-sol", "claude-haiku-4-5"]],
+      ["live", "the model list was not read within 15 s", ["gpt-5-6-sol", "claude-haiku-4-5", "gemini-3-8-flash", "gemini-3-6-flash", "gemini-4-argon"]],
       "the last good list stays in use",
     );
   });
@@ -317,7 +317,7 @@ describe("turns resolve against the live list", () => {
     t.mock.timers.tick(10_000 - LIST_READ_TIMEOUT_MS.cold);
     await settle();
     const snapshot = await registry.providers.get("kie")!.models.read();
-    assert.deepEqual([snapshot.refreshError, ids(snapshot.models)], [undefined, ["gpt-5-6-sol", "claude-opus-5-5"]], "the 10 s answer replaced the list");
+    assert.deepEqual([snapshot.refreshError, ids(snapshot.models)], [undefined, ["gpt-5-6-sol", "claude-opus-5-5", "gemini-3-8-flash", "gemini-3-6-flash", "gemini-4-argon"]], "the 10 s answer replaced the list");
     await assert.rejects(prepare(), (error: unknown) => error instanceof TurnFailure && error.code === "UNKNOWN_MODEL");
   });
 });
@@ -827,14 +827,14 @@ describe("Gemini chat-only filter", () => {
 });
 
 describe("KIE and ToAPIs live lists", () => {
-  it("keeps only the KIE definitions its two model lists name, matching dotted and dashed ids", async () => {
+  it("keeps only the Codex and Claude definitions KIE's two model lists name, matching dotted and dashed ids, and every Gemini model", async () => {
     const fake = createFakeFetch([
       { method: "GET", url: KIE_CODEX_MODELS_URL, respond: () => jsonResponse({ object: "list", data: [{ id: "gpt-5.6-sol" }, { id: "gpt-9" }] }) },
       { method: "GET", url: KIE_CLAUDE_MODELS_URL, respond: () => jsonResponse({ data: [{ id: "claude-opus-5-5" }, { id: "claude-sonnet-4-6" }] }) },
     ]);
     const chat = testKit(["kie"], fake.fetch);
     const models = byId((await chat.listModels())[0]);
-    assert.deepEqual([...models.keys()], ["gpt-5-6-sol", "claude-opus-5-5", "claude-sonnet-4-6"]);
+    assert.deepEqual([...models.keys()], ["gpt-5-6-sol", "claude-opus-5-5", "claude-sonnet-4-6", "gemini-3-8-flash", "gemini-3-6-flash", "gemini-4-argon"]);
     assert.deepEqual(
       fake.calls.map((call) => call.headers.authorization),
       ["Bearer kie-key", "Bearer kie-key"],

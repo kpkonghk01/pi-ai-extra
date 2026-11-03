@@ -322,6 +322,10 @@ describe("KIE catalogue and pi-ai adapters", () => {
       "claude-sonnet-4-6": [0.85, 4.275, 0.85, 1.0625],
       "claude-sonnet-4-5": [0.85, 4.275, 0.85, 1.0625],
       "claude-haiku-4-5": [0.275, 1.425, 0.275, 0.34375],
+      // Gemini publishes input and output only (45 / 225 credits; Argon 160 / 800), so the cache rates are derived.
+      "gemini-3-8-flash": [0.225, 1.125, 0.225, 0.28125],
+      "gemini-3-6-flash": [0.225, 1.125, 0.225, 0.28125],
+      "gemini-4-argon": [0.8, 4, 0.8, 1],
     });
   });
 
