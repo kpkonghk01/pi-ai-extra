@@ -3,89 +3,60 @@ import { createGoogleProvider } from '@hk01/pi-ai-extra-google/pi-ai';
 import { createKieProvider } from '@hk01/pi-ai-extra-kie/pi-ai';
 import type { ImageContent, TextContent } from '@earendil-works/pi-ai';
 import type { ImagePart } from '@hk01/pi-ai-extra-image-kit/server';
+import { DEFAULT_ANALYSIS_MODEL_ID, type AnalysisModelView } from '../src/types';
 
 /**
  * Analysis step models (/api/analyze-og): the text models that read the template, the source
  * images and the logo, and write the brief the image model follows. The user picks one in the
- * header. The server never changes that choice for them: no retry, no other model, no other
- * provider. The list is owned here: the browser sends a key, and an unknown key is refused.
+ * header. The server never runs the analysis on another one in their place: no retry, no other
+ * model, no other provider. The list is owned here: the browser sends a key, and an unknown key
+ * is refused.
  */
+
+type ChatProviders = Parameters<typeof createChatKit>[0]['providers'];
+
+/** Each provider once: its label, the server secret that holds its key, and its chat kit factory. */
+const PROVIDERS = {
+  kie: { label: 'KIE', secret: 'KIE_API_KEY', create: (apiKey: string) => createKieProvider({ apiKey }) },
+  google: { label: 'Google', secret: 'GEMINI_API_KEY', create: (apiKey: string) => createGoogleProvider({ apiKey }) },
+} satisfies Record<string, { label: string; secret: string; create: (apiKey: string) => ChatProviders[number] }>;
+
+type AnalysisProvider = keyof typeof PROVIDERS;
+
 export interface AnalysisModelOption {
   /** `provider:modelId`, stored in the browser's state. */
   key: string;
-  provider: 'kie' | 'google';
+  provider: AnalysisProvider;
   /** The model id the provider's chat kit entry knows. */
   modelId: string;
   label: string;
-  providerLabel: string;
-  /** The server secret that holds this provider's key. */
-  secret: 'KIE_API_KEY' | 'GEMINI_API_KEY';
 }
-
-/** What GET /api/analysis-models sends: never a key or a secret's value. */
-export interface AnalysisModelView {
-  key: string;
-  label: string;
-  providerLabel: string;
-  available: boolean;
-  reason?: string;
-}
-
-export const DEFAULT_ANALYSIS_MODEL = 'kie:gemini-3-8-flash';
-
-const KIE = { provider: 'kie', providerLabel: 'KIE', secret: 'KIE_API_KEY' } as const;
-const GOOGLE = { provider: 'google', providerLabel: 'Google', secret: 'GEMINI_API_KEY' } as const;
 
 const OPTIONS: readonly AnalysisModelOption[] = [
-  { key: 'kie:gemini-3-8-flash', modelId: 'gemini-3-8-flash', label: 'Gemini 3.8 Flash', ...KIE },
-  { key: 'kie:gemini-3-6-flash', modelId: 'gemini-3-6-flash', label: 'Gemini 3.6 Flash', ...KIE },
-  { key: 'kie:gemini-4-argon', modelId: 'gemini-4-argon', label: 'Gemini 4 Argon', ...KIE },
-  { key: 'kie:claude-sonnet-5-5', modelId: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', ...KIE },
-  { key: 'kie:gpt-6-luna', modelId: 'gpt-6-luna', label: 'GPT-6 Luna', ...KIE },
-  { key: 'google:gemini-3.8-flash', modelId: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', ...GOOGLE },
+  { key: 'kie:gemini-3-8-flash', provider: 'kie', modelId: 'gemini-3-8-flash', label: 'Gemini 3.8 Flash' },
+  { key: 'kie:gemini-3-6-flash', provider: 'kie', modelId: 'gemini-3-6-flash', label: 'Gemini 3.6 Flash' },
+  { key: 'kie:gemini-4-argon', provider: 'kie', modelId: 'gemini-4-argon', label: 'Gemini 4 Argon' },
+  { key: 'kie:claude-sonnet-5-5', provider: 'kie', modelId: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
+  { key: 'kie:gpt-6-luna', provider: 'kie', modelId: 'gpt-6-luna', label: 'GPT-6 Luna' },
+  { key: 'google:gemini-3.8-flash', provider: 'google', modelId: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
 ];
 
-export function findAnalysisModel(key: string): AnalysisModelOption | undefined {
-  return OPTIONS.find((option) => option.key === key);
-}
-
-/** The name of the secret the server lacks for this model, if it lacks one. */
-export function missingSecret(option: AnalysisModelOption, env: NodeJS.ProcessEnv): string | undefined {
-  return env[option.secret]?.trim() ? undefined : option.secret;
+function keyOf(provider: AnalysisProvider, env: NodeJS.ProcessEnv): string | undefined {
+  return env[PROVIDERS[provider].secret]?.trim() || undefined;
 }
 
 export function listAnalysisModels(env: NodeJS.ProcessEnv): AnalysisModelView[] {
   return OPTIONS.map((option) => {
-    const missing = missingSecret(option, env);
+    const { label: providerLabel, secret } = PROVIDERS[option.provider];
+    const available = keyOf(option.provider, env) !== undefined;
     return {
       key: option.key,
       label: option.label,
-      providerLabel: option.providerLabel,
-      available: missing === undefined,
-      ...(missing === undefined ? {} : { reason: `伺服器未設定 ${missing}` }),
+      providerLabel,
+      available,
+      ...(available ? {} : { reason: `伺服器未設定 ${secret}` }),
     };
   });
-}
-
-type ChatProviders = Parameters<typeof createChatKit>[0]['providers'];
-
-let kit: ReturnType<typeof createChatKit> | undefined;
-
-/**
- * The chat kit, with a provider for every key the server has. One kit for the process: the
- * secrets do not change while it runs. A request for a model whose key is missing is refused
- * before it gets here (`missingSecret`).
- */
-function chatKit(env: NodeJS.ProcessEnv) {
-  if (!kit) {
-    const providers: ChatProviders[number][] = [];
-    const kieKey = env.KIE_API_KEY?.trim();
-    if (kieKey) providers.push(createKieProvider({ apiKey: kieKey }));
-    const googleKey = env.GEMINI_API_KEY?.trim();
-    if (googleKey) providers.push(createGoogleProvider({ apiKey: googleKey }));
-    kit = createChatKit({ providers });
-  }
-  return kit;
 }
 
 export interface AnalysisErrorBody {
@@ -93,10 +64,10 @@ export interface AnalysisErrorBody {
   details: { appModelId?: string; provider?: string; model?: string; code?: string; status?: number };
 }
 
-/** A failed analysis, with the HTTP status and the body the route answers with. */
+/** A failed analysis: the HTTP status and the body the route answers with (the ErrorPanel shows the details). */
 export class AnalysisFailure extends Error {
-  status: number;
-  body: AnalysisErrorBody;
+  readonly status: number;
+  readonly body: AnalysisErrorBody;
   constructor(status: number, body: AnalysisErrorBody) {
     super(body.error);
     this.name = 'AnalysisFailure';
@@ -105,19 +76,51 @@ export class AnalysisFailure extends Error {
   }
 }
 
-/** The HTTP status for a chat kit error code; a provider failure is a bad gateway. */
-const STATUS_OF_CODE: Record<string, number> = {
-  INVALID_REQUEST: 400,
-  UNSUPPORTED: 400,
-  UNKNOWN_MODEL: 400,
-  CONTENT_BLOCKED: 422,
-};
+/** The model's part of a failure's details, in the shape the image routes use. */
+export function analysisDetails(option: AnalysisModelOption): AnalysisErrorBody['details'] {
+  return { appModelId: option.key, provider: option.provider, model: option.modelId };
+}
 
 /**
- * The chat kit puts a provider's JSON error body after the status (`[kie/model] 401: {"error":...}`).
- * The modal shows the message inside it instead of the whole body.
+ * The model the browser asked for (the default when it asked for none), or an `AnalysisFailure`:
+ * 400 for a key the server does not offer, 503 when the server lacks the provider's secret.
  */
-function readable(reported: string): string {
+export function resolveAnalysisModel(requested: unknown, env: NodeJS.ProcessEnv): AnalysisModelOption {
+  const key = requested === undefined ? DEFAULT_ANALYSIS_MODEL_ID : String(requested);
+  const option = OPTIONS.find((candidate) => candidate.key === key);
+  if (!option) {
+    throw new AnalysisFailure(400, { error: `未知的分析模型：${key}`, details: { code: 'unknown_analysis_model' } });
+  }
+  if (keyOf(option.provider, env) === undefined) {
+    const { label, secret } = PROVIDERS[option.provider];
+    throw new AnalysisFailure(503, {
+      error: `伺服器未設定 ${secret}，無法使用 ${label} 的 ${option.label}。請在設定中確認金鑰。`,
+      details: { ...analysisDetails(option), code: 'missing_key' },
+    });
+  }
+  return option;
+}
+
+let kit: { keys: string; chat: ReturnType<typeof createChatKit> } | undefined;
+
+/** The chat kit, with a provider for every key the server has; built again only when a key changes. */
+function chatKit(env: NodeJS.ProcessEnv) {
+  const providers = (Object.keys(PROVIDERS) as AnalysisProvider[]).flatMap((provider) => {
+    const apiKey = keyOf(provider, env);
+    return apiKey === undefined ? [] : [{ provider, apiKey }];
+  });
+  const keys = providers.map(({ provider, apiKey }) => `${provider}=${apiKey}`).join('\n');
+  if (kit?.keys !== keys) {
+    kit = { keys, chat: createChatKit({ providers: providers.map(({ provider, apiKey }) => PROVIDERS[provider].create(apiKey)) }) };
+  }
+  return kit.chat;
+}
+
+/**
+ * The chat kit's error text with a provider's JSON error body (`[kie/model] 401: {"error":...}`)
+ * replaced by the message inside it, so the modal shows a sentence rather than JSON.
+ */
+function providerErrorText(reported: string): string {
   const start = reported.indexOf('{');
   if (start > 0) {
     try {
@@ -136,49 +139,42 @@ function readable(reported: string): string {
  * The prompt's parts (text labels and inline images, in order) become one user message.
  * Returns the model's text, or undefined when the browser closed the request (nobody to answer).
  * Throws `AnalysisFailure` when the turn fails. Logs one line: the model, how long it took and
- * the cost the provider reported.
+ * the turn's cost, marked as reported by the provider or estimated.
  */
 export async function runAnalysis(
   option: AnalysisModelOption,
   parts: readonly ImagePart[],
   signal: AbortSignal,
+  env: NodeJS.ProcessEnv,
 ): Promise<string | undefined> {
-  const content = parts.flatMap((part): (TextContent | ImageContent)[] => {
-    if (part.text !== undefined) return [{ type: 'text', text: part.text }];
-    // An empty image would only make the provider fail; the label before it stays.
-    if (part.inlineData?.data) return [{ type: 'image', data: part.inlineData.data, mimeType: part.inlineData.mimeType }];
-    return [];
-  });
+  const content = parts.map((part): TextContent | ImageContent =>
+    part.inlineData
+      ? { type: 'image', data: part.inlineData.data, mimeType: part.inlineData.mimeType }
+      : { type: 'text', text: part.text ?? '' },
+  );
   const started = Date.now();
-  const message = await chatKit(process.env).completeSimple(
+  const message = await chatKit(env).completeSimple(
     { provider: option.provider, id: option.modelId },
     { messages: [{ role: 'user', content, timestamp: Date.now() }] },
     { maxRetries: 0, signal },
   );
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
-  const cost = message.chatKit.usage?.costUsd;
+  const usage = message.chatKit.usage;
+  const cost = usage?.costUsd === undefined ? 'n/a' : `US$${usage.costUsd} (${usage.costSource})`;
   const outcome = message.stopReason === 'error' ? `failed ${message.chatKit.error.code}` : message.stopReason;
-  console.log(`[analyze-og] ${option.key} ${outcome} ${seconds}s cost=${cost === undefined ? 'n/a' : `US$${cost}`}`);
+  console.log(`[analyze-og] ${option.key} ${outcome} ${seconds}s cost=${cost}`);
 
   if (message.stopReason === 'aborted') return undefined;
-  const details = { appModelId: option.key, provider: option.provider, model: option.modelId };
   if (message.stopReason === 'error') {
     const { code, status } = message.chatKit.error;
-    const reported = readable(message.errorMessage ?? `分析模型回報失敗 (${code})`);
+    const reported = providerErrorText(message.errorMessage ?? `分析模型回報失敗 (${code})`);
     const text = reported.includes('User location is not supported')
       ? '地區連線限制 (User location is not supported)。請確認伺服器環境部署位置或稍後重試。'
       : reported;
-    throw new AnalysisFailure(STATUS_OF_CODE[code] ?? 502, {
-      error: text,
-      details: { ...details, code, ...(status === undefined ? {} : { status }) },
-    });
-  }
-  const text = message.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('');
-  if (!text.trim()) {
     throw new AnalysisFailure(502, {
-      error: `${option.label} 沒有回覆文字（${message.stopReason}）。`,
-      details: { ...details, code: 'EMPTY_RESPONSE' },
+      error: text,
+      details: { ...analysisDetails(option), code, ...(status === undefined ? {} : { status }) },
     });
   }
-  return text;
+  return message.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('');
 }

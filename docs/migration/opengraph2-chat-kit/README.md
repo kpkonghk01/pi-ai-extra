@@ -42,7 +42,7 @@ KIE 的 Gemini 為甚麼走 Chat Completions，而不走 Gemini 原生 route：�
    - `https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.4.1/hk01-pi-ai-extra-chat-kit-0.4.1.tgz`
 2. 在 AI Studio 匯出整個 app 的 ZIP 備份。
 3. 依序貼上三段 prompt。**每段貼完，等 Gemini 回報 `npm run lint` 的結果，才貼下一段：**
-   1. [`gemini-prompt-part1.md`](gemini-prompt-part1.md)：升級 package，刪除三個多餘的 workaround。
+   1. [`gemini-prompt-part1.md`](gemini-prompt-part1.md)：升級 package，刪除 Nano Banana 2.1 的 `/v1beta` patch（`server/imageModels.ts` 的 fetch 改寫、`postinstall` 和 script 檔）。
    2. [`gemini-prompt-part2.md`](gemini-prompt-part2.md)：server，Analysis step 改用 chat-kit，新增 `/api/analysis-models`。
    3. [`gemini-prompt-part3.md`](gemini-prompt-part3.md)：UI，header 的分析模型選單、失敗 modal、刪除生圖的自動重試。
 4. 三段都完成後，按下面「驗證清單」測試。
@@ -58,14 +58,15 @@ KIE 的 Gemini 為甚麼走 Chat Completions，而不走 Gemini 原生 route：�
 
 ## 用戶會看到的改變
 
-- **Header 多了一個分析模型選單**，在圖片模型選單旁邊，樣式相同，按 provider 分組。預設是 KIE 的 Gemini 3.8 Flash。缺 key 的選項顯示為灰色並寫明原因。選擇存在瀏覽器，重新載入後保留；清單裏沒有的舊選擇會回到預設。
+- **Header 多了一個分析模型選單**，在圖片模型選單旁邊，樣式相同，按 provider 分組。預設是 KIE 的 Gemini 3.8 Flash。缺 key 的選項顯示為灰色並寫明原因。選擇存在瀏覽器，重新載入後保留；清單裏已下架的舊選擇會在下次分析前回到預設，用戶在選單上看得到（這不算替用戶改選擇，見 [CONTEXT.md](../../../CONTEXT.md) 的 Analysis step）。清單載入失敗時，選單位置顯示「分析模型清單載入失敗，按此重試」，跟圖片模型選單的做法一樣。
 - **分析失敗不再靜默略過。** 以前選 KIE 或 ToAPIs 圖片模型時，分析失敗只在 console 警告，然後用原始指令生圖；選 Google 圖片模型時則整個流程報錯。現在任何分析失敗都會：
   1. 在現有的錯誤面板顯示詳情（provider、model、code、status，可複製）；
   2. 彈出 modal，三個選擇：**重新分析**、**略過分析，用原始指令繼續生圖**、**取消**。
   - 不會自動重試，也不會改用其他模型。
+  - 分析模型有回覆、但沒有寫出生圖指令（剝掉 `TITLE_KEYWORD` 後是空的）時，也算失敗，同樣彈出 modal；不會再不聲不響地改用原始指令。
 - **生圖不再自動重試。** 以前網絡中斷時，同一張圖會自動再送一次；現在只送一次，失敗時由錯誤面板顯示。
 - **取消**也會中止進行中的分析請求。
-- 分析費用不在 UI 顯示，也不計入每張圖的 HKD 費用。server 每次分析印一行 log：模型、耗時、provider 報的費用（例如 `[analyze-og] kie:gemini-3-8-flash stop 19.4s cost=US$0.00135`），不印 prompt 或圖。
+- 分析費用不在 UI 顯示，也不計入每張圖的 HKD 費用。server 每次分析印一行 log：模型、耗時、費用和它的來源（例如 `[analyze-og] kie:gemini-3-8-flash stop 21.0s cost=US$0.00135 (provider)`；Google 的是 `(estimated)`，按公佈價推算），不印 prompt 或圖。
 
 ## 順手清理的三項
 
@@ -81,14 +82,14 @@ KIE 的 Gemini 為甚麼走 Chat Completions，而不走 Gemini 原生 route：�
 
 - **樣板、素材圖和 logo 會送到 KIE**（用 KIE 的分析模型時）。Slack 討論中已接受這個風險（這些圖片較少敏感資料）。
 - **Gemini 4 Argon 的回覆夾帶 `[cite: n]` 標記**，可能混進送給生圖模型的指令，所以它不是預設。
-- **KIE 的 Gemini 限時折扣會結束**：Gemini 4 Argon 在 2026-11-30，Gemini 3.8 / 3.6 Flash 在 2026-12-31，之後價格會變。app 不計分析費用，只在 server log 印 KIE 報的數字。
+- **KIE 的 Gemini 限時折扣會結束**：Gemini 4 Argon 在 2026-11-30，Gemini 3.8 / 3.6 Flash 在 2026-12-31 06:00 UTC，之後約貴一倍。kie 0.7.0 的 rate 已按日期寫入兩個時段，但 app 不計分析費用，server log 印的是 KIE 每次實際收的 credits。
 - **KIE 的 Gemini 沒有 live model list**，由 package 的定義直接提供。KIE 日後下架某個模型時，用戶會在分析失敗的 modal 看到 KIE 自己的錯誤訊息（例如 `The model is not supported`）。
 - **KIE 的 Gemini 不回報 `finish_reason`**，所以回覆在 token 上限被截斷時也會顯示為正常結束。
 - `npm run lint` 在 opengraph2 一向有一個既有的錯誤：`'ErrorBoundary' cannot be used as a JSX component`（`src/App.tsx`）。與本次遷移無關，沒有處理。
 
 ## 已驗證的範圍
 
-在 opengraph2 的副本上做的，不是在 AI Studio。副本是 2026-11-03 的 clone，沒有改動 clone 本身。kie 0.7.0 當時未發佈，副本用本機打包的 tarball。
+在 opengraph2 的副本上做的，不是在 AI Studio。副本是 2026-11-03 的 clone，沒有改動 clone 本身。kie 0.7.0 當時未發佈，副本用本機打包的 tarball（與將發佈的版本同一份程式碼）。
 
 - **逐字回放**：把三段 prompt 的 Markdown 文字（只用 Find / Replace 的內容）套用到全新的副本，28 個編輯每個 Find 都按文字所說的次數找到；結果的 7 個檔案和 `files/` 完全一致。
 - **Lint**：只有上面那個既有的錯誤，改動前的原版同樣有。
@@ -96,10 +97,13 @@ KIE 的 Gemini 為甚麼走 Chat Completions，而不走 Gemini 原生 route：�
 - **Server 實測**：用 `node dist/server.mjs` 實際呼叫，只給它 `KIE_API_KEY`。
   - `GET /api/analysis-models`：六個模型，預設 `kie:gemini-3-8-flash`，Google 的標示為「伺服器未設定 GEMINI_API_KEY」，回應不含 key。
   - 不認識的 key 回 400；缺 key 的 Google 回 503（`missing_key`）。
-  - 預設模型，4.4 MB 的圖（1 張樣板、3 張素材、1 個 logo，共 5 張）：回 200，兩次實測分別 19.4 秒和 39.9 秒（120 秒 timeout 之內），`TITLE_KEYWORD` 和 `REFINED_PROMPT` 解析正確。
+  - 不指定模型（server 用預設），4.4 MB 的圖（1 張樣板、3 張素材、1 個 logo，共 5 張）：回 200，三次實測分別 19.4、21.0 和 39.9 秒（120 秒 timeout 之內），`TITLE_KEYWORD` 和 `REFINED_PROMPT` 解析正確。
+  - 模型只回 `TITLE_KEYWORD`、沒寫出生圖指令：回 502（`EMPTY_RESPONSE`），不是 200。
   - Claude Sonnet 5.5：回 200。
   - 客戶端取消：server 中止了分析（log 為 `aborted`）。
   - 無效的 KIE key：回 502，訊息帶 KIE 的原文（`KIE code 401`），`details` 有 provider、model 和 status。
+  - KIE 那邊偶爾回 Cloudflare 502（實測時遇過一次）：同樣回 502 並進入失敗流程，沒有重試。
+- **chat-kit 實測**：三個 KIE Gemini 經 chat-kit 0.4.1 各讀一張 base64 JPEG，都成功，費用取自 KIE 報的 credits。
 
 **沒有驗證的**：UI 在瀏覽器的行為（要 Firebase 登入）。選單、失敗 modal 三個按鈕、取消、生圖不再重試，都只通過了 lint 和 build，沒有實際點過。Google 的分析模型也沒有實際呼叫（Gemini 3.8 Flash 在 Tier 2 本來就會回 429）。這兩項要在 AI Studio 測。
 
@@ -114,7 +118,6 @@ KIE 的 Gemini 為甚麼走 Chat Completions，而不走 Gemini 原生 route：�
   - 按「重新分析」：再呼叫一次，不多於一次。
   - 按「略過分析，用原始指令繼續生圖」：繼續生圖。
   - 按「取消」：整個流程停止，沒有圖片。
-  - modal 開著時按畫面上原有的「取消」按鈕：同樣停止。
 - [ ] 分析進行中按取消：流程停止，server log 看到 `aborted`。
 - [ ] 生圖途中斷網（或用瀏覽器開發工具的 offline）：只顯示錯誤，沒有第二次請求。
 - [ ] 深度編輯和 AI 智能擦除 Logo 照常運作（這次沒有改動這兩條 route）。

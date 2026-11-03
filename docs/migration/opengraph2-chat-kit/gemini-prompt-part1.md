@@ -2,7 +2,7 @@
 
 You are editing this Google AI Studio app, "OpenGraph2 圖片製作大師" (opengraph2). Its server already generates images through `@hk01/pi-ai-extra-image-kit`.
 
-This is **part 1 of 3**. The three parts move the app's *Analysis step* (`/api/analyze-og`: a text model reads the template, the source images and the logo, and writes the brief the image model follows) from the Gemini SDK to `@hk01/pi-ai-extra-chat-kit`, so that the user can pick which model runs it (KIE Gemini, KIE Claude, KIE GPT or Google Gemini). Part 1 upgrades the packages and removes three workarounds. Parts 2 and 3 follow in separate messages. **Do not start on them.** The app can generate images again after part 3 only; until then, do not test it by generating.
+This is **part 1 of 3**. The three parts move the app's *Analysis step* (`/api/analyze-og`: a text model reads the template, the source images and the logo, and writes the brief the image model follows) from the Gemini SDK to `@hk01/pi-ai-extra-chat-kit`, so that the user can pick which model runs it (KIE Gemini, KIE Claude, KIE GPT or Google Gemini). Part 1 upgrades the packages and removes the Nano Banana 2.1 `/v1beta` patch (a fetch rewrite in `server/imageModels.ts`, a `postinstall` script, and the script file). Parts 2 and 3 follow in separate messages. **Do not start on them.** The app can generate images again after part 3 only; until then, do not test it by generating.
 
 ## Rules
 

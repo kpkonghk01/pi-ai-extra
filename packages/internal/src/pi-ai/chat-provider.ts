@@ -76,7 +76,7 @@ export function createChatProvider(input: ChatProviderInput): Provider<ChatProto
     name: input.name,
     auth: explicitApiKeyAuth(input.name, input.apiKey),
     models: [
-      ...input.models.map((definition) => buildChatModel(input.id, baseUrlOf(input, definition), definition)),
+      ...input.models.map((definition) => buildChatModel(input.id, input.baseUrls[definition.protocol], definition)),
       ...(input.images?.models ?? []),
     ],
     api: {
@@ -88,25 +88,21 @@ export function createChatProvider(input: ChatProviderInput): Provider<ChatProto
   });
 }
 
-/** The model's own base URL, else the provider's for its protocol; a model with neither is a `TypeError`. */
-function baseUrlOf(input: ChatProviderInput, definition: ChatModelDefinition): string {
-  const baseUrl = definition.baseUrl ?? input.baseUrls[definition.protocol];
-  if (baseUrl === undefined) {
-    throw new TypeError(`${input.id} chat model ${definition.id} on ${definition.protocol} has no base URL: give the model a baseUrl or the provider one for the protocol.`);
-  }
-  return baseUrl;
-}
-
 /**
- * Builds a pi-ai model. Capability metadata (reasoning, context window, thinking
+ * Builds a pi-ai model at the definition's own base URL, else at `baseUrl`, the provider's for its
+ * protocol; a model with neither is a `TypeError`. Capability metadata (reasoning, context window, thinking
  * levels, request compatibility) is copied from pi-ai's built-in catalogue when the
  * id (or `catalogueId`) matches; Anthropic "allowed fallback models" are removed because
  * fallback is prohibited. Prices are never copied: `cost` is the period of `definition.rate` in
  * force at `at` (default now), or pi-ai's required placeholder when the model has no rate. An
  * invalid rate schedule throws a `TypeError`.
  */
-export function buildChatModel(provider: string, baseUrl: string, definition: ChatModelDefinition, at: Date = new Date()): Model<ChatProtocol> {
+export function buildChatModel(provider: string, baseUrl: string | undefined, definition: ChatModelDefinition, at: Date = new Date()): Model<ChatProtocol> {
   if (definition.rate !== undefined) assertModelRate(definition.rate, `${provider} chat model ${definition.id}`);
+  const modelBaseUrl = definition.baseUrl ?? baseUrl;
+  if (modelBaseUrl === undefined) {
+    throw new TypeError(`${provider} chat model ${definition.id} on ${definition.protocol} has no base URL: give the model a baseUrl or the provider one for the protocol.`);
+  }
   const builtin = findBuiltinModel(definition);
   const defaults = DEFAULTS[definition.protocol];
   const thinkingLevelMap = definition.thinkingLevelMap ?? builtin?.thinkingLevelMap;
@@ -115,7 +111,7 @@ export function buildChatModel(provider: string, baseUrl: string, definition: Ch
     name: definition.name ?? builtin?.name ?? definition.id,
     api: definition.protocol,
     provider,
-    baseUrl: definition.baseUrl ?? baseUrl,
+    baseUrl: modelBaseUrl,
     reasoning: definition.reasoning ?? builtin?.reasoning ?? true,
     input: definition.input ?? builtin?.input ?? ["text", "image"],
     cost: modelCostAt(definition.rate, at),

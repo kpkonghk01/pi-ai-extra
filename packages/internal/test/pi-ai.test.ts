@@ -190,8 +190,8 @@ describe("chat provider helpers", () => {
 });
 
 describe("chat models on the OpenAI Completions route", () => {
-  it("builds a model with its own base URL, its thinking levels and conservative limits", () => {
-    const model = buildChatModel("kie", "https://unused.example.com", {
+  it("builds a model at its own base URL rather than the provider's, with its thinking levels and conservative limits", () => {
+    const model = buildChatModel("kie", "https://provider.example.com/v1", {
       id: "gemini-3-8-flash",
       protocol: "openai-completions",
       baseUrl: "https://api.kie.ai/gemini-3-8-flash-openai/v1",

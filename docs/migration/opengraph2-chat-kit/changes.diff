@@ -89,7 +89,7 @@ index 9502622..0000000
 -  }
 -}
 diff --git a/server.ts b/server.ts
-index a0422a6..9ff353a 100644
+index a0422a6..bcd0226 100644
 --- a/server.ts
 +++ b/server.ts
 @@ -1,7 +1,6 @@
@@ -100,22 +100,21 @@ index a0422a6..9ff353a 100644
  import dotenv from "dotenv";
  import {
    handleImageRequest,
-@@ -10,6 +9,14 @@ import {
+@@ -10,6 +9,13 @@ import {
    type ImagePart,
  } from "@hk01/pi-ai-extra-image-kit/server";
  import { editImages, generateImages, imageClient } from "./server/imageModels";
 +import {
 +  AnalysisFailure,
-+  DEFAULT_ANALYSIS_MODEL,
-+  findAnalysisModel,
++  analysisDetails,
 +  listAnalysisModels,
-+  missingSecret,
++  resolveAnalysisModel,
 +  runAnalysis,
 +} from "./server/analysisModels";
  
  dotenv.config();
  
-@@ -52,14 +59,11 @@ async function startServer() {
+@@ -52,14 +58,11 @@ async function startServer() {
    app.use(express.json({ limit: "50mb" }));
    app.use(express.urlencoded({ limit: "50mb", extended: true }));
  
@@ -130,12 +129,12 @@ index a0422a6..9ff353a 100644
 +  // Analysis step models: the server owns the list, the browser sends a key (POST /api/analyze-og).
 +  app.get("/api/analysis-models", (_req, res) => {
 +    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-+    res.json({ defaultModel: DEFAULT_ANALYSIS_MODEL, models: listAnalysisModels(process.env) });
++    res.json({ models: listAnalysisModels(process.env) });
 +  });
  
    // Image models for one route-owned scope (?scope=generate | edit)
    app.get("/api/image-models", (req, res) => {
-@@ -72,19 +76,37 @@ async function startServer() {
+@@ -72,19 +75,24 @@ async function startServer() {
      }
    });
  
@@ -156,27 +155,14 @@ index a0422a6..9ff353a 100644
          sourceImages = [],
          brandLogo,
 -        reasoningModel = "gemini-3.8-flash"
-+        analysisModel = DEFAULT_ANALYSIS_MODEL,
++        analysisModel,
        } = req.body;
 -      const ai = getAI();
-+      const option = findAnalysisModel(String(analysisModel));
-+      if (!option) {
-+        return res.status(400).json({
-+          error: `未知的分析模型：${String(analysisModel)}`,
-+          details: { code: "unknown_analysis_model" },
-+        });
-+      }
-+      const missing = missingSecret(option, process.env);
-+      if (missing) {
-+        return res.status(503).json({
-+          error: `伺服器未設定 ${missing}，無法使用 ${option.providerLabel} 的 ${option.label}。請在設定中確認金鑰。`,
-+          details: { appModelId: option.key, provider: option.provider, model: option.modelId, code: "missing_key" },
-+        });
-+      }
++      const option = resolveAnalysisModel(analysisModel, process.env);
  
        const parts: ImagePart[] = [
          { text: promptText }
-@@ -108,13 +130,18 @@ async function startServer() {
+@@ -108,13 +116,12 @@ async function startServer() {
          parts.push(await resolveImagePart(brandLogo));
        }
  
@@ -186,13 +172,7 @@ index a0422a6..9ff353a 100644
 -        contents: [{ parts }],
 -      });
 +      // One attempt with the model the user picked: no retry, no other model, no other provider.
-+      let analysis: string | undefined;
-+      try {
-+        analysis = await runAnalysis(option, parts, abort.signal);
-+      } catch (failure) {
-+        if (failure instanceof AnalysisFailure) return res.status(failure.status).json(failure.body);
-+        throw failure;
-+      }
++      const analysis = await runAnalysis(option, parts, abort.signal, process.env);
 +      // undefined: the browser closed the request, so there is nobody to answer.
 +      if (analysis === undefined) return;
  
@@ -201,9 +181,21 @@ index a0422a6..9ff353a 100644
        let titleKeyword = "";
  
        // Extract TITLE_KEYWORD if generated
-@@ -131,13 +158,7 @@ async function startServer() {
+@@ -128,16 +135,19 @@ async function startServer() {
+         refinedPrompt = rpMatch[1].trim();
+       }
+ 
++      // No brief is a failure, not a silent switch to the original instruction: the user decides.
++      if (!refinedPrompt.trim()) {
++        throw new AnalysisFailure(502, {
++          error: `${option.label} 沒有寫出生圖指令。`,
++          details: { ...analysisDetails(option), code: "EMPTY_RESPONSE" },
++        });
++      }
++
        res.json({ refinedPrompt, titleKeyword });
      } catch (error: any) {
++      if (error instanceof AnalysisFailure) return res.status(error.status).json(error.body);
        console.error("API /api/analyze-og error:", error);
 -      const errMsg = error?.message || String(error);
 -      if (errMsg.includes("User location is not supported")) {
@@ -218,98 +210,69 @@ index a0422a6..9ff353a 100644
  
 diff --git a/server/analysisModels.ts b/server/analysisModels.ts
 new file mode 100644
-index 0000000..bb24533
+index 0000000..a5504b7
 --- /dev/null
 +++ b/server/analysisModels.ts
-@@ -0,0 +1,184 @@
+@@ -0,0 +1,180 @@
 +import { createChatKit } from '@hk01/pi-ai-extra-chat-kit';
 +import { createGoogleProvider } from '@hk01/pi-ai-extra-google/pi-ai';
 +import { createKieProvider } from '@hk01/pi-ai-extra-kie/pi-ai';
 +import type { ImageContent, TextContent } from '@earendil-works/pi-ai';
 +import type { ImagePart } from '@hk01/pi-ai-extra-image-kit/server';
++import { DEFAULT_ANALYSIS_MODEL_ID, type AnalysisModelView } from '../src/types';
 +
 +/**
 + * Analysis step models (/api/analyze-og): the text models that read the template, the source
 + * images and the logo, and write the brief the image model follows. The user picks one in the
-+ * header. The server never changes that choice for them: no retry, no other model, no other
-+ * provider. The list is owned here: the browser sends a key, and an unknown key is refused.
++ * header. The server never runs the analysis on another one in their place: no retry, no other
++ * model, no other provider. The list is owned here: the browser sends a key, and an unknown key
++ * is refused.
 + */
++
++type ChatProviders = Parameters<typeof createChatKit>[0]['providers'];
++
++/** Each provider once: its label, the server secret that holds its key, and its chat kit factory. */
++const PROVIDERS = {
++  kie: { label: 'KIE', secret: 'KIE_API_KEY', create: (apiKey: string) => createKieProvider({ apiKey }) },
++  google: { label: 'Google', secret: 'GEMINI_API_KEY', create: (apiKey: string) => createGoogleProvider({ apiKey }) },
++} satisfies Record<string, { label: string; secret: string; create: (apiKey: string) => ChatProviders[number] }>;
++
++type AnalysisProvider = keyof typeof PROVIDERS;
++
 +export interface AnalysisModelOption {
 +  /** `provider:modelId`, stored in the browser's state. */
 +  key: string;
-+  provider: 'kie' | 'google';
++  provider: AnalysisProvider;
 +  /** The model id the provider's chat kit entry knows. */
 +  modelId: string;
 +  label: string;
-+  providerLabel: string;
-+  /** The server secret that holds this provider's key. */
-+  secret: 'KIE_API_KEY' | 'GEMINI_API_KEY';
 +}
-+
-+/** What GET /api/analysis-models sends: never a key or a secret's value. */
-+export interface AnalysisModelView {
-+  key: string;
-+  label: string;
-+  providerLabel: string;
-+  available: boolean;
-+  reason?: string;
-+}
-+
-+export const DEFAULT_ANALYSIS_MODEL = 'kie:gemini-3-8-flash';
-+
-+const KIE = { provider: 'kie', providerLabel: 'KIE', secret: 'KIE_API_KEY' } as const;
-+const GOOGLE = { provider: 'google', providerLabel: 'Google', secret: 'GEMINI_API_KEY' } as const;
 +
 +const OPTIONS: readonly AnalysisModelOption[] = [
-+  { key: 'kie:gemini-3-8-flash', modelId: 'gemini-3-8-flash', label: 'Gemini 3.8 Flash', ...KIE },
-+  { key: 'kie:gemini-3-6-flash', modelId: 'gemini-3-6-flash', label: 'Gemini 3.6 Flash', ...KIE },
-+  { key: 'kie:gemini-4-argon', modelId: 'gemini-4-argon', label: 'Gemini 4 Argon', ...KIE },
-+  { key: 'kie:claude-sonnet-5-5', modelId: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', ...KIE },
-+  { key: 'kie:gpt-6-luna', modelId: 'gpt-6-luna', label: 'GPT-6 Luna', ...KIE },
-+  { key: 'google:gemini-3.8-flash', modelId: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', ...GOOGLE },
++  { key: 'kie:gemini-3-8-flash', provider: 'kie', modelId: 'gemini-3-8-flash', label: 'Gemini 3.8 Flash' },
++  { key: 'kie:gemini-3-6-flash', provider: 'kie', modelId: 'gemini-3-6-flash', label: 'Gemini 3.6 Flash' },
++  { key: 'kie:gemini-4-argon', provider: 'kie', modelId: 'gemini-4-argon', label: 'Gemini 4 Argon' },
++  { key: 'kie:claude-sonnet-5-5', provider: 'kie', modelId: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
++  { key: 'kie:gpt-6-luna', provider: 'kie', modelId: 'gpt-6-luna', label: 'GPT-6 Luna' },
++  { key: 'google:gemini-3.8-flash', provider: 'google', modelId: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
 +];
 +
-+export function findAnalysisModel(key: string): AnalysisModelOption | undefined {
-+  return OPTIONS.find((option) => option.key === key);
-+}
-+
-+/** The name of the secret the server lacks for this model, if it lacks one. */
-+export function missingSecret(option: AnalysisModelOption, env: NodeJS.ProcessEnv): string | undefined {
-+  return env[option.secret]?.trim() ? undefined : option.secret;
++function keyOf(provider: AnalysisProvider, env: NodeJS.ProcessEnv): string | undefined {
++  return env[PROVIDERS[provider].secret]?.trim() || undefined;
 +}
 +
 +export function listAnalysisModels(env: NodeJS.ProcessEnv): AnalysisModelView[] {
 +  return OPTIONS.map((option) => {
-+    const missing = missingSecret(option, env);
++    const { label: providerLabel, secret } = PROVIDERS[option.provider];
++    const available = keyOf(option.provider, env) !== undefined;
 +    return {
 +      key: option.key,
 +      label: option.label,
-+      providerLabel: option.providerLabel,
-+      available: missing === undefined,
-+      ...(missing === undefined ? {} : { reason: `伺服器未設定 ${missing}` }),
++      providerLabel,
++      available,
++      ...(available ? {} : { reason: `伺服器未設定 ${secret}` }),
 +    };
 +  });
-+}
-+
-+type ChatProviders = Parameters<typeof createChatKit>[0]['providers'];
-+
-+let kit: ReturnType<typeof createChatKit> | undefined;
-+
-+/**
-+ * The chat kit, with a provider for every key the server has. One kit for the process: the
-+ * secrets do not change while it runs. A request for a model whose key is missing is refused
-+ * before it gets here (`missingSecret`).
-+ */
-+function chatKit(env: NodeJS.ProcessEnv) {
-+  if (!kit) {
-+    const providers: ChatProviders[number][] = [];
-+    const kieKey = env.KIE_API_KEY?.trim();
-+    if (kieKey) providers.push(createKieProvider({ apiKey: kieKey }));
-+    const googleKey = env.GEMINI_API_KEY?.trim();
-+    if (googleKey) providers.push(createGoogleProvider({ apiKey: googleKey }));
-+    kit = createChatKit({ providers });
-+  }
-+  return kit;
 +}
 +
 +export interface AnalysisErrorBody {
@@ -317,10 +280,10 @@ index 0000000..bb24533
 +  details: { appModelId?: string; provider?: string; model?: string; code?: string; status?: number };
 +}
 +
-+/** A failed analysis, with the HTTP status and the body the route answers with. */
++/** A failed analysis: the HTTP status and the body the route answers with (the ErrorPanel shows the details). */
 +export class AnalysisFailure extends Error {
-+  status: number;
-+  body: AnalysisErrorBody;
++  readonly status: number;
++  readonly body: AnalysisErrorBody;
 +  constructor(status: number, body: AnalysisErrorBody) {
 +    super(body.error);
 +    this.name = 'AnalysisFailure';
@@ -329,19 +292,51 @@ index 0000000..bb24533
 +  }
 +}
 +
-+/** The HTTP status for a chat kit error code; a provider failure is a bad gateway. */
-+const STATUS_OF_CODE: Record<string, number> = {
-+  INVALID_REQUEST: 400,
-+  UNSUPPORTED: 400,
-+  UNKNOWN_MODEL: 400,
-+  CONTENT_BLOCKED: 422,
-+};
++/** The model's part of a failure's details, in the shape the image routes use. */
++export function analysisDetails(option: AnalysisModelOption): AnalysisErrorBody['details'] {
++  return { appModelId: option.key, provider: option.provider, model: option.modelId };
++}
 +
 +/**
-+ * The chat kit puts a provider's JSON error body after the status (`[kie/model] 401: {"error":...}`).
-+ * The modal shows the message inside it instead of the whole body.
++ * The model the browser asked for (the default when it asked for none), or an `AnalysisFailure`:
++ * 400 for a key the server does not offer, 503 when the server lacks the provider's secret.
 + */
-+function readable(reported: string): string {
++export function resolveAnalysisModel(requested: unknown, env: NodeJS.ProcessEnv): AnalysisModelOption {
++  const key = requested === undefined ? DEFAULT_ANALYSIS_MODEL_ID : String(requested);
++  const option = OPTIONS.find((candidate) => candidate.key === key);
++  if (!option) {
++    throw new AnalysisFailure(400, { error: `未知的分析模型：${key}`, details: { code: 'unknown_analysis_model' } });
++  }
++  if (keyOf(option.provider, env) === undefined) {
++    const { label, secret } = PROVIDERS[option.provider];
++    throw new AnalysisFailure(503, {
++      error: `伺服器未設定 ${secret}，無法使用 ${label} 的 ${option.label}。請在設定中確認金鑰。`,
++      details: { ...analysisDetails(option), code: 'missing_key' },
++    });
++  }
++  return option;
++}
++
++let kit: { keys: string; chat: ReturnType<typeof createChatKit> } | undefined;
++
++/** The chat kit, with a provider for every key the server has; built again only when a key changes. */
++function chatKit(env: NodeJS.ProcessEnv) {
++  const providers = (Object.keys(PROVIDERS) as AnalysisProvider[]).flatMap((provider) => {
++    const apiKey = keyOf(provider, env);
++    return apiKey === undefined ? [] : [{ provider, apiKey }];
++  });
++  const keys = providers.map(({ provider, apiKey }) => `${provider}=${apiKey}`).join('\n');
++  if (kit?.keys !== keys) {
++    kit = { keys, chat: createChatKit({ providers: providers.map(({ provider, apiKey }) => PROVIDERS[provider].create(apiKey)) }) };
++  }
++  return kit.chat;
++}
++
++/**
++ * The chat kit's error text with a provider's JSON error body (`[kie/model] 401: {"error":...}`)
++ * replaced by the message inside it, so the modal shows a sentence rather than JSON.
++ */
++function providerErrorText(reported: string): string {
 +  const start = reported.indexOf('{');
 +  if (start > 0) {
 +    try {
@@ -360,51 +355,44 @@ index 0000000..bb24533
 + * The prompt's parts (text labels and inline images, in order) become one user message.
 + * Returns the model's text, or undefined when the browser closed the request (nobody to answer).
 + * Throws `AnalysisFailure` when the turn fails. Logs one line: the model, how long it took and
-+ * the cost the provider reported.
++ * the turn's cost, marked as reported by the provider or estimated.
 + */
 +export async function runAnalysis(
 +  option: AnalysisModelOption,
 +  parts: readonly ImagePart[],
 +  signal: AbortSignal,
++  env: NodeJS.ProcessEnv,
 +): Promise<string | undefined> {
-+  const content = parts.flatMap((part): (TextContent | ImageContent)[] => {
-+    if (part.text !== undefined) return [{ type: 'text', text: part.text }];
-+    // An empty image would only make the provider fail; the label before it stays.
-+    if (part.inlineData?.data) return [{ type: 'image', data: part.inlineData.data, mimeType: part.inlineData.mimeType }];
-+    return [];
-+  });
++  const content = parts.map((part): TextContent | ImageContent =>
++    part.inlineData
++      ? { type: 'image', data: part.inlineData.data, mimeType: part.inlineData.mimeType }
++      : { type: 'text', text: part.text ?? '' },
++  );
 +  const started = Date.now();
-+  const message = await chatKit(process.env).completeSimple(
++  const message = await chatKit(env).completeSimple(
 +    { provider: option.provider, id: option.modelId },
 +    { messages: [{ role: 'user', content, timestamp: Date.now() }] },
 +    { maxRetries: 0, signal },
 +  );
 +  const seconds = ((Date.now() - started) / 1000).toFixed(1);
-+  const cost = message.chatKit.usage?.costUsd;
++  const usage = message.chatKit.usage;
++  const cost = usage?.costUsd === undefined ? 'n/a' : `US$${usage.costUsd} (${usage.costSource})`;
 +  const outcome = message.stopReason === 'error' ? `failed ${message.chatKit.error.code}` : message.stopReason;
-+  console.log(`[analyze-og] ${option.key} ${outcome} ${seconds}s cost=${cost === undefined ? 'n/a' : `US$${cost}`}`);
++  console.log(`[analyze-og] ${option.key} ${outcome} ${seconds}s cost=${cost}`);
 +
 +  if (message.stopReason === 'aborted') return undefined;
-+  const details = { appModelId: option.key, provider: option.provider, model: option.modelId };
 +  if (message.stopReason === 'error') {
 +    const { code, status } = message.chatKit.error;
-+    const reported = readable(message.errorMessage ?? `分析模型回報失敗 (${code})`);
++    const reported = providerErrorText(message.errorMessage ?? `分析模型回報失敗 (${code})`);
 +    const text = reported.includes('User location is not supported')
 +      ? '地區連線限制 (User location is not supported)。請確認伺服器環境部署位置或稍後重試。'
 +      : reported;
-+    throw new AnalysisFailure(STATUS_OF_CODE[code] ?? 502, {
-+      error: text,
-+      details: { ...details, code, ...(status === undefined ? {} : { status }) },
-+    });
-+  }
-+  const text = message.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('');
-+  if (!text.trim()) {
 +    throw new AnalysisFailure(502, {
-+      error: `${option.label} 沒有回覆文字（${message.stopReason}）。`,
-+      details: { ...details, code: 'EMPTY_RESPONSE' },
++      error: text,
++      details: { ...analysisDetails(option), code, ...(status === undefined ? {} : { status }) },
 +    });
 +  }
-+  return text;
++  return message.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('');
 +}
 diff --git a/server/imageModels.ts b/server/imageModels.ts
 index 801e0ff..6c2b1aa 100644
@@ -440,7 +428,7 @@ index 801e0ff..6c2b1aa 100644
  
  /** Route-owned clients. Each route uses its own scope; a request body never chooses one. */
 diff --git a/src/App.tsx b/src/App.tsx
-index 6285082..fd4f10d 100644
+index 6285082..4f66227 100644
 --- a/src/App.tsx
 +++ b/src/App.tsx
 @@ -22,8 +22,8 @@ import {
@@ -450,7 +438,7 @@ index 6285082..fd4f10d 100644
 -  WHITELIST, RATIO_OPTIONS, USD_TO_HKD, DEFAULT_IMAGE_MODEL_ID,
 -  OGImage, TokenLog, AppState, TemplatePresetSet,
 +  WHITELIST, RATIO_OPTIONS, USD_TO_HKD, DEFAULT_IMAGE_MODEL_ID, DEFAULT_ANALYSIS_MODEL_ID,
-+  OGImage, TokenLog, AppState, AnalysisModelView, TemplatePresetSet,
++  OGImage, TokenLog, AppState, AnalysisChoice, AnalysisModelView, TemplatePresetSet,
    BASIC_MANGA_STYLES, MANGA_ARTIST_STYLES
  } from './types';
  import {
@@ -474,13 +462,12 @@ index 6285082..fd4f10d 100644
        const templateImages = parsed.templateImages || (parsed.templateImage ? [parsed.templateImage] : []);
        const activeTemplateIndex = parsed.activeTemplateIndex !== undefined ? parsed.activeTemplateIndex : (templateImages.length > 0 ? 0 : null);
        
-@@ -380,6 +386,55 @@ function AppContent() {
+@@ -380,6 +386,49 @@ function AppContent() {
    /** Label for a stored model: canonical IDs show the model's label, older records their saved name. */
    const modelLabel = (id: string) => findImageModel(imageModels, id)?.label ?? id;
  
 +  // --- Analysis step models (server-owned list; the user's choice is never changed for them) ---
 +  const [analysisModels, setAnalysisModels] = useState<AnalysisModelView[]>([]);
-+  const [analysisModelsDefault, setAnalysisModelsDefault] = useState(DEFAULT_ANALYSIS_MODEL_ID);
 +  const [analysisModelsLoading, setAnalysisModelsLoading] = useState(true);
 +  const [analysisModelsFailed, setAnalysisModelsFailed] = useState(false);
 +  const loadAnalysisModels = async () => {
@@ -491,7 +478,6 @@ index 6285082..fd4f10d 100644
 +      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 +      const data = await res.json();
 +      setAnalysisModels(Array.isArray(data.models) ? data.models : []);
-+      if (typeof data.defaultModel === 'string') setAnalysisModelsDefault(data.defaultModel);
 +    } catch (err) {
 +      console.warn('[OG Maker] 無法載入分析模型清單：', err);
 +      setAnalysisModelsFailed(true);
@@ -503,34 +489,30 @@ index 6285082..fd4f10d 100644
 +  // A saved key the server no longer offers goes back to the default.
 +  useEffect(() => {
 +    if (analysisModels.length > 0 && !analysisModels.some(m => m.key === state.analysisModel)) {
-+      setState(prev => ({ ...prev, analysisModel: analysisModelsDefault }));
++      setState(prev => ({ ...prev, analysisModel: DEFAULT_ANALYSIS_MODEL_ID }));
 +    }
-+  }, [analysisModels, analysisModelsDefault, state.analysisModel]);
++  }, [analysisModels, state.analysisModel]);
 +  const analysisModelLabel = (key: string) => analysisModels.find(m => m.key === key)?.label ?? key;
 +
 +  // When the Analysis step fails, the user decides what happens next: run it again, go on with the
 +  // original instruction, or cancel. The generation waits here for that choice.
 +  const [analysisFailure, setAnalysisFailure] = useState<{ message: string; model: string } | null>(null);
-+  const analysisChoiceRef = useRef<((choice: 'retry' | 'skip' | 'cancel') => void) | null>(null);
-+  const askAnalysisChoice = (message: string, model: string, signal: AbortSignal) =>
-+    new Promise<'retry' | 'skip' | 'cancel'>((resolve) => {
-+      if (signal.aborted) return resolve('cancel');
-+      const finish = (choice: 'retry' | 'skip' | 'cancel') => {
-+        signal.removeEventListener('abort', onAbort);
++  const analysisChoiceRef = useRef<((choice: AnalysisChoice) => void) | null>(null);
++  // The modal covers the page, so its own buttons are the only way to answer it.
++  const askAnalysisChoice = (message: string, model: string) =>
++    new Promise<AnalysisChoice>((resolve) => {
++      analysisChoiceRef.current = (choice) => {
 +        analysisChoiceRef.current = null;
 +        setAnalysisFailure(null);
 +        resolve(choice);
 +      };
-+      const onAbort = () => finish('cancel');
-+      signal.addEventListener('abort', onAbort, { once: true });
-+      analysisChoiceRef.current = finish;
 +      setAnalysisFailure({ message, model });
 +    });
 +
    const displayedRatios = useMemo(() => {
      if (isRatiosExpanded) return RATIO_OPTIONS;
      const selected = RATIO_OPTIONS.filter(r => state.selectedRatios.includes(r.id));
-@@ -1482,7 +1537,7 @@ function AppContent() {
+@@ -1482,7 +1531,7 @@ function AppContent() {
          brandIsolationInstruction = `\n\n【品牌與 Logo 規範】：允許模型根據用戶提示詞需求靈活參考或使用相關品牌視覺元素與預訓練知識。`;
        }
  
@@ -539,7 +521,7 @@ index 6285082..fd4f10d 100644
        const promptText = `你是一位專業的平面設計與 Open Graph 視覺排版大師。你的核心任務是解構用戶提供的【樣板圖片 (Style Template)】，確保新生成的圖片能完美繼承樣板的品牌特徵、標題字體外觀風格、文字顏色與美術氛圍。
                
                核心強制任務：
-@@ -1519,38 +1574,48 @@ function AppContent() {
+@@ -1519,38 +1568,46 @@ function AppContent() {
                請輸出結構化、極其詳盡的佈局描述，重點涵蓋：Logo 位置、標題字體與色彩詳細規格、描邊限制規範、素材人物融合方式、以及整體美術風格調色。`;
  
        let refinedPrompt = state.prompt || '';
@@ -597,14 +579,12 @@ index 6285082..fd4f10d 100644
 +        } catch (err: any) {
 +          if (isAbort(err, abort.signal)) throw err;
 +          reportError(err, '分析樣板與指令', { model: state.analysisModel });
-+          setGenerationProgress('分析樣板與指令失敗，請選擇下一步...');
-+          const choice = await askAnalysisChoice(err?.message || String(err), state.analysisModel, abort.signal);
++          const choice = await askAnalysisChoice(err?.message || String(err), state.analysisModel);
 +          if (choice === 'cancel') {
 +            abort.abort();
 +            throw err;
            }
 +          if (choice === 'skip') break;
-+          setGenerationProgress('正在分析樣板與指令...');
          }
 -      } catch (err: any) {
 -        if (state.selectedModel.startsWith('google:')) {
@@ -614,7 +594,7 @@ index 6285082..fd4f10d 100644
        }
        
        setGenerationProgress('正在生成圖片...');
-@@ -1604,36 +1669,18 @@ function AppContent() {
+@@ -1604,36 +1661,18 @@ function AppContent() {
                  目標比例：${ratioId} (${ratio.label})
                  額外指令：${layoutPrompt}${dedicatedAdInstruction}`;
  
@@ -662,16 +642,20 @@ index 6285082..fd4f10d 100644
  
            let base64 = rawBase64;
            if (is300x250) {
-@@ -1769,7 +1816,7 @@ function AppContent() {
-       // The text analysis failed (image errors are reported per ratio above); 取消 is not an error.
+@@ -1766,10 +1805,10 @@ function AppContent() {
+       }
+ 
+     } catch (error) {
+-      // The text analysis failed (image errors are reported per ratio above); 取消 is not an error.
++      // An unexpected failure: the Analysis step and each ratio report their own failures above; 取消 is not an error.
        if (!isAbort(error, abort.signal)) {
          console.error('Generation error:', error);
 -        reportError(error, '分析樣板與指令', { model: 'gemini-3.8-flash' });
-+        reportError(error, '分析樣板與指令', { model: state.analysisModel });
++        reportError(error, '生成 OG 圖');
        }
      } finally {
        if (generateAbortRef.current === abort) generateAbortRef.current = null;
-@@ -1885,6 +1932,40 @@ function AppContent() {
+@@ -1885,6 +1924,40 @@ function AppContent() {
          </div>
  
          <div className="flex items-center gap-6">
@@ -712,7 +696,7 @@ index 6285082..fd4f10d 100644
            {/* Image model selector (grouped by provider; disabled options show the reason) */}
            <ImageModelSelector
              models={imageModels}
-@@ -3053,6 +3134,35 @@ function AppContent() {
+@@ -3053,6 +3126,35 @@ function AppContent() {
          </Button>
        </div>
  
@@ -748,7 +732,7 @@ index 6285082..fd4f10d 100644
        {/* Deep Editing Modal */}
        <AnimatePresence>
          {editingImage && (
-@@ -4205,6 +4315,7 @@ function AppContent() {
+@@ -4205,6 +4307,7 @@ function AppContent() {
                  prompt: '',
                  selectedRatios: ['16:9'],
                  selectedModel: DEFAULT_IMAGE_MODEL_ID,
@@ -757,7 +741,7 @@ index 6285082..fd4f10d 100644
                  temperature: 0.7,
                  isMangaMode: false,
 diff --git a/src/types.ts b/src/types.ts
-index 9828347..fcf6a07 100644
+index 9828347..dc4f677 100644
 --- a/src/types.ts
 +++ b/src/types.ts
 @@ -41,6 +41,8 @@ export interface AppState {
@@ -769,11 +753,11 @@ index 9828347..fcf6a07 100644
    layoutPrompts: Record<string, string>;
    temperature: number;
    
-@@ -83,6 +85,19 @@ export const RATIO_OPTIONS = [
+@@ -83,6 +85,22 @@ export const RATIO_OPTIONS = [
  /** Default image model. The model list itself comes from the server (GET /api/image-models). */
  export const DEFAULT_IMAGE_MODEL_ID = 'kie:nano-banana-2-1';
  
-+/** Default Analysis step model. The model list itself comes from the server (GET /api/analysis-models). */
++/** Default Analysis step model, used by the browser and the server. The list comes from the server (GET /api/analysis-models). */
 +export const DEFAULT_ANALYSIS_MODEL_ID = 'kie:gemini-3-8-flash';
 +
 +/** One entry of GET /api/analysis-models. */
@@ -785,6 +769,9 @@ index 9828347..fcf6a07 100644
 +  available: boolean;
 +  reason?: string;
 +}
++
++/** What the user chose after a failed Analysis step. */
++export type AnalysisChoice = 'retry' | 'skip' | 'cancel';
 +
  /** Converts the models' USD price estimates (server/imageModels.ts) to the HKD shown in the app. */
  export const USD_TO_HKD = 7.8;

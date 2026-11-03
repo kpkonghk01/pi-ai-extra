@@ -85,7 +85,7 @@ export const RATIO_OPTIONS = [
 /** Default image model. The model list itself comes from the server (GET /api/image-models). */
 export const DEFAULT_IMAGE_MODEL_ID = 'kie:nano-banana-2-1';
 
-/** Default Analysis step model. The model list itself comes from the server (GET /api/analysis-models). */
+/** Default Analysis step model, used by the browser and the server. The list comes from the server (GET /api/analysis-models). */
 export const DEFAULT_ANALYSIS_MODEL_ID = 'kie:gemini-3-8-flash';
 
 /** One entry of GET /api/analysis-models. */
@@ -97,6 +97,9 @@ export interface AnalysisModelView {
   available: boolean;
   reason?: string;
 }
+
+/** What the user chose after a failed Analysis step. */
+export type AnalysisChoice = 'retry' | 'skip' | 'cancel';
 
 /** Converts the models' USD price estimates (server/imageModels.ts) to the HKD shown in the app. */
 export const USD_TO_HKD = 7.8;

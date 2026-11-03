@@ -78,7 +78,7 @@ _Avoid_: fallback app, 後備方案 app
 
 ## Analysis step
 
-The first stage of a consumer application that works in two stages: a chat model reads the user's reference images and instructions and writes the brief that the image model then follows, such as opengraph2's template analysis. The user picks the provider and model that run it, and the application never changes that choice for them. When the step fails, the application reports the failure and the user decides whether to run it again or continue without it. It never skips the step silently.
+The first stage of a consumer application that works in two stages: a chat model reads the user's reference images and instructions and writes the brief that the image model then follows, such as opengraph2's template analysis. The user picks the provider and model that run it, and the application never runs it on another one in their place. A saved pick the application no longer offers goes back to the default before the next run, where the user can see it; that is not a change of their choice. When the step fails, the application reports the failure and the user decides whether to run it again or continue without it. It never skips the step silently.
 
 _Avoid_: fallback analysis, 後備分析
 

@@ -13,11 +13,11 @@ Before you start, check that part 2 is applied: the file `server/analysisModels.
 5. Copy the "Replace with" text exactly, including indentation. Do not reformat, rename or "improve" it.
 6. If something does not fit the steps, describe it in your final report instead of fixing it.
 
-## Step 3.1: Add the analysis model to the app state
+## Step 3.1: Add the analysis model to the app state, and its shared types
 
 File: `src/types.ts`
 
-Why: The user's choice is saved with the rest of the state, like the image model.
+Why: The user's choice is saved with the rest of the state, like the image model. The default and the list entry type are shared with the server (`server/analysisModels.ts` imports them).
 
 **Find** (edit 1 of 2): this text occurs exactly once in `src/types.ts`:
 
@@ -44,7 +44,7 @@ export const DEFAULT_IMAGE_MODEL_ID = 'kie:nano-banana-2-1';
 ```ts
 export const DEFAULT_IMAGE_MODEL_ID = 'kie:nano-banana-2-1';
 
-/** Default Analysis step model. The model list itself comes from the server (GET /api/analysis-models). */
+/** Default Analysis step model, used by the browser and the server. The list comes from the server (GET /api/analysis-models). */
 export const DEFAULT_ANALYSIS_MODEL_ID = 'kie:gemini-3-8-flash';
 
 /** One entry of GET /api/analysis-models. */
@@ -56,6 +56,9 @@ export interface AnalysisModelView {
   available: boolean;
   reason?: string;
 }
+
+/** What the user chose after a failed Analysis step. */
+export type AnalysisChoice = 'retry' | 'skip' | 'cancel';
 ```
 
 ## Step 3.2: Import the new type and default, and keep the choice in the state
@@ -75,7 +78,7 @@ Why: The analysis model is part of `AppState`: a default for a new state, and a 
 
 ```tsx
   WHITELIST, RATIO_OPTIONS, USD_TO_HKD, DEFAULT_IMAGE_MODEL_ID, DEFAULT_ANALYSIS_MODEL_ID,
-  OGImage, TokenLog, AppState, AnalysisModelView, TemplatePresetSet,
+  OGImage, TokenLog, AppState, AnalysisChoice, AnalysisModelView, TemplatePresetSet,
 ```
 
 **Find** (edit 2 of 4): this text occurs exactly once in `src/App.tsx`:
@@ -144,7 +147,6 @@ Why: The list comes from the server. The same place holds what the failure modal
 
   // --- Analysis step models (server-owned list; the user's choice is never changed for them) ---
   const [analysisModels, setAnalysisModels] = useState<AnalysisModelView[]>([]);
-  const [analysisModelsDefault, setAnalysisModelsDefault] = useState(DEFAULT_ANALYSIS_MODEL_ID);
   const [analysisModelsLoading, setAnalysisModelsLoading] = useState(true);
   const [analysisModelsFailed, setAnalysisModelsFailed] = useState(false);
   const loadAnalysisModels = async () => {
@@ -155,7 +157,6 @@ Why: The list comes from the server. The same place holds what the failure modal
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setAnalysisModels(Array.isArray(data.models) ? data.models : []);
-      if (typeof data.defaultModel === 'string') setAnalysisModelsDefault(data.defaultModel);
     } catch (err) {
       console.warn('[OG Maker] 無法載入分析模型清單：', err);
       setAnalysisModelsFailed(true);
@@ -167,27 +168,23 @@ Why: The list comes from the server. The same place holds what the failure modal
   // A saved key the server no longer offers goes back to the default.
   useEffect(() => {
     if (analysisModels.length > 0 && !analysisModels.some(m => m.key === state.analysisModel)) {
-      setState(prev => ({ ...prev, analysisModel: analysisModelsDefault }));
+      setState(prev => ({ ...prev, analysisModel: DEFAULT_ANALYSIS_MODEL_ID }));
     }
-  }, [analysisModels, analysisModelsDefault, state.analysisModel]);
+  }, [analysisModels, state.analysisModel]);
   const analysisModelLabel = (key: string) => analysisModels.find(m => m.key === key)?.label ?? key;
 
   // When the Analysis step fails, the user decides what happens next: run it again, go on with the
   // original instruction, or cancel. The generation waits here for that choice.
   const [analysisFailure, setAnalysisFailure] = useState<{ message: string; model: string } | null>(null);
-  const analysisChoiceRef = useRef<((choice: 'retry' | 'skip' | 'cancel') => void) | null>(null);
-  const askAnalysisChoice = (message: string, model: string, signal: AbortSignal) =>
-    new Promise<'retry' | 'skip' | 'cancel'>((resolve) => {
-      if (signal.aborted) return resolve('cancel');
-      const finish = (choice: 'retry' | 'skip' | 'cancel') => {
-        signal.removeEventListener('abort', onAbort);
+  const analysisChoiceRef = useRef<((choice: AnalysisChoice) => void) | null>(null);
+  // The modal covers the page, so its own buttons are the only way to answer it.
+  const askAnalysisChoice = (message: string, model: string) =>
+    new Promise<AnalysisChoice>((resolve) => {
+      analysisChoiceRef.current = (choice) => {
         analysisChoiceRef.current = null;
         setAnalysisFailure(null);
         resolve(choice);
       };
-      const onAbort = () => finish('cancel');
-      signal.addEventListener('abort', onAbort, { once: true });
-      analysisChoiceRef.current = finish;
       setAnalysisFailure({ message, model });
     });
 ```
@@ -338,14 +335,12 @@ Why: Today a failed analysis is skipped without telling the user (KIE and ToAPIs
         } catch (err: any) {
           if (isAbort(err, abort.signal)) throw err;
           reportError(err, '分析樣板與指令', { model: state.analysisModel });
-          setGenerationProgress('分析樣板與指令失敗，請選擇下一步...');
-          const choice = await askAnalysisChoice(err?.message || String(err), state.analysisModel, abort.signal);
+          const choice = await askAnalysisChoice(err?.message || String(err), state.analysisModel);
           if (choice === 'cancel') {
             abort.abort();
             throw err;
           }
           if (choice === 'skip') break;
-          setGenerationProgress('正在分析樣板與指令...');
         }
       }
 ```
@@ -353,13 +348,19 @@ Why: Today a failed analysis is skipped without telling the user (KIE and ToAPIs
 **Find** (edit 3 of 3): this text occurs exactly once in `src/App.tsx`:
 
 ```tsx
+      // The text analysis failed (image errors are reported per ratio above); 取消 is not an error.
+      if (!isAbort(error, abort.signal)) {
+        console.error('Generation error:', error);
         reportError(error, '分析樣板與指令', { model: 'gemini-3.8-flash' });
 ```
 
 **Replace with**:
 
 ```tsx
-        reportError(error, '分析樣板與指令', { model: state.analysisModel });
+      // An unexpected failure: the Analysis step and each ratio report their own failures above; 取消 is not an error.
+      if (!isAbort(error, abort.signal)) {
+        console.error('Generation error:', error);
+        reportError(error, '生成 OG 圖');
 ```
 
 ## Step 3.6: Remove the image generation retry

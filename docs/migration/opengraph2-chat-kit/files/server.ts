@@ -11,10 +11,9 @@ import {
 import { editImages, generateImages, imageClient } from "./server/imageModels";
 import {
   AnalysisFailure,
-  DEFAULT_ANALYSIS_MODEL,
-  findAnalysisModel,
+  analysisDetails,
   listAnalysisModels,
-  missingSecret,
+  resolveAnalysisModel,
   runAnalysis,
 } from "./server/analysisModels";
 
@@ -62,7 +61,7 @@ async function startServer() {
   // Analysis step models: the server owns the list, the browser sends a key (POST /api/analyze-og).
   app.get("/api/analysis-models", (_req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    res.json({ defaultModel: DEFAULT_ANALYSIS_MODEL, models: listAnalysisModels(process.env) });
+    res.json({ models: listAnalysisModels(process.env) });
   });
 
   // Image models for one route-owned scope (?scope=generate | edit)
@@ -91,22 +90,9 @@ async function startServer() {
         activeTemplate,
         sourceImages = [],
         brandLogo,
-        analysisModel = DEFAULT_ANALYSIS_MODEL,
+        analysisModel,
       } = req.body;
-      const option = findAnalysisModel(String(analysisModel));
-      if (!option) {
-        return res.status(400).json({
-          error: `未知的分析模型：${String(analysisModel)}`,
-          details: { code: "unknown_analysis_model" },
-        });
-      }
-      const missing = missingSecret(option, process.env);
-      if (missing) {
-        return res.status(503).json({
-          error: `伺服器未設定 ${missing}，無法使用 ${option.providerLabel} 的 ${option.label}。請在設定中確認金鑰。`,
-          details: { appModelId: option.key, provider: option.provider, model: option.modelId, code: "missing_key" },
-        });
-      }
+      const option = resolveAnalysisModel(analysisModel, process.env);
 
       const parts: ImagePart[] = [
         { text: promptText }
@@ -131,13 +117,7 @@ async function startServer() {
       }
 
       // One attempt with the model the user picked: no retry, no other model, no other provider.
-      let analysis: string | undefined;
-      try {
-        analysis = await runAnalysis(option, parts, abort.signal);
-      } catch (failure) {
-        if (failure instanceof AnalysisFailure) return res.status(failure.status).json(failure.body);
-        throw failure;
-      }
+      const analysis = await runAnalysis(option, parts, abort.signal, process.env);
       // undefined: the browser closed the request, so there is nobody to answer.
       if (analysis === undefined) return;
 
@@ -155,8 +135,17 @@ async function startServer() {
         refinedPrompt = rpMatch[1].trim();
       }
 
+      // No brief is a failure, not a silent switch to the original instruction: the user decides.
+      if (!refinedPrompt.trim()) {
+        throw new AnalysisFailure(502, {
+          error: `${option.label} 沒有寫出生圖指令。`,
+          details: { ...analysisDetails(option), code: "EMPTY_RESPONSE" },
+        });
+      }
+
       res.json({ refinedPrompt, titleKeyword });
     } catch (error: any) {
+      if (error instanceof AnalysisFailure) return res.status(error.status).json(error.body);
       console.error("API /api/analyze-og error:", error);
       res.status(500).json({ error: error?.message || String(error) });
     }

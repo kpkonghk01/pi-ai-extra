@@ -20,8 +20,7 @@ import {
 } from "../constants.ts";
 import { generateKieImage, type KieImageRequest, type KieImageSettings } from "../generate.ts";
 import { KIE_IMAGE_MODELS } from "../models.ts";
-import { kieEnvelopeStreams } from "./envelope-fetch.ts";
-import { kieFinishReasonStreams } from "./finish-reason-fetch.ts";
+import { kieChatStreams } from "./chat-streams.ts";
 import { fetchKieModels } from "./live-models.ts";
 
 export type {
@@ -42,11 +41,21 @@ export type {
  * 1M tokens (`KIE_USD_PER_CREDIT`). KIE publishes no dates, so each schedule is one period. An
  * unpublished cache rate is left out; pricing derives it (`toModelCost`).
  *
- * The Gemini rates are as of 2026-11-03, from the same listing (`interfaceType` `chat`): 45 / 225
- * credits per 1M input / output tokens for Gemini 3.8 and 3.6 Flash, and 160 / 800 for Gemini 4
- * Argon. They are limited-time discounts (3.8 and 3.6 Flash until 2026-12-31 06:00 UTC, 4 Argon
- * until 2026-11-30, per the model pages) and KIE publishes no price for after them, so each
- * schedule is one period at today's price. A turn's cost is KIE's own charge either way.
+ * The Gemini rates are as of 2026-11-03, from the same listing (`interfaceType` `chat`) and the
+ * model pages (kie.ai/gemini-3-8-flash, /gemini-3-6-flash, /gemini-4-argon). Each is a
+ * limited-time price, so each schedule has a second period:
+ *
+ * - Gemini 3.8 and 3.6 Flash: 45 / 225 credits per 1M input / output tokens, "50% OFF until Dec
+ *   31, 2026 at 06:00 UTC (prices shown are discounted)", so 90 / 450 after it. That matches the
+ *   pages' "70% below official pricing" against Google's $1.50 / $7.50 from 2027. A period starts
+ *   at 00:00 UTC, so the second one starts on 2026-12-31.
+ * - Gemini 4 Argon: 160 / 800 credits, "60% below official pricing", which "follow Google's
+ *   promotional pricing and are valid until Nov 30, 2026". KIE publishes no later price. Google's
+ *   pricing page doubles Argon from December 1, 2026 ($2 / $10 to $4 / $20), so the second period
+ *   is KIE's 60% below that: 320 / 1600 credits. It is derived from KIE's stated discount, not
+ *   published by KIE; check it against kie.ai/pricing after the change.
+ *
+ * A turn's cost is KIE's own charge either way (`reportedCostUsd`).
  */
 
 /**
@@ -91,21 +100,33 @@ function claude(id: string, inputCredits: number, outputCredits: number): ChatMo
 /**
  * A Gemini model on OpenAI Chat Completions, not on KIE's Gemini-native route (ADR 0010). KIE names
  * the model in the URL path (`/<id>-openai/v1/chat/completions`), so `createKieProvider` gives each
- * one its own base URL. Limits are pi-ai's Gemini catalogue values for 3.8 and 3.6 Flash (1,048,576
+ * one its own base URL (`/<id>-openai/v1`). Limits are pi-ai's Gemini catalogue values for 3.8 and 3.6 Flash (1,048,576
  * context, 65,536 output); KIE publishes a 1M budget for 4 Argon and no output limit, so it takes the
- * Flash value. KIE's `reasoning_effort` takes `low` and `high` only.
+ * Flash value. KIE's `reasoning_effort` takes `low` and `high` only; pi-ai rounds another level
+ * up to the next one KIE takes (`medium` to `high`), and sends none when the turn sets no level.
  */
-function gemini(id: string, name: string, credits: { input: number; output: number }): ChatModelDefinition {
+function gemini(
+  id: string,
+  name: string,
+  credits: { input: number; output: number },
+  later: { from: string; input: number; output: number },
+): ChatModelDefinition {
   return {
     id,
     name,
     protocol: "openai-completions",
+    baseUrl: `${KIE_API_BASE_URL}/${id}-openai/v1`,
     reasoning: true,
     thinkingLevelMap: { off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: null },
     input: ["text", "image"],
     contextWindow: 1_048_576,
     maxTokens: 65_536,
-    rate: singleRate({ input: usd(credits.input), output: usd(credits.output) }),
+    rate: {
+      periods: [
+        { input: usd(credits.input), output: usd(credits.output) },
+        { from: later.from, input: usd(later.input), output: usd(later.output) },
+      ],
+    },
   };
 }
 
@@ -146,9 +167,9 @@ const CLAUDE_MODELS: readonly ChatModelDefinition[] = [
  * they are offered from these definitions, and a model KIE withdraws fails with KIE's own message.
  */
 const GEMINI_MODELS: readonly ChatModelDefinition[] = [
-  gemini("gemini-3-8-flash", "Gemini 3.8 Flash", { input: 45, output: 225 }),
-  gemini("gemini-3-6-flash", "Gemini 3.6 Flash", { input: 45, output: 225 }),
-  gemini("gemini-4-argon", "Gemini 4 Argon", { input: 160, output: 800 }),
+  gemini("gemini-3-8-flash", "Gemini 3.8 Flash", { input: 45, output: 225 }, { from: "2026-12-31", input: 90, output: 450 }),
+  gemini("gemini-3-6-flash", "Gemini 3.6 Flash", { input: 45, output: 225 }, { from: "2026-12-31", input: 90, output: 450 }),
+  gemini("gemini-4-argon", "Gemini 4 Argon", { input: 160, output: 800 }, { from: "2026-12-01", input: 320, output: 1600 }),
 ];
 
 /**
@@ -167,8 +188,6 @@ export interface KieProviderOptions {
   responsesBaseUrl?: string | undefined;
   /** Claude (Anthropic Messages) base URL; pi-ai appends `/v1/messages`. Default `https://api.kie.ai/anthropic`. */
   claudeBaseUrl?: string | undefined;
-  /** KIE host for the Gemini models; each model's own path (`/<id>-openai/v1`) is added. Default `https://api.kie.ai`. */
-  geminiBaseUrl?: string | undefined;
   /** Image helper settings (`apiBaseUrl`, `uploadBaseUrl`, `poll`) applied to every image request. */
   imageSettings?: KieImageSettings | undefined;
   /** Custom fetch for chat requests and the live model list, for tests or instrumentation. A request's own `fetch` wins. */
@@ -196,12 +215,7 @@ export interface KieProviderOptions {
  * and are validated strictly.
  */
 export function createKieProvider(options: KieProviderOptions): ChatProvider<ChatProtocol> {
-  const geminiHost = (options.geminiBaseUrl ?? KIE_API_BASE_URL).replace(/\/+$/, "");
-  const definitions = (options.models ?? KIE_CHAT_MODELS).map((definition) =>
-    definition.protocol === "openai-completions" && definition.baseUrl === undefined
-      ? { ...definition, baseUrl: `${geminiHost}/${definition.id}-openai/v1` }
-      : definition,
-  );
+  const definitions = options.models ?? KIE_CHAT_MODELS;
   const responsesBaseUrl = options.responsesBaseUrl ?? KIE_RESPONSES_BASE_URL;
   const claudeBaseUrl = options.claudeBaseUrl ?? KIE_CLAUDE_BASE_URL;
   const base = createChatProvider({
@@ -211,7 +225,7 @@ export function createKieProvider(options: KieProviderOptions): ChatProvider<Cha
     baseUrls: { "openai-responses": responsesBaseUrl, "anthropic-messages": claudeBaseUrl },
     models: definitions,
     anthropicAuth: "bearer",
-    wrapStreams: (streams) => kieEnvelopeStreams(kieFinishReasonStreams(streams)),
+    wrapStreams: kieChatStreams,
     fetch: options.fetch,
     images: helperImages({
       provider: KIE_PROVIDER_ID,

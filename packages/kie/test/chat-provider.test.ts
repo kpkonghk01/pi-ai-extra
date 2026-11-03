@@ -83,8 +83,20 @@ describe("KIE chat provider", () => {
       assert.equal(model.contextWindow, 1_048_576, model.id);
       assert.equal(model.provider, "kie");
     }
-    const proxied = createKieProvider({ apiKey: "k", geminiBaseUrl: "https://proxy.example.com" });
-    assert.equal(proxied.getModels().find((model) => model.id === "gemini-3-8-flash")?.baseUrl, "https://proxy.example.com/gemini-3-8-flash-openai/v1");
+  });
+
+  it("prices each Gemini model at KIE's discount until the announced day, then at the regular price", () => {
+    const periods = (id: string) => KIE_CHAT_MODELS.find((model) => model.id === id)?.rate?.periods;
+    for (const id of ["gemini-3-8-flash", "gemini-3-6-flash"]) {
+      assert.deepEqual(periods(id), [{ input: 0.225, output: 1.125 }, { from: "2026-12-31", input: 0.45, output: 2.25 }], id);
+    }
+    assert.deepEqual(periods("gemini-4-argon"), [{ input: 0.8, output: 4 }, { from: "2026-12-01", input: 1.6, output: 8 }]);
+  });
+
+  it("serves a Gemini definition at its own base URL, and refuses one on Chat Completions without a base URL", () => {
+    const own = { id: "gemini-3-8-flash", protocol: "openai-completions" as const, baseUrl: "https://proxy.example.com/gemini-3-8-flash-openai/v1" };
+    assert.equal(createKieProvider({ apiKey: "k", models: [own] }).getModels()[0]?.baseUrl, own.baseUrl);
+    assert.throws(() => createKieProvider({ apiKey: "k", models: [{ id: "gemini-9", protocol: "openai-completions" }] }), /gemini-9 on openai-completions has no base URL/);
   });
 
   it("runs a Gemini turn: KIE's stream has no finish_reason, and the turn still ends as a normal stop", async () => {

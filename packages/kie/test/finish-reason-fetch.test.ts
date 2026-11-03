@@ -52,6 +52,13 @@ describe("kieFinishReasonFetch", () => {
     assert.ok(!text.includes("[DONE]"));
   });
 
+  it("ends a last event that lacks its blank line before adding the chunk, so the two stay separate events", async () => {
+    const text = await (await kieFinishReasonFetch(streamOf([delta("pong") + usage.trimEnd() + "\n"]))(COMPLETIONS_URL)).text();
+    assert.deepEqual(finishReasons(text), ["stop"]);
+    assert.equal(dataLines(text).length, 3);
+    assert.ok(text.split("\n\n").every((event) => event.split("\n").filter((line) => line.startsWith("data:")).length <= 1));
+  });
+
   it("leaves a stream that has its finish reason untouched", async () => {
     const finish = event({ choices: [{ delta: {}, finish_reason: "length", index: 0 }], created: 7, id: "chatcmpl-2", object: "chat.completion.chunk" });
     const original = delta("po") + finish + usage + event("[DONE]");

@@ -1,5 +1,4 @@
-import type { FetchFunction, ProviderStreams } from "@earendil-works/pi-ai";
-import { fetchWrappedStreams } from "./envelope-fetch.ts";
+import type { FetchFunction } from "@earendil-works/pi-ai";
 
 /**
  * KIE's Gemini models on OpenAI Chat Completions (ADR 0010) stream their content, then a usage
@@ -25,10 +24,6 @@ export function kieFinishReasonFetch(base: FetchFunction): FetchFunction {
   };
 }
 
-export function kieFinishReasonStreams(inner: ProviderStreams): ProviderStreams {
-  return fetchWrappedStreams(inner, kieFinishReasonFetch);
-}
-
 function isChatCompletionsStream(input: Parameters<FetchFunction>[0], response: Response): boolean {
   const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   let path: string;
@@ -40,7 +35,8 @@ function isChatCompletionsStream(input: Parameters<FetchFunction>[0], response: 
   return path.endsWith("/chat/completions") && (response.headers.get("content-type") ?? "").includes("text/event-stream");
 }
 
-interface Seen {
+/** What the stream has carried so far. */
+interface StreamFacts {
   content: boolean;
   finish: boolean;
   done: boolean;
@@ -54,7 +50,7 @@ const EVENT_END = /(\r?\n\r?\n)/;
 function addMissingFinishReason(): TransformStream<Uint8Array, Uint8Array> {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
-  const seen: Seen = { content: false, finish: false, done: false, id: undefined, created: undefined };
+  const seen: StreamFacts = { content: false, finish: false, done: false, id: undefined, created: undefined };
   let pending = "";
 
   const missing = () => seen.content && !seen.finish;
@@ -77,7 +73,7 @@ function addMissingFinishReason(): TransformStream<Uint8Array, Uint8Array> {
       // `parts` alternates an event and the blank line that ended it.
       for (let index = 0; index < parts.length; index += 2) {
         const event = parts[index] ?? "";
-        inspect(event, seen);
+        noteEvent(event, seen);
         if (seen.done && missing()) controller.enqueue(stopChunk());
         controller.enqueue(encoder.encode(event + (parts[index + 1] ?? "")));
       }
@@ -85,10 +81,10 @@ function addMissingFinishReason(): TransformStream<Uint8Array, Uint8Array> {
     flush(controller) {
       pending += decoder.decode();
       if (pending !== "") {
-        inspect(pending, seen);
+        noteEvent(pending, seen);
         if (seen.done && missing()) controller.enqueue(stopChunk());
-        controller.enqueue(encoder.encode(pending));
-        if (!/\n$/.test(pending)) controller.enqueue(encoder.encode("\n\n"));
+        // The last event lacks its blank line: end it, so an added chunk does not join it.
+        controller.enqueue(encoder.encode(pending + (/\r?\n$/.test(pending) ? "\n" : "\n\n")));
       }
       if (!seen.done && missing()) controller.enqueue(stopChunk());
     },
@@ -96,7 +92,7 @@ function addMissingFinishReason(): TransformStream<Uint8Array, Uint8Array> {
 }
 
 /** Notes what one SSE event carries: the end marker, content, a finish reason, the completion's id. */
-function inspect(event: string, seen: Seen): void {
+function noteEvent(event: string, seen: StreamFacts): void {
   for (const line of event.split(/\r?\n/)) {
     if (!line.startsWith("data:")) continue;
     const data = line.slice(5).trim();

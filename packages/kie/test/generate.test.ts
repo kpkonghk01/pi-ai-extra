@@ -298,7 +298,9 @@ describe("KIE catalogue and pi-ai adapters", () => {
     assert.equal(byId.get("gpt-5-6-sol")?.thinkingLevelMap?.max, "max");
   });
 
-  it("prices chat models from KIE's published credits (1 credit = $0.005 per 1M tokens)", () => {
+  it("prices chat models from KIE's published credits (1 credit = $0.005 per 1M tokens)", (t) => {
+    // Model.cost is the period in force when the provider is created; the Gemini discounts end later.
+    t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-03T00:00:00Z") });
     assertRateTable(createKieProvider({ apiKey: "kie-key" }).getModels(), {
       // id: [input, output, cacheRead, cacheWrite] in USD per 1M tokens. Codex cache rates are
       // published; Claude's are derived by the cache fill-in rule (see toModelCost).

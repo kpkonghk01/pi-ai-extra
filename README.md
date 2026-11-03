@@ -33,7 +33,7 @@ Non-negotiable behaviour (see [ADR 0003](docs/adr/0003-explicit-provider-executi
 Install the exact release asset on the server (build) side and pin the full URL:
 
 ```sh
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.6.0/hk01-pi-ai-extra-kie-0.6.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.7.0/hk01-pi-ai-extra-kie-0.7.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.6.0/hk01-pi-ai-extra-toapis-0.6.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.8.0/hk01-pi-ai-extra-google-0.8.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.1.0/hk01-pi-ai-extra-openrouter-0.1.0.tgz   # optional, chat only, needs pi-ai
@@ -224,7 +224,7 @@ const rate: ModelRate = {
 - pi-ai's `Model.cost` is required, so each provider fills it from the period in force when the provider is created, with the derived cache rates and the large-prompt tier as a pi-ai cost tier. pi-ai's `message.usage.cost` is pi-ai's calculation from token counts and that period, not a provider-reported charge. A model with no rate carries zeros in `Model.cost`, which are not a rate. The [chat kit](#usage-and-cost) prices each turn from the schedule itself, at call time.
 - An invalid schedule (no period, a later period without `from`, dates out of order, a negative rate) throws a `TypeError` when the provider is created.
 
-`KIE_CHAT_MODELS` and `TOAPIS_CHAT_MODELS` carry each model's `rate` as one period: neither provider publishes dates. Rates as of 2026-10-16:
+`KIE_CHAT_MODELS` and `TOAPIS_CHAT_MODELS` carry each model's `rate` as one period: neither provider publishes dates, except for KIE's Gemini discounts (‡). Rates as of 2026-10-16, KIE Gemini as of 2026-11-03:
 
 | Provider | Model | Input | Output | Cache read | Cache write |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -243,6 +243,8 @@ const rate: ModelRate = {
 | KIE | `claude-opus-4-7`, `claude-opus-4-6`, `claude-opus-4-5` | 1.425 | 7.15 | 1.425* | 1.78125† |
 | KIE | `claude-sonnet-5`, `claude-sonnet-4-6`, `claude-sonnet-4-5` | 0.85 | 4.275 | 0.85* | 1.0625† |
 | KIE | `claude-haiku-4-5` | 0.275 | 1.425 | 0.275* | 0.34375† |
+| KIE | `gemini-3-8-flash`, `gemini-3-6-flash` ‡ | 0.225 | 1.125 | 0.225* | 0.28125† |
+| KIE | `gemini-4-argon` ‡ | 0.80 | 4.00 | 0.80* | 1.00† |
 | ToAPIs | `gpt-5.3-codex-official` | 1.40 | 11.20 | 1.40* | 1.75† |
 | ToAPIs | `claude-opus-4-6` | 1.50 | 7.50 | 1.50* | 1.875† |
 | ToAPIs | `claude-sonnet-4-6` | 0.90 | 4.50 | 0.90* | 1.125† |
@@ -251,6 +253,7 @@ const rate: ModelRate = {
 - **KIE**: [kie.ai/pricing](https://kie.ai/pricing), read from `POST https://api.kie.ai/client/v1/model-pricing/page` with `{"pageNum":1,"pageSize":100,"interfaceType":"chat"}`. KIE prices chat in credits per 1M tokens, and 1 credit is $0.005, exported as `KIE_USD_PER_CREDIT` (for example `claude-sonnet-4-6`: 170 credits in, 855 out).
 - **ToAPIs**: `GET https://toapis.com/api/pricing`. Input is 2 × `model_ratio` and output is 2 × `model_ratio` × `completion_ratio` (every group ratio is 1).
 - \* Cache read and † cache write not published: derived as described above.
+- ‡ A limited-time discount, followed by a second period. Gemini 3.8 and 3.6 Flash: "50% OFF until Dec 31, 2026 at 06:00 UTC", so 0.45 / 2.25 from 2026-12-31. Gemini 4 Argon: KIE's price follows Google's until Nov 30, 2026 at "60% below official pricing"; KIE publishes no later price, so the period from 2026-12-01 (1.60 / 8.00) is 60% below Google's new $4 / $20. A turn's cost is KIE's `credits_consumed` either way.
 
 `GEMINI_CHAT_MODELS` (`@hk01/pi-ai-extra-google/pi-ai`) defines Gemini text models with their schedules, and `GEMINI_CHAT_RATES` holds the same rates by id. The schedule is Standard tier, paid, text, image and video input, output including thinking, from [ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing) as of 2026-10-16. Cached input is Google's "Caching" price. Gemini publishes no per-token cache-write price and reports no cache-write tokens.
 
@@ -296,7 +299,7 @@ KIE adds `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `gpt-6-sol`
 
 ### Upgrading to KIE 0.7
 
-KIE 0.7.0 is additive: it adds `gemini-3-8-flash`, `gemini-3-6-flash` and `gemini-4-argon` on KIE's OpenAI Chat Completions route ([ADR 0010](docs/adr/0010-kie-gemini-chat-completions-route.md)). Each is offered with its published rate and reads images; a turn's cost is KIE's `credits_consumed`. The chat kit 0.4.1 runs them unchanged. `createKieProvider({ geminiBaseUrl })` replaces the host (default `https://api.kie.ai`). KIE names no Gemini model in its model lists, so the models are always offered, and a withdrawn model fails with KIE's message. A reply cut off at `maxTokens` ends `stop`, because KIE reports no finish reason.
+KIE 0.7.0 is additive: it adds `gemini-3-8-flash`, `gemini-3-6-flash` and `gemini-4-argon` on KIE's OpenAI Chat Completions route ([ADR 0010](docs/adr/0010-kie-gemini-chat-completions-route.md)). Each reads images and carries a dated rate (its discount, then the regular price; see [Chat rates](#chat-rates)); a turn's cost is KIE's `credits_consumed`. The chat kit 0.4.1 runs them unchanged. Each definition carries its own `baseUrl` (`https://api.kie.ai/<id>-openai/v1`). KIE names no Gemini model in its model lists, so the models are always offered, and a withdrawn model fails with KIE's message. A reply cut off at `maxTokens` ends `stop`, because KIE reports no finish reason.
 
 ### Upgrading to KIE/ToAPIs 0.5 and Google 0.6
 
@@ -350,7 +353,7 @@ pnpm add @earendil-works/pi-ai@1.2.0   # peer
 # and the provider packages you register (each its own release asset, see Install above):
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.8.0/hk01-pi-ai-extra-google-0.8.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.1.0/hk01-pi-ai-extra-openrouter-0.1.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.6.0/hk01-pi-ai-extra-kie-0.6.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.7.0/hk01-pi-ai-extra-kie-0.7.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.6.0/hk01-pi-ai-extra-toapis-0.6.0.tgz
 ```
 
@@ -584,7 +587,7 @@ Both releases are additive, and a `google-vertex` turn needs both: chat-kit 0.3 
 ## Google AI Studio (server) integration
 
 1. **Secrets.** Put `KIE_API_KEY`, `TOAPIS_API_KEY` and `GEMINI_API_KEY` in the app's server-side Secrets. Never expose them through Vite `define`, client code or a browser request.
-2. **Install.** Add the pinned release URLs to `dependencies` (`"@hk01/pi-ai-extra-kie": "https://github.com/…/kie-v0.6.0/hk01-pi-ai-extra-kie-0.6.0.tgz"`, likewise for ToAPIs and Google; each package has its own version, see Install). Import the packages only from server modules such as `server.ts`. A CommonJS server bundle (`esbuild --format=cjs --packages=external`) works with the main entries.
+2. **Install.** Add the pinned release URLs to `dependencies` (`"@hk01/pi-ai-extra-kie": "https://github.com/…/kie-v0.7.0/hk01-pi-ai-extra-kie-0.7.0.tgz"`, likewise for ToAPIs and Google; each package has its own version, see Install). Import the packages only from server modules such as `server.ts`. A CommonJS server bundle (`esbuild --format=cjs --packages=external`) works with the main entries.
 
    The `/pi-ai` subpath (and pi-ai itself) is ESM-only. AI Studio's preview runs `server.ts` as ESM, so a static `/pi-ai` import works there, but the CommonJS production bundle then fails at startup with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Before using `/pi-ai`, either build the server as ESM (`--format=esm --outfile=dist/server.mjs` and `"start": "node dist/server.mjs"`), or load it with `await import("@earendil-works/pi-ai")` and `await import("@hk01/pi-ai-extra-<provider>/pi-ai")`, which esbuild keeps as runtime imports.
 3. **Generate / edit.** Read the secret on the server and call the helper. Text-to-image and editing differ only by `model` and `referenceImages`:
