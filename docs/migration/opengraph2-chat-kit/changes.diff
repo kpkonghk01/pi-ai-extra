@@ -89,7 +89,7 @@ index 9502622..0000000
 -  }
 -}
 diff --git a/server.ts b/server.ts
-index a0422a6..bcd0226 100644
+index a0422a6..b5ca76a 100644
 --- a/server.ts
 +++ b/server.ts
 @@ -1,7 +1,6 @@
@@ -129,7 +129,7 @@ index a0422a6..bcd0226 100644
 +  // Analysis step models: the server owns the list, the browser sends a key (POST /api/analyze-og).
 +  app.get("/api/analysis-models", (_req, res) => {
 +    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-+    res.json({ models: listAnalysisModels(process.env) });
++    res.json({ models: listAnalysisModels() });
 +  });
  
    // Image models for one route-owned scope (?scope=generate | edit)
@@ -158,7 +158,7 @@ index a0422a6..bcd0226 100644
 +        analysisModel,
        } = req.body;
 -      const ai = getAI();
-+      const option = resolveAnalysisModel(analysisModel, process.env);
++      const option = resolveAnalysisModel(analysisModel);
  
        const parts: ImagePart[] = [
          { text: promptText }
@@ -172,7 +172,7 @@ index a0422a6..bcd0226 100644
 -        contents: [{ parts }],
 -      });
 +      // One attempt with the model the user picked: no retry, no other model, no other provider.
-+      const analysis = await runAnalysis(option, parts, abort.signal, process.env);
++      const analysis = await runAnalysis(option, parts, abort.signal);
 +      // undefined: the browser closed the request, so there is nobody to answer.
 +      if (analysis === undefined) return;
  
@@ -210,10 +210,10 @@ index a0422a6..bcd0226 100644
  
 diff --git a/server/analysisModels.ts b/server/analysisModels.ts
 new file mode 100644
-index 0000000..a5504b7
+index 0000000..d4f57e7
 --- /dev/null
 +++ b/server/analysisModels.ts
-@@ -0,0 +1,180 @@
+@@ -0,0 +1,189 @@
 +import { createChatKit } from '@hk01/pi-ai-extra-chat-kit';
 +import { createGoogleProvider } from '@hk01/pi-ai-extra-google/pi-ai';
 +import { createKieProvider } from '@hk01/pi-ai-extra-kie/pi-ai';
@@ -257,20 +257,29 @@ index 0000000..a5504b7
 +  { key: 'google:gemini-3.8-flash', provider: 'google', modelId: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
 +];
 +
-+function keyOf(provider: AnalysisProvider, env: NodeJS.ProcessEnv): string | undefined {
-+  return env[PROVIDERS[provider].secret]?.trim() || undefined;
++/**
++ * The provider's API key from the server's secrets. A process's environment does not change
++ * after it starts: AI Studio sets the secrets when it starts the server, and server.ts loads
++ * `.env` once.
++ */
++function apiKeyOf(provider: AnalysisProvider): string | undefined {
++  return process.env[PROVIDERS[provider].secret]?.trim() || undefined;
 +}
 +
-+export function listAnalysisModels(env: NodeJS.ProcessEnv): AnalysisModelView[] {
++/** The name of the secret the server lacks for this provider, if it lacks it. */
++function missingSecret(provider: AnalysisProvider): string | undefined {
++  return apiKeyOf(provider) === undefined ? PROVIDERS[provider].secret : undefined;
++}
++
++export function listAnalysisModels(): AnalysisModelView[] {
 +  return OPTIONS.map((option) => {
-+    const { label: providerLabel, secret } = PROVIDERS[option.provider];
-+    const available = keyOf(option.provider, env) !== undefined;
++    const missing = missingSecret(option.provider);
 +    return {
 +      key: option.key,
 +      label: option.label,
-+      providerLabel,
-+      available,
-+      ...(available ? {} : { reason: `伺服器未設定 ${secret}` }),
++      providerLabel: PROVIDERS[option.provider].label,
++      available: missing === undefined,
++      ...(missing === undefined ? {} : { reason: `伺服器未設定 ${missing}` }),
 +    };
 +  });
 +}
@@ -301,35 +310,36 @@ index 0000000..a5504b7
 + * The model the browser asked for (the default when it asked for none), or an `AnalysisFailure`:
 + * 400 for a key the server does not offer, 503 when the server lacks the provider's secret.
 + */
-+export function resolveAnalysisModel(requested: unknown, env: NodeJS.ProcessEnv): AnalysisModelOption {
++export function resolveAnalysisModel(requested: unknown): AnalysisModelOption {
 +  const key = requested === undefined ? DEFAULT_ANALYSIS_MODEL_ID : String(requested);
 +  const option = OPTIONS.find((candidate) => candidate.key === key);
 +  if (!option) {
 +    throw new AnalysisFailure(400, { error: `未知的分析模型：${key}`, details: { code: 'unknown_analysis_model' } });
 +  }
-+  if (keyOf(option.provider, env) === undefined) {
-+    const { label, secret } = PROVIDERS[option.provider];
++  const missing = missingSecret(option.provider);
++  if (missing !== undefined) {
 +    throw new AnalysisFailure(503, {
-+      error: `伺服器未設定 ${secret}，無法使用 ${label} 的 ${option.label}。請在設定中確認金鑰。`,
++      error: `伺服器未設定 ${missing}，無法使用 ${PROVIDERS[option.provider].label} 的 ${option.label}。請在設定中確認金鑰。`,
 +      details: { ...analysisDetails(option), code: 'missing_key' },
 +    });
 +  }
 +  return option;
 +}
 +
-+let kit: { keys: string; chat: ReturnType<typeof createChatKit> } | undefined;
++let kit: ReturnType<typeof createChatKit> | undefined;
 +
-+/** The chat kit, with a provider for every key the server has; built again only when a key changes. */
-+function chatKit(env: NodeJS.ProcessEnv) {
-+  const providers = (Object.keys(PROVIDERS) as AnalysisProvider[]).flatMap((provider) => {
-+    const apiKey = keyOf(provider, env);
-+    return apiKey === undefined ? [] : [{ provider, apiKey }];
++/**
++ * The chat kit, with a provider for every key the server has. Built once, on first use: not when
++ * this module loads, which happens before server.ts has loaded `.env`.
++ */
++function chatKit() {
++  kit ??= createChatKit({
++    providers: (Object.keys(PROVIDERS) as AnalysisProvider[]).flatMap((provider) => {
++      const apiKey = apiKeyOf(provider);
++      return apiKey === undefined ? [] : [PROVIDERS[provider].create(apiKey)];
++    }),
 +  });
-+  const keys = providers.map(({ provider, apiKey }) => `${provider}=${apiKey}`).join('\n');
-+  if (kit?.keys !== keys) {
-+    kit = { keys, chat: createChatKit({ providers: providers.map(({ provider, apiKey }) => PROVIDERS[provider].create(apiKey)) }) };
-+  }
-+  return kit.chat;
++  return kit;
 +}
 +
 +/**
@@ -361,7 +371,6 @@ index 0000000..a5504b7
 +  option: AnalysisModelOption,
 +  parts: readonly ImagePart[],
 +  signal: AbortSignal,
-+  env: NodeJS.ProcessEnv,
 +): Promise<string | undefined> {
 +  const content = parts.map((part): TextContent | ImageContent =>
 +    part.inlineData
@@ -369,7 +378,7 @@ index 0000000..a5504b7
 +      : { type: 'text', text: part.text ?? '' },
 +  );
 +  const started = Date.now();
-+  const message = await chatKit(env).completeSimple(
++  const message = await chatKit().completeSimple(
 +    { provider: option.provider, id: option.modelId },
 +    { messages: [{ role: 'user', content, timestamp: Date.now() }] },
 +    { maxRetries: 0, signal },
@@ -428,7 +437,7 @@ index 801e0ff..6c2b1aa 100644
  
  /** Route-owned clients. Each route uses its own scope; a request body never chooses one. */
 diff --git a/src/App.tsx b/src/App.tsx
-index 6285082..4f66227 100644
+index 6285082..ad82bcb 100644
 --- a/src/App.tsx
 +++ b/src/App.tsx
 @@ -22,8 +22,8 @@ import {
@@ -521,7 +530,7 @@ index 6285082..4f66227 100644
        const promptText = `你是一位專業的平面設計與 Open Graph 視覺排版大師。你的核心任務是解構用戶提供的【樣板圖片 (Style Template)】，確保新生成的圖片能完美繼承樣板的品牌特徵、標題字體外觀風格、文字顏色與美術氛圍。
                
                核心強制任務：
-@@ -1519,38 +1568,46 @@ function AppContent() {
+@@ -1519,38 +1568,49 @@ function AppContent() {
                請輸出結構化、極其詳盡的佈局描述，重點涵蓋：Logo 位置、標題字體與色彩詳細規格、描邊限制規範、素材人物融合方式、以及整體美術風格調色。`;
  
        let refinedPrompt = state.prompt || '';
@@ -566,7 +575,11 @@ index 6285082..4f66227 100644
 +            );
 +          }
            const analyzeData = await analyzeRes.json();
-           refinedPrompt = analyzeData.refinedPrompt || state.prompt || '';
+-          refinedPrompt = analyzeData.refinedPrompt || state.prompt || '';
++          if (typeof analyzeData.refinedPrompt !== 'string' || !analyzeData.refinedPrompt.trim()) {
++            throw new ImageRequestError('分析模型沒有寫出生圖指令。', { appModelId: state.analysisModel }, analyzeRes.status);
++          }
++          refinedPrompt = analyzeData.refinedPrompt;
            console.log('Refined Prompt:', refinedPrompt);
 -        } else {
 -          const errData = await analyzeRes.json().catch(() => ({}));
@@ -594,7 +607,7 @@ index 6285082..4f66227 100644
        }
        
        setGenerationProgress('正在生成圖片...');
-@@ -1604,36 +1661,18 @@ function AppContent() {
+@@ -1604,36 +1664,18 @@ function AppContent() {
                  目標比例：${ratioId} (${ratio.label})
                  額外指令：${layoutPrompt}${dedicatedAdInstruction}`;
  
@@ -642,7 +655,7 @@ index 6285082..4f66227 100644
  
            let base64 = rawBase64;
            if (is300x250) {
-@@ -1766,10 +1805,10 @@ function AppContent() {
+@@ -1766,10 +1808,10 @@ function AppContent() {
        }
  
      } catch (error) {
@@ -655,7 +668,7 @@ index 6285082..4f66227 100644
        }
      } finally {
        if (generateAbortRef.current === abort) generateAbortRef.current = null;
-@@ -1885,6 +1924,40 @@ function AppContent() {
+@@ -1885,6 +1927,40 @@ function AppContent() {
          </div>
  
          <div className="flex items-center gap-6">
@@ -696,7 +709,7 @@ index 6285082..4f66227 100644
            {/* Image model selector (grouped by provider; disabled options show the reason) */}
            <ImageModelSelector
              models={imageModels}
-@@ -3053,6 +3126,35 @@ function AppContent() {
+@@ -3053,6 +3129,35 @@ function AppContent() {
          </Button>
        </div>
  
@@ -732,7 +745,7 @@ index 6285082..4f66227 100644
        {/* Deep Editing Modal */}
        <AnimatePresence>
          {editingImage && (
-@@ -4205,6 +4307,7 @@ function AppContent() {
+@@ -4205,6 +4310,7 @@ function AppContent() {
                  prompt: '',
                  selectedRatios: ['16:9'],
                  selectedModel: DEFAULT_IMAGE_MODEL_ID,

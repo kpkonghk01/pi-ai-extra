@@ -1,6 +1,6 @@
 # opengraph2: move the Analysis step to the chat kit — part 2 of 3: Server: the Analysis step on the chat kit
 
-You are editing this Google AI Studio app, "OpenGraph2 圖片製作大師" (opengraph2). This is **part 2 of 3**; part 1 (packages and clean-up) is already applied. Part 2 changes the server only: a new file holds the list of Analysis step models and the chat kit call, and `server.ts` uses it. Part 3 (the UI) follows in a separate message. **Do not start on it.**
+You are editing this Google AI Studio app, "OpenGraph2 圖片製作大師" (opengraph2). This is **part 2 of 3**; part 1 (packages and clean-up) is already applied. Part 2 adds the Analysis step's shared types to `src/types.ts`, and changes the server: a new file holds the list of Analysis step models and the chat kit call, and `server.ts` uses it. Part 3 (the UI) follows in a separate message. **Do not start on it.**
 
 Before you start, check that part 1 is applied: `package.json` must contain `@hk01/pi-ai-extra-chat-kit` and `@earendil-works/pi-ai`. If it does not, stop and say so.
 
@@ -13,7 +13,41 @@ Before you start, check that part 1 is applied: `package.json` must contain `@hk
 5. Copy the "Replace with" text exactly, including indentation. Do not reformat, rename or "improve" it.
 6. If something does not fit the steps, describe it in your final report instead of fixing it.
 
-## Step 2.1: Create the Analysis step model list and the chat kit call
+## Step 2.1: Add the Analysis step types that the server and the UI share
+
+File: `src/types.ts`
+
+Why: The default analysis model and the type of one list entry are shared by the server (`server/analysisModels.ts`, next step, imports them) and the UI (part 3). `AnalysisChoice` is used by the UI in part 3.
+
+**Find**: this text occurs exactly once in `src/types.ts`:
+
+```ts
+export const DEFAULT_IMAGE_MODEL_ID = 'kie:nano-banana-2-1';
+```
+
+**Replace with**:
+
+```ts
+export const DEFAULT_IMAGE_MODEL_ID = 'kie:nano-banana-2-1';
+
+/** Default Analysis step model, used by the browser and the server. The list comes from the server (GET /api/analysis-models). */
+export const DEFAULT_ANALYSIS_MODEL_ID = 'kie:gemini-3-8-flash';
+
+/** One entry of GET /api/analysis-models. */
+export interface AnalysisModelView {
+  key: string;
+  label: string;
+  providerLabel: string;
+  /** False when the server has no key for the provider; `reason` says so. */
+  available: boolean;
+  reason?: string;
+}
+
+/** What the user chose after a failed Analysis step. */
+export type AnalysisChoice = 'retry' | 'skip' | 'cancel';
+```
+
+## Step 2.2: Create the Analysis step model list and the chat kit call
 
 File: `server/analysisModels.ts`
 
@@ -65,20 +99,29 @@ const OPTIONS: readonly AnalysisModelOption[] = [
   { key: 'google:gemini-3.8-flash', provider: 'google', modelId: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
 ];
 
-function keyOf(provider: AnalysisProvider, env: NodeJS.ProcessEnv): string | undefined {
-  return env[PROVIDERS[provider].secret]?.trim() || undefined;
+/**
+ * The provider's API key from the server's secrets. A process's environment does not change
+ * after it starts: AI Studio sets the secrets when it starts the server, and server.ts loads
+ * `.env` once.
+ */
+function apiKeyOf(provider: AnalysisProvider): string | undefined {
+  return process.env[PROVIDERS[provider].secret]?.trim() || undefined;
 }
 
-export function listAnalysisModels(env: NodeJS.ProcessEnv): AnalysisModelView[] {
+/** The name of the secret the server lacks for this provider, if it lacks it. */
+function missingSecret(provider: AnalysisProvider): string | undefined {
+  return apiKeyOf(provider) === undefined ? PROVIDERS[provider].secret : undefined;
+}
+
+export function listAnalysisModels(): AnalysisModelView[] {
   return OPTIONS.map((option) => {
-    const { label: providerLabel, secret } = PROVIDERS[option.provider];
-    const available = keyOf(option.provider, env) !== undefined;
+    const missing = missingSecret(option.provider);
     return {
       key: option.key,
       label: option.label,
-      providerLabel,
-      available,
-      ...(available ? {} : { reason: `伺服器未設定 ${secret}` }),
+      providerLabel: PROVIDERS[option.provider].label,
+      available: missing === undefined,
+      ...(missing === undefined ? {} : { reason: `伺服器未設定 ${missing}` }),
     };
   });
 }
@@ -109,35 +152,36 @@ export function analysisDetails(option: AnalysisModelOption): AnalysisErrorBody[
  * The model the browser asked for (the default when it asked for none), or an `AnalysisFailure`:
  * 400 for a key the server does not offer, 503 when the server lacks the provider's secret.
  */
-export function resolveAnalysisModel(requested: unknown, env: NodeJS.ProcessEnv): AnalysisModelOption {
+export function resolveAnalysisModel(requested: unknown): AnalysisModelOption {
   const key = requested === undefined ? DEFAULT_ANALYSIS_MODEL_ID : String(requested);
   const option = OPTIONS.find((candidate) => candidate.key === key);
   if (!option) {
     throw new AnalysisFailure(400, { error: `未知的分析模型：${key}`, details: { code: 'unknown_analysis_model' } });
   }
-  if (keyOf(option.provider, env) === undefined) {
-    const { label, secret } = PROVIDERS[option.provider];
+  const missing = missingSecret(option.provider);
+  if (missing !== undefined) {
     throw new AnalysisFailure(503, {
-      error: `伺服器未設定 ${secret}，無法使用 ${label} 的 ${option.label}。請在設定中確認金鑰。`,
+      error: `伺服器未設定 ${missing}，無法使用 ${PROVIDERS[option.provider].label} 的 ${option.label}。請在設定中確認金鑰。`,
       details: { ...analysisDetails(option), code: 'missing_key' },
     });
   }
   return option;
 }
 
-let kit: { keys: string; chat: ReturnType<typeof createChatKit> } | undefined;
+let kit: ReturnType<typeof createChatKit> | undefined;
 
-/** The chat kit, with a provider for every key the server has; built again only when a key changes. */
-function chatKit(env: NodeJS.ProcessEnv) {
-  const providers = (Object.keys(PROVIDERS) as AnalysisProvider[]).flatMap((provider) => {
-    const apiKey = keyOf(provider, env);
-    return apiKey === undefined ? [] : [{ provider, apiKey }];
+/**
+ * The chat kit, with a provider for every key the server has. Built once, on first use: not when
+ * this module loads, which happens before server.ts has loaded `.env`.
+ */
+function chatKit() {
+  kit ??= createChatKit({
+    providers: (Object.keys(PROVIDERS) as AnalysisProvider[]).flatMap((provider) => {
+      const apiKey = apiKeyOf(provider);
+      return apiKey === undefined ? [] : [PROVIDERS[provider].create(apiKey)];
+    }),
   });
-  const keys = providers.map(({ provider, apiKey }) => `${provider}=${apiKey}`).join('\n');
-  if (kit?.keys !== keys) {
-    kit = { keys, chat: createChatKit({ providers: providers.map(({ provider, apiKey }) => PROVIDERS[provider].create(apiKey)) }) };
-  }
-  return kit.chat;
+  return kit;
 }
 
 /**
@@ -169,7 +213,6 @@ export async function runAnalysis(
   option: AnalysisModelOption,
   parts: readonly ImagePart[],
   signal: AbortSignal,
-  env: NodeJS.ProcessEnv,
 ): Promise<string | undefined> {
   const content = parts.map((part): TextContent | ImageContent =>
     part.inlineData
@@ -177,7 +220,7 @@ export async function runAnalysis(
       : { type: 'text', text: part.text ?? '' },
   );
   const started = Date.now();
-  const message = await chatKit(env).completeSimple(
+  const message = await chatKit().completeSimple(
     { provider: option.provider, id: option.modelId },
     { messages: [{ role: 'user', content, timestamp: Date.now() }] },
     { maxRetries: 0, signal },
@@ -204,7 +247,7 @@ export async function runAnalysis(
 }
 ```
 
-## Step 2.2: Move /api/analyze-og to the chat kit and add /api/analysis-models
+## Step 2.3: Move /api/analyze-og to the chat kit and add /api/analysis-models
 
 File: `server.ts`
 
@@ -336,7 +379,7 @@ import {
   // Analysis step models: the server owns the list, the browser sends a key (POST /api/analyze-og).
   app.get("/api/analysis-models", (_req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    res.json({ models: listAnalysisModels(process.env) });
+    res.json({ models: listAnalysisModels() });
   });
 
   // Image models for one route-owned scope (?scope=generate | edit)
@@ -367,7 +410,7 @@ import {
         brandLogo,
         analysisModel,
       } = req.body;
-      const option = resolveAnalysisModel(analysisModel, process.env);
+      const option = resolveAnalysisModel(analysisModel);
 
       const parts: ImagePart[] = [
         { text: promptText }
@@ -392,7 +435,7 @@ import {
       }
 
       // One attempt with the model the user picked: no retry, no other model, no other provider.
-      const analysis = await runAnalysis(option, parts, abort.signal, process.env);
+      const analysis = await runAnalysis(option, parts, abort.signal);
       // undefined: the browser closed the request, so there is nobody to answer.
       if (analysis === undefined) return;
 
@@ -427,7 +470,7 @@ import {
   });
 ```
 
-## Step 2.3: Remove @google/genai
+## Step 2.4: Remove @google/genai
 
 File: `package.json`
 
@@ -441,7 +484,7 @@ Why: Only the old analysis route used it. The chat kit brings its own.
 
 **Replace with**: nothing. Delete the matched line(s) completely, including their line break, so that no empty line is left in their place.
 
-## Step 2.4: Say which secrets the Analysis step uses
+## Step 2.5: Say which secrets the Analysis step uses
 
 File: `.env.example`
 

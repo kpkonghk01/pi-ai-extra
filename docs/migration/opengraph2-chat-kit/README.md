@@ -43,7 +43,7 @@ KIE 的 Gemini 為甚麼走 Chat Completions，而不走 Gemini 原生 route：�
 2. 在 AI Studio 匯出整個 app 的 ZIP 備份。
 3. 依序貼上三段 prompt。**每段貼完，等 Gemini 回報 `npm run lint` 的結果，才貼下一段：**
    1. [`gemini-prompt-part1.md`](gemini-prompt-part1.md)：升級 package，刪除 Nano Banana 2.1 的 `/v1beta` patch（`server/imageModels.ts` 的 fetch 改寫、`postinstall` 和 script 檔）。
-   2. [`gemini-prompt-part2.md`](gemini-prompt-part2.md)：server，Analysis step 改用 chat-kit，新增 `/api/analysis-models`。
+   2. [`gemini-prompt-part2.md`](gemini-prompt-part2.md)：在 `src/types.ts` 加入 server 和 UI 共用的型別，然後改 server：Analysis step 改用 chat-kit，新增 `/api/analysis-models`。
    3. [`gemini-prompt-part3.md`](gemini-prompt-part3.md)：UI，header 的分析模型選單、失敗 modal、刪除生圖的自動重試。
 4. 三段都完成後，按下面「驗證清單」測試。
 
@@ -82,7 +82,7 @@ KIE 的 Gemini 為甚麼走 Chat Completions，而不走 Gemini 原生 route：�
 
 - **樣板、素材圖和 logo 會送到 KIE**（用 KIE 的分析模型時）。Slack 討論中已接受這個風險（這些圖片較少敏感資料）。
 - **Gemini 4 Argon 的回覆夾帶 `[cite: n]` 標記**，可能混進送給生圖模型的指令，所以它不是預設。
-- **KIE 的 Gemini 限時折扣會結束**：Gemini 4 Argon 在 2026-11-30，Gemini 3.8 / 3.6 Flash 在 2026-12-31 06:00 UTC，之後約貴一倍。kie 0.7.0 的 rate 已按日期寫入兩個時段，但 app 不計分析費用，server log 印的是 KIE 每次實際收的 credits。
+- **KIE 的 Gemini 限時折扣會結束**：Gemini 3.8 / 3.6 Flash 在 2026-12-31 06:00 UTC 結束，之後是 KIE 公佈的原價（約貴一倍），kie 0.7.0 已按日期寫入；Gemini 4 Argon 在 2026-11-30 結束，KIE 未公佈之後的價格，公佈後會發 kie 的 patch 版本。app 不計分析費用，server log 印的是 KIE 每次實際收費換算成的 US$。
 - **KIE 的 Gemini 沒有 live model list**，由 package 的定義直接提供。KIE 日後下架某個模型時，用戶會在分析失敗的 modal 看到 KIE 自己的錯誤訊息（例如 `The model is not supported`）。
 - **KIE 的 Gemini 不回報 `finish_reason`**，所以回覆在 token 上限被截斷時也會顯示為正常結束。
 - `npm run lint` 在 opengraph2 一向有一個既有的錯誤：`'ErrorBoundary' cannot be used as a JSX component`（`src/App.tsx`）。與本次遷移無關，沒有處理。
@@ -92,13 +92,13 @@ KIE 的 Gemini 為甚麼走 Chat Completions，而不走 Gemini 原生 route：�
 在 opengraph2 的副本上做的，不是在 AI Studio。副本是 2026-11-03 的 clone，沒有改動 clone 本身。kie 0.7.0 當時未發佈，副本用本機打包的 tarball（與將發佈的版本同一份程式碼）。
 
 - **逐字回放**：把三段 prompt 的 Markdown 文字（只用 Find / Replace 的內容）套用到全新的副本，28 個編輯每個 Find 都按文字所說的次數找到；結果的 7 個檔案和 `files/` 完全一致。
-- **Lint**：只有上面那個既有的錯誤，改動前的原版同樣有。
+- **Lint**：Part 1、Part 2、Part 3 各自完成後都跑過一次（每次先 `npm install`），每次都只有上面那個既有的錯誤，改動前的原版同樣有。
 - **Build**：`npm run build` 通過。搜尋 `dist/assets/`，找不到 provider package 的程式碼，也找不到 `KIE_API_KEY`、`GEMINI_API_KEY` 這些名稱。
 - **Server 實測**：用 `node dist/server.mjs` 實際呼叫，只給它 `KIE_API_KEY`。
   - `GET /api/analysis-models`：六個模型，預設 `kie:gemini-3-8-flash`，Google 的標示為「伺服器未設定 GEMINI_API_KEY」，回應不含 key。
   - 不認識的 key 回 400；缺 key 的 Google 回 503（`missing_key`）。
-  - 不指定模型（server 用預設），4.4 MB 的圖（1 張樣板、3 張素材、1 個 logo，共 5 張）：回 200，三次實測分別 19.4、21.0 和 39.9 秒（120 秒 timeout 之內），`TITLE_KEYWORD` 和 `REFINED_PROMPT` 解析正確。
-  - 模型只回 `TITLE_KEYWORD`、沒寫出生圖指令：回 502（`EMPTY_RESPONSE`），不是 200。
+  - 不指定模型（server 用預設），4.4 MB 的圖（1 張樣板、3 張素材、1 個 logo，共 5 張）：回 200，四次實測分別 19.4、21.0、29.3 和 39.9 秒（120 秒 timeout 之內），`TITLE_KEYWORD` 和 `REFINED_PROMPT` 解析正確。
+  - 模型只回 `TITLE_KEYWORD`、沒寫出生圖指令：回 502（`EMPTY_RESPONSE`），不是 200（GPT-6 Luna 和 Gemini 3.6 Flash 各測一次）。browser 端也一樣：回應沒有指令時會當作失敗，進入 modal，不會改用原始指令。
   - Claude Sonnet 5.5：回 200。
   - 客戶端取消：server 中止了分析（log 為 `aborted`）。
   - 無效的 KIE key：回 502，訊息帶 KIE 的原文（`KIE code 401`），`details` 有 provider、model 和 status。

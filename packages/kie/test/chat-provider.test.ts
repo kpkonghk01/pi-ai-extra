@@ -85,12 +85,12 @@ describe("KIE chat provider", () => {
     }
   });
 
-  it("prices each Gemini model at KIE's discount until the announced day, then at the regular price", () => {
+  it("prices 3.8 and 3.6 Flash at KIE's discount, then at its published regular price, and 4 Argon at its one published price", () => {
     const periods = (id: string) => KIE_CHAT_MODELS.find((model) => model.id === id)?.rate?.periods;
     for (const id of ["gemini-3-8-flash", "gemini-3-6-flash"]) {
       assert.deepEqual(periods(id), [{ input: 0.225, output: 1.125 }, { from: "2026-12-31", input: 0.45, output: 2.25 }], id);
     }
-    assert.deepEqual(periods("gemini-4-argon"), [{ input: 0.8, output: 4 }, { from: "2026-12-01", input: 1.6, output: 8 }]);
+    assert.deepEqual(periods("gemini-4-argon"), [{ input: 0.8, output: 4 }]);
   });
 
   it("serves a Gemini definition at its own base URL, and refuses one on Chat Completions without a base URL", () => {

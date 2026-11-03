@@ -2,7 +2,7 @@
 
 You are editing this Google AI Studio app, "OpenGraph2 圖片製作大師" (opengraph2). This is **part 3 of 3**; parts 1 and 2 are already applied. Part 3 changes the UI: a select in the header for the Analysis step's model, a modal that lets the user decide what happens when the Analysis step fails, and the removal of an automatic retry in the image generation loop.
 
-Before you start, check that part 2 is applied: the file `server/analysisModels.ts` must exist. If it does not, stop and say so.
+Before you start, check that part 2 is applied: the file `server/analysisModels.ts` must exist, and `src/types.ts` must export `DEFAULT_ANALYSIS_MODEL_ID`. If either is missing, stop and say so.
 
 ## Rules
 
@@ -13,13 +13,13 @@ Before you start, check that part 2 is applied: the file `server/analysisModels.
 5. Copy the "Replace with" text exactly, including indentation. Do not reformat, rename or "improve" it.
 6. If something does not fit the steps, describe it in your final report instead of fixing it.
 
-## Step 3.1: Add the analysis model to the app state, and its shared types
+## Step 3.1: Add the analysis model to the app state
 
 File: `src/types.ts`
 
-Why: The user's choice is saved with the rest of the state, like the image model. The default and the list entry type are shared with the server (`server/analysisModels.ts` imports them).
+Why: The user's choice is saved with the rest of the state, like the image model.
 
-**Find** (edit 1 of 2): this text occurs exactly once in `src/types.ts`:
+**Find**: this text occurs exactly once in `src/types.ts`:
 
 ```ts
   selectedModel: string;
@@ -31,34 +31,6 @@ Why: The user's choice is saved with the rest of the state, like the image model
   selectedModel: string;
   /** Analysis step model key, `provider:modelId` (for example 'kie:gemini-3-8-flash'). The list comes from the server (GET /api/analysis-models). */
   analysisModel: string;
-```
-
-**Find** (edit 2 of 2): this text occurs exactly once in `src/types.ts`:
-
-```ts
-export const DEFAULT_IMAGE_MODEL_ID = 'kie:nano-banana-2-1';
-```
-
-**Replace with**:
-
-```ts
-export const DEFAULT_IMAGE_MODEL_ID = 'kie:nano-banana-2-1';
-
-/** Default Analysis step model, used by the browser and the server. The list comes from the server (GET /api/analysis-models). */
-export const DEFAULT_ANALYSIS_MODEL_ID = 'kie:gemini-3-8-flash';
-
-/** One entry of GET /api/analysis-models. */
-export interface AnalysisModelView {
-  key: string;
-  label: string;
-  providerLabel: string;
-  /** False when the server has no key for the provider; `reason` says so. */
-  available: boolean;
-  reason?: string;
-}
-
-/** What the user chose after a failed Analysis step. */
-export type AnalysisChoice = 'retry' | 'skip' | 'cancel';
 ```
 
 ## Step 3.2: Import the new type and default, and keep the choice in the state
@@ -329,7 +301,10 @@ Why: Today a failed analysis is skipped without telling the user (KIE and ToAPIs
             );
           }
           const analyzeData = await analyzeRes.json();
-          refinedPrompt = analyzeData.refinedPrompt || state.prompt || '';
+          if (typeof analyzeData.refinedPrompt !== 'string' || !analyzeData.refinedPrompt.trim()) {
+            throw new ImageRequestError('分析模型沒有寫出生圖指令。', { appModelId: state.analysisModel }, analyzeRes.status);
+          }
+          refinedPrompt = analyzeData.refinedPrompt;
           console.log('Refined Prompt:', refinedPrompt);
           break;
         } catch (err: any) {

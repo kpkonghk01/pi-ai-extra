@@ -253,7 +253,7 @@ const rate: ModelRate = {
 - **KIE**: [kie.ai/pricing](https://kie.ai/pricing), read from `POST https://api.kie.ai/client/v1/model-pricing/page` with `{"pageNum":1,"pageSize":100,"interfaceType":"chat"}`. KIE prices chat in credits per 1M tokens, and 1 credit is $0.005, exported as `KIE_USD_PER_CREDIT` (for example `claude-sonnet-4-6`: 170 credits in, 855 out).
 - **ToAPIs**: `GET https://toapis.com/api/pricing`. Input is 2 × `model_ratio` and output is 2 × `model_ratio` × `completion_ratio` (every group ratio is 1).
 - \* Cache read and † cache write not published: derived as described above.
-- ‡ A limited-time discount, followed by a second period. Gemini 3.8 and 3.6 Flash: "50% OFF until Dec 31, 2026 at 06:00 UTC", so 0.45 / 2.25 from 2026-12-31. Gemini 4 Argon: KIE's price follows Google's until Nov 30, 2026 at "60% below official pricing"; KIE publishes no later price, so the period from 2026-12-01 (1.60 / 8.00) is 60% below Google's new $4 / $20. A turn's cost is KIE's `credits_consumed` either way.
+- ‡ A limited-time price. Gemini 3.8 and 3.6 Flash: "50% OFF until Dec 31, 2026 at 06:00 UTC (prices shown are discounted)", so the regular 0.45 / 2.25 is a second period from 2026-12-31. Gemini 4 Argon: "valid until Nov 30, 2026", and KIE publishes no later price, so its schedule is one period until it does. A turn's cost is KIE's `credits_consumed` either way.
 
 `GEMINI_CHAT_MODELS` (`@hk01/pi-ai-extra-google/pi-ai`) defines Gemini text models with their schedules, and `GEMINI_CHAT_RATES` holds the same rates by id. The schedule is Standard tier, paid, text, image and video input, output including thinking, from [ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing) as of 2026-10-16. Cached input is Google's "Caching" price. Gemini publishes no per-token cache-write price and reports no cache-write tokens.
 
@@ -299,7 +299,7 @@ KIE adds `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `gpt-6-sol`
 
 ### Upgrading to KIE 0.7
 
-KIE 0.7.0 is additive: it adds `gemini-3-8-flash`, `gemini-3-6-flash` and `gemini-4-argon` on KIE's OpenAI Chat Completions route ([ADR 0010](docs/adr/0010-kie-gemini-chat-completions-route.md)). Each reads images and carries a dated rate (its discount, then the regular price; see [Chat rates](#chat-rates)); a turn's cost is KIE's `credits_consumed`. The chat kit 0.4.1 runs them unchanged. Each definition carries its own `baseUrl` (`https://api.kie.ai/<id>-openai/v1`). KIE names no Gemini model in its model lists, so the models are always offered, and a withdrawn model fails with KIE's message. A reply cut off at `maxTokens` ends `stop`, because KIE reports no finish reason.
+KIE 0.7.0 is additive: it adds `gemini-3-8-flash`, `gemini-3-6-flash` and `gemini-4-argon` on KIE's OpenAI Chat Completions route ([ADR 0010](docs/adr/0010-kie-gemini-chat-completions-route.md)). Each reads images and carries KIE's published rate (for 3.8 and 3.6 Flash, the discount and then the regular price; see [Chat rates](#chat-rates)); a turn's cost is KIE's `credits_consumed`. The chat kit 0.4.1 runs them unchanged. Each definition carries its own `baseUrl` (`https://api.kie.ai/<id>-openai/v1`). KIE names no Gemini model in its model lists, so the models are always offered, and a withdrawn model fails with KIE's message. A reply cut off at `maxTokens` ends `stop`, because KIE reports no finish reason. A response schema is sent, and KIE follows its shape but does not enforce it (see [Response schema](#response-schema)).
 
 ### Upgrading to KIE/ToAPIs 0.5 and Google 0.6
 
@@ -508,7 +508,7 @@ The request is ordered: system prompt, documents, the rest of the conversation. 
 | API | Sent as |
 | --- | --- |
 | Gemini | `responseMimeType: "application/json"` and `responseJsonSchema`, without `minItems` / `maxItems` (which Gemini rejects) |
-| OpenAI Completions | strict `response_format` (`json_schema`), with the turn's model carrying `compat.openRouterRouting.require_parameters` so OpenRouter routes only to endpoints that honour it |
+| OpenAI Completions | strict `response_format` (`json_schema`), with the turn's model carrying `compat.openRouterRouting.require_parameters` so OpenRouter routes only to endpoints that honour it. KIE's Gemini models take the schema's shape but do not enforce it: in a live check on 2026-11-03, Gemini 3.8 Flash and 4 Argon answered JSON with the schema's keys and a value outside its `enum`, so validate the answer |
 | OpenAI Responses | strict `text.format` (`json_schema`) |
 | Anthropic Messages | a forced call of one tool whose `input_schema` is the schema; its argument deltas stream as `text_*` events. When the turn thinks, on OpenRouter and KIE: native structured output, `output_config.format` (`json_schema`), streamed as `text_*` events |
 

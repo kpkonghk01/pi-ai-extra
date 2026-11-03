@@ -2,15 +2,8 @@ import type { Model } from "@earendil-works/pi-ai";
 import { modelIdKey } from "@hk01/pi-ai-extra-internal/model-id";
 import { getModelListJson, keepListed, modelIdsOf, type ChatProtocol } from "@hk01/pi-ai-extra-internal/pi-ai";
 
-/**
- * Which of KIE's two model lists names a model: Codex's (OpenAI Responses), Claude's (Anthropic
- * Messages), or none, for the Gemini models on Chat Completions (ADR 0010).
- */
-function listOf(model: Model<ChatProtocol>): "codex" | "claude" | undefined {
-  if (model.api === "openai-responses") return "codex";
-  if (model.api === "anthropic-messages") return "claude";
-  return undefined;
-}
+/** Which of KIE's two model lists names a model of each protocol; none names the Gemini models on Chat Completions (ADR 0010). */
+const LIST_OF: Partial<Record<ChatProtocol, "codex" | "claude">> = { "openai-responses": "codex", "anthropic-messages": "claude" };
 
 /**
  * KIE's live chat list: the package's models (`installed`) that a KIE list names, kept when it
@@ -29,8 +22,8 @@ export async function fetchKieModels(input: {
   installed: readonly Model<ChatProtocol>[];
   signal: AbortSignal;
 }): Promise<Model<ChatProtocol>[]> {
-  const listed = input.installed.filter((model) => listOf(model) !== undefined);
-  if (listed.length === 0) return [...input.installed];
+  const onAList = input.installed.filter((model) => LIST_OF[model.api] !== undefined);
+  if (onAList.length === 0) return [...input.installed];
   const auth = { authorization: `Bearer ${input.apiKey}` };
   const read = async (url: string, source: string) =>
     new Set(modelIdsOf(await getModelListJson(input.fetch, url, auth, input.signal), source).map(modelIdKey));
@@ -38,6 +31,7 @@ export async function fetchKieModels(input: {
     read(`${input.responsesBaseUrl}/models`, "KIE /openai/v1/models"),
     read(`${input.claudeBaseUrl}/v1/models`, "KIE /anthropic/v1/models"),
   ]);
-  const kept = new Set(keepListed(listed, (model) => (listOf(model) === "claude" ? claude : codex), "KIE"));
-  return input.installed.filter((model) => listOf(model) === undefined || kept.has(model));
+  const lists = { codex, claude };
+  const kept = new Set(keepListed(onAList, (model) => lists[LIST_OF[model.api]!], "KIE"));
+  return input.installed.filter((model) => LIST_OF[model.api] === undefined || kept.has(model));
 }

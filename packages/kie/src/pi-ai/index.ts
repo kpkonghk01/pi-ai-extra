@@ -38,22 +38,21 @@ export type {
  * Rates as of 2026-10-16, source: https://kie.ai/pricing, read from
  * `POST https://api.kie.ai/client/v1/model-pricing/page` with
  * `{"pageNum":1,"pageSize":100,"interfaceType":"chat"}`. KIE prices chat in credits per
- * 1M tokens (`KIE_USD_PER_CREDIT`). KIE publishes no dates, so each schedule is one period. An
- * unpublished cache rate is left out; pricing derives it (`toModelCost`).
+ * 1M tokens (`KIE_USD_PER_CREDIT`). KIE publishes no dates for Codex and Claude, so each of their
+ * schedules is one period. An unpublished cache rate is left out; pricing derives it
+ * (`toModelCost`).
  *
  * The Gemini rates are as of 2026-11-03, from the same listing (`interfaceType` `chat`) and the
  * model pages (kie.ai/gemini-3-8-flash, /gemini-3-6-flash, /gemini-4-argon). Each is a
- * limited-time price, so each schedule has a second period:
+ * limited-time price:
  *
  * - Gemini 3.8 and 3.6 Flash: 45 / 225 credits per 1M input / output tokens, "50% OFF until Dec
- *   31, 2026 at 06:00 UTC (prices shown are discounted)", so 90 / 450 after it. That matches the
- *   pages' "70% below official pricing" against Google's $1.50 / $7.50 from 2027. A period starts
- *   at 00:00 UTC, so the second one starts on 2026-12-31.
- * - Gemini 4 Argon: 160 / 800 credits, "60% below official pricing", which "follow Google's
- *   promotional pricing and are valid until Nov 30, 2026". KIE publishes no later price. Google's
- *   pricing page doubles Argon from December 1, 2026 ($2 / $10 to $4 / $20), so the second period
- *   is KIE's 60% below that: 320 / 1600 credits. It is derived from KIE's stated discount, not
- *   published by KIE; check it against kie.ai/pricing after the change.
+ *   31, 2026 at 06:00 UTC (prices shown are discounted)", so the published regular price is
+ *   90 / 450, a second period. A period starts at 00:00 UTC, so it starts on 2026-12-31, six hours
+ *   before the discount ends.
+ * - Gemini 4 Argon: 160 / 800 credits, which "follow Google's promotional pricing and are valid
+ *   until Nov 30, 2026". KIE publishes no later price, so the schedule is one period; when KIE
+ *   publishes the price from 2026-12-01, a patch release adds it.
  *
  * A turn's cost is KIE's own charge either way (`reportedCostUsd`).
  */
@@ -97,20 +96,23 @@ function claude(id: string, inputCredits: number, outputCredits: number): ChatMo
   return { id, protocol: "anthropic-messages", rate: singleRate({ input: usd(inputCredits), output: usd(outputCredits) }) };
 }
 
+/** A period of a KIE rate in credits per 1M tokens; only a later period has a `from` day. */
+interface CreditPeriod {
+  from?: string;
+  input: number;
+  output: number;
+}
+
 /**
  * A Gemini model on OpenAI Chat Completions, not on KIE's Gemini-native route (ADR 0010). KIE names
- * the model in the URL path (`/<id>-openai/v1/chat/completions`), so `createKieProvider` gives each
- * one its own base URL (`/<id>-openai/v1`). Limits are pi-ai's Gemini catalogue values for 3.8 and 3.6 Flash (1,048,576
- * context, 65,536 output); KIE publishes a 1M budget for 4 Argon and no output limit, so it takes the
- * Flash value. KIE's `reasoning_effort` takes `low` and `high` only; pi-ai rounds another level
- * up to the next one KIE takes (`medium` to `high`), and sends none when the turn sets no level.
+ * the model in the URL path (`/<id>-openai/v1/chat/completions`), so each definition carries its
+ * own base URL (`/<id>-openai/v1`). Limits are pi-ai's Gemini catalogue values for 3.8 and 3.6
+ * Flash (1,048,576 context, 65,536 output); KIE publishes a 1M budget for 4 Argon and no output
+ * limit, so it takes the Flash value. KIE's `reasoning_effort` takes `low` and `high` only: pi-ai
+ * sends the nearest of them (`minimal` and an explicit `off` as `low`; `medium`, `xhigh` and `max`
+ * as `high`), and none when the turn sets no level.
  */
-function gemini(
-  id: string,
-  name: string,
-  credits: { input: number; output: number },
-  later: { from: string; input: number; output: number },
-): ChatModelDefinition {
+function gemini(id: string, name: string, periods: readonly CreditPeriod[]): ChatModelDefinition {
   return {
     id,
     name,
@@ -122,10 +124,7 @@ function gemini(
     contextWindow: 1_048_576,
     maxTokens: 65_536,
     rate: {
-      periods: [
-        { input: usd(credits.input), output: usd(credits.output) },
-        { from: later.from, input: usd(later.input), output: usd(later.output) },
-      ],
+      periods: periods.map(({ from, input, output }) => ({ ...(from === undefined ? {} : { from }), input: usd(input), output: usd(output) })),
     },
   };
 }
@@ -167,9 +166,9 @@ const CLAUDE_MODELS: readonly ChatModelDefinition[] = [
  * they are offered from these definitions, and a model KIE withdraws fails with KIE's own message.
  */
 const GEMINI_MODELS: readonly ChatModelDefinition[] = [
-  gemini("gemini-3-8-flash", "Gemini 3.8 Flash", { input: 45, output: 225 }, { from: "2026-12-31", input: 90, output: 450 }),
-  gemini("gemini-3-6-flash", "Gemini 3.6 Flash", { input: 45, output: 225 }, { from: "2026-12-31", input: 90, output: 450 }),
-  gemini("gemini-4-argon", "Gemini 4 Argon", { input: 160, output: 800 }, { from: "2026-12-01", input: 320, output: 1600 }),
+  gemini("gemini-3-8-flash", "Gemini 3.8 Flash", [{ input: 45, output: 225 }, { from: "2026-12-31", input: 90, output: 450 }]),
+  gemini("gemini-3-6-flash", "Gemini 3.6 Flash", [{ input: 45, output: 225 }, { from: "2026-12-31", input: 90, output: 450 }]),
+  gemini("gemini-4-argon", "Gemini 4 Argon", [{ input: 160, output: 800 }]),
 ];
 
 /**

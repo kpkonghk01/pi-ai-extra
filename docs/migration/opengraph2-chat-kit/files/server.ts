@@ -61,7 +61,7 @@ async function startServer() {
   // Analysis step models: the server owns the list, the browser sends a key (POST /api/analyze-og).
   app.get("/api/analysis-models", (_req, res) => {
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    res.json({ models: listAnalysisModels(process.env) });
+    res.json({ models: listAnalysisModels() });
   });
 
   // Image models for one route-owned scope (?scope=generate | edit)
@@ -92,7 +92,7 @@ async function startServer() {
         brandLogo,
         analysisModel,
       } = req.body;
-      const option = resolveAnalysisModel(analysisModel, process.env);
+      const option = resolveAnalysisModel(analysisModel);
 
       const parts: ImagePart[] = [
         { text: promptText }
@@ -117,7 +117,7 @@ async function startServer() {
       }
 
       // One attempt with the model the user picked: no retry, no other model, no other provider.
-      const analysis = await runAnalysis(option, parts, abort.signal, process.env);
+      const analysis = await runAnalysis(option, parts, abort.signal);
       // undefined: the browser closed the request, so there is nobody to answer.
       if (analysis === undefined) return;
 

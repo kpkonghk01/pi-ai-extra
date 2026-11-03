@@ -41,20 +41,29 @@ const OPTIONS: readonly AnalysisModelOption[] = [
   { key: 'google:gemini-3.8-flash', provider: 'google', modelId: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
 ];
 
-function keyOf(provider: AnalysisProvider, env: NodeJS.ProcessEnv): string | undefined {
-  return env[PROVIDERS[provider].secret]?.trim() || undefined;
+/**
+ * The provider's API key from the server's secrets. A process's environment does not change
+ * after it starts: AI Studio sets the secrets when it starts the server, and server.ts loads
+ * `.env` once.
+ */
+function apiKeyOf(provider: AnalysisProvider): string | undefined {
+  return process.env[PROVIDERS[provider].secret]?.trim() || undefined;
 }
 
-export function listAnalysisModels(env: NodeJS.ProcessEnv): AnalysisModelView[] {
+/** The name of the secret the server lacks for this provider, if it lacks it. */
+function missingSecret(provider: AnalysisProvider): string | undefined {
+  return apiKeyOf(provider) === undefined ? PROVIDERS[provider].secret : undefined;
+}
+
+export function listAnalysisModels(): AnalysisModelView[] {
   return OPTIONS.map((option) => {
-    const { label: providerLabel, secret } = PROVIDERS[option.provider];
-    const available = keyOf(option.provider, env) !== undefined;
+    const missing = missingSecret(option.provider);
     return {
       key: option.key,
       label: option.label,
-      providerLabel,
-      available,
-      ...(available ? {} : { reason: `伺服器未設定 ${secret}` }),
+      providerLabel: PROVIDERS[option.provider].label,
+      available: missing === undefined,
+      ...(missing === undefined ? {} : { reason: `伺服器未設定 ${missing}` }),
     };
   });
 }
@@ -85,35 +94,36 @@ export function analysisDetails(option: AnalysisModelOption): AnalysisErrorBody[
  * The model the browser asked for (the default when it asked for none), or an `AnalysisFailure`:
  * 400 for a key the server does not offer, 503 when the server lacks the provider's secret.
  */
-export function resolveAnalysisModel(requested: unknown, env: NodeJS.ProcessEnv): AnalysisModelOption {
+export function resolveAnalysisModel(requested: unknown): AnalysisModelOption {
   const key = requested === undefined ? DEFAULT_ANALYSIS_MODEL_ID : String(requested);
   const option = OPTIONS.find((candidate) => candidate.key === key);
   if (!option) {
     throw new AnalysisFailure(400, { error: `未知的分析模型：${key}`, details: { code: 'unknown_analysis_model' } });
   }
-  if (keyOf(option.provider, env) === undefined) {
-    const { label, secret } = PROVIDERS[option.provider];
+  const missing = missingSecret(option.provider);
+  if (missing !== undefined) {
     throw new AnalysisFailure(503, {
-      error: `伺服器未設定 ${secret}，無法使用 ${label} 的 ${option.label}。請在設定中確認金鑰。`,
+      error: `伺服器未設定 ${missing}，無法使用 ${PROVIDERS[option.provider].label} 的 ${option.label}。請在設定中確認金鑰。`,
       details: { ...analysisDetails(option), code: 'missing_key' },
     });
   }
   return option;
 }
 
-let kit: { keys: string; chat: ReturnType<typeof createChatKit> } | undefined;
+let kit: ReturnType<typeof createChatKit> | undefined;
 
-/** The chat kit, with a provider for every key the server has; built again only when a key changes. */
-function chatKit(env: NodeJS.ProcessEnv) {
-  const providers = (Object.keys(PROVIDERS) as AnalysisProvider[]).flatMap((provider) => {
-    const apiKey = keyOf(provider, env);
-    return apiKey === undefined ? [] : [{ provider, apiKey }];
+/**
+ * The chat kit, with a provider for every key the server has. Built once, on first use: not when
+ * this module loads, which happens before server.ts has loaded `.env`.
+ */
+function chatKit() {
+  kit ??= createChatKit({
+    providers: (Object.keys(PROVIDERS) as AnalysisProvider[]).flatMap((provider) => {
+      const apiKey = apiKeyOf(provider);
+      return apiKey === undefined ? [] : [PROVIDERS[provider].create(apiKey)];
+    }),
   });
-  const keys = providers.map(({ provider, apiKey }) => `${provider}=${apiKey}`).join('\n');
-  if (kit?.keys !== keys) {
-    kit = { keys, chat: createChatKit({ providers: providers.map(({ provider, apiKey }) => PROVIDERS[provider].create(apiKey)) }) };
-  }
-  return kit.chat;
+  return kit;
 }
 
 /**
@@ -145,7 +155,6 @@ export async function runAnalysis(
   option: AnalysisModelOption,
   parts: readonly ImagePart[],
   signal: AbortSignal,
-  env: NodeJS.ProcessEnv,
 ): Promise<string | undefined> {
   const content = parts.map((part): TextContent | ImageContent =>
     part.inlineData
@@ -153,7 +162,7 @@ export async function runAnalysis(
       : { type: 'text', text: part.text ?? '' },
   );
   const started = Date.now();
-  const message = await chatKit(env).completeSimple(
+  const message = await chatKit().completeSimple(
     { provider: option.provider, id: option.modelId },
     { messages: [{ role: 'user', content, timestamp: Date.now() }] },
     { maxRetries: 0, signal },
