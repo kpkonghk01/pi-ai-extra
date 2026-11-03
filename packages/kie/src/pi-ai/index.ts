@@ -20,7 +20,7 @@ import {
 } from "../constants.ts";
 import { generateKieImage, type KieImageRequest, type KieImageSettings } from "../generate.ts";
 import { KIE_IMAGE_MODELS } from "../models.ts";
-import { kieEnvelopeStreams } from "./envelope-fetch.ts";
+import { kieChatStreams } from "./chat-streams.ts";
 import { fetchKieModels } from "./live-models.ts";
 
 export type {
@@ -38,8 +38,23 @@ export type {
  * Rates as of 2026-10-16, source: https://kie.ai/pricing, read from
  * `POST https://api.kie.ai/client/v1/model-pricing/page` with
  * `{"pageNum":1,"pageSize":100,"interfaceType":"chat"}`. KIE prices chat in credits per
- * 1M tokens (`KIE_USD_PER_CREDIT`). KIE publishes no dates, so each schedule is one period. An
- * unpublished cache rate is left out; pricing derives it (`toModelCost`).
+ * 1M tokens (`KIE_USD_PER_CREDIT`). KIE publishes no dates for Codex and Claude, so each of their
+ * schedules is one period. An unpublished cache rate is left out; pricing derives it
+ * (`toModelCost`).
+ *
+ * The Gemini rates are as of 2026-11-03, from the same listing (`interfaceType` `chat`) and the
+ * model pages (kie.ai/gemini-3-8-flash, /gemini-3-6-flash, /gemini-4-argon). Each is a
+ * limited-time price:
+ *
+ * - Gemini 3.8 and 3.6 Flash: 45 / 225 credits per 1M input / output tokens, "50% OFF until Dec
+ *   31, 2026 at 06:00 UTC (prices shown are discounted)", so the published regular price is
+ *   90 / 450, a second period. A period starts at 00:00 UTC, so it starts on 2026-12-31, six hours
+ *   before the discount ends.
+ * - Gemini 4 Argon: 160 / 800 credits, which "follow Google's promotional pricing and are valid
+ *   until Nov 30, 2026". KIE publishes no later price, so the schedule is one period; when KIE
+ *   publishes the price from 2026-12-01, a patch release adds it.
+ *
+ * A turn's cost is KIE's own charge either way (`reportedCostUsd`).
  */
 
 /**
@@ -81,6 +96,39 @@ function claude(id: string, inputCredits: number, outputCredits: number): ChatMo
   return { id, protocol: "anthropic-messages", rate: singleRate({ input: usd(inputCredits), output: usd(outputCredits) }) };
 }
 
+/** A period of a KIE rate in credits per 1M tokens; only a later period has a `from` day. */
+interface CreditPeriod {
+  from?: string;
+  input: number;
+  output: number;
+}
+
+/**
+ * A Gemini model on OpenAI Chat Completions, not on KIE's Gemini-native route (ADR 0010). KIE names
+ * the model in the URL path (`/<id>-openai/v1/chat/completions`), so each definition carries its
+ * own base URL (`/<id>-openai/v1`). Limits are pi-ai's Gemini catalogue values for 3.8 and 3.6
+ * Flash (1,048,576 context, 65,536 output); KIE publishes a 1M budget for 4 Argon and no output
+ * limit, so it takes the Flash value. KIE's `reasoning_effort` takes `low` and `high` only: pi-ai
+ * sends the nearest of them (`minimal` and an explicit `off` as `low`; `medium`, `xhigh` and `max`
+ * as `high`), and none when the turn sets no level.
+ */
+function gemini(id: string, name: string, periods: readonly CreditPeriod[]): ChatModelDefinition {
+  return {
+    id,
+    name,
+    protocol: "openai-completions",
+    baseUrl: `${KIE_API_BASE_URL}/${id}-openai/v1`,
+    reasoning: true,
+    thinkingLevelMap: { off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: null },
+    input: ["text", "image"],
+    contextWindow: 1_048_576,
+    maxTokens: 65_536,
+    rate: {
+      periods: periods.map(({ from, input, output }) => ({ ...(from === undefined ? {} : { from }), input: usd(input), output: usd(output) })),
+    },
+  };
+}
+
 /**
  * Codex models. `gpt-5-5` is listed and priced by KIE but was rejected on both Codex routes in a
  * live check on 2026-10-16 ("not supported when using Codex with a ChatGPT account"), so it is not
@@ -114,10 +162,20 @@ const CLAUDE_MODELS: readonly ChatModelDefinition[] = [
 ];
 
 /**
- * Chat models documented by KIE: Codex (OpenAI Responses) and Claude (Anthropic Messages),
- * priced in USD per 1M tokens from KIE's published rates (see above).
+ * Gemini models. KIE has no list that names them (its two model lists are Codex's and Claude's), so
+ * they are offered from these definitions, and a model KIE withdraws fails with KIE's own message.
  */
-export const KIE_CHAT_MODELS: readonly ChatModelDefinition[] = [...CODEX_MODELS, ...CLAUDE_MODELS];
+const GEMINI_MODELS: readonly ChatModelDefinition[] = [
+  gemini("gemini-3-8-flash", "Gemini 3.8 Flash", [{ input: 45, output: 225 }, { from: "2026-12-31", input: 90, output: 450 }]),
+  gemini("gemini-3-6-flash", "Gemini 3.6 Flash", [{ input: 45, output: 225 }, { from: "2026-12-31", input: 90, output: 450 }]),
+  gemini("gemini-4-argon", "Gemini 4 Argon", [{ input: 160, output: 800 }]),
+];
+
+/**
+ * Chat models documented by KIE: Codex (OpenAI Responses), Claude (Anthropic Messages) and Gemini
+ * (OpenAI Chat Completions), priced in USD per 1M tokens from KIE's published rates (see above).
+ */
+export const KIE_CHAT_MODELS: readonly ChatModelDefinition[] = [...CODEX_MODELS, ...CLAUDE_MODELS, ...GEMINI_MODELS];
 
 /** Options of `createKieProvider`. */
 export interface KieProviderOptions {
@@ -141,8 +199,8 @@ export interface KieProviderOptions {
  *
  * It is a chat provider (ADR 0009):
  *
- * - `refreshModels` reads KIE's Codex and Claude lists and keeps the chat models they name
- *   (`fetchKieModels`).
+ * - `refreshModels` reads KIE's Codex and Claude lists and keeps the Codex and Claude models they
+ *   name (`fetchKieModels`). The Gemini models are always kept: no KIE list names them.
  * - `chatKit`: KIE's file input and tools are undocumented, so neither is taken until a live
  *   smoke test; native structured output answered valid JSON while thinking in a live check on
  *   2026-10-16 (`claude-opus-5-5`). Every chat model is offered, reads PDFs when it reads images,
@@ -166,7 +224,7 @@ export function createKieProvider(options: KieProviderOptions): ChatProvider<Cha
     baseUrls: { "openai-responses": responsesBaseUrl, "anthropic-messages": claudeBaseUrl },
     models: definitions,
     anthropicAuth: "bearer",
-    wrapStreams: kieEnvelopeStreams,
+    wrapStreams: kieChatStreams,
     fetch: options.fetch,
     images: helperImages({
       provider: KIE_PROVIDER_ID,

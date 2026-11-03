@@ -45,7 +45,7 @@ const UNPUBLISHED_CACHE_WRITE_FACTOR = 1.25;
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** A schedule with one period that applies from the beginning (KIE and ToAPIs publish no dates). */
+/** A schedule with one period that applies from the beginning (for a price published without dates, as KIE and ToAPIs mostly do). */
 export function singleRate(rates: TokenRates & { largePrompt?: LargePromptRates | undefined }): ModelRate {
   return { periods: [rates] };
 }

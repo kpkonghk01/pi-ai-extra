@@ -1,4 +1,4 @@
-import type { FetchFunction, ProviderStreams } from "@earendil-works/pi-ai";
+import type { FetchFunction } from "@earendil-works/pi-ai";
 
 /**
  * KIE reports chat failures (for example an invalid key) as HTTP 200 with its JSON
@@ -26,15 +26,6 @@ export function kieEnvelopeFetch(base: FetchFunction): FetchFunction {
       status,
       headers: { "content-type": "application/json" },
     });
-  };
-}
-
-export function kieEnvelopeStreams(inner: ProviderStreams): ProviderStreams {
-  const withFetch = <T extends { fetch?: FetchFunction }>(options: T | undefined): T =>
-    ({ ...options, fetch: kieEnvelopeFetch(options?.fetch ?? ((url, init) => globalThis.fetch(url, init))) }) as T;
-  return {
-    stream: (model, context, options) => inner.stream(model, context, withFetch(options)),
-    streamSimple: (model, context, options) => inner.streamSimple(model, context, withFetch(options)),
   };
 }
 
