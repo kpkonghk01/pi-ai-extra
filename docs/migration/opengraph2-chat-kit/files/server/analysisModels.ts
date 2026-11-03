@@ -41,11 +41,7 @@ const OPTIONS: readonly AnalysisModelOption[] = [
   { key: 'google:gemini-3.8-flash', provider: 'google', modelId: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
 ];
 
-/**
- * The provider's API key from the server's secrets. A process's environment does not change
- * after it starts: AI Studio sets the secrets when it starts the server, and server.ts loads
- * `.env` once.
- */
+/** The provider's API key from the server's secrets. */
 function apiKeyOf(provider: AnalysisProvider): string | undefined {
   return process.env[PROVIDERS[provider].secret]?.trim() || undefined;
 }
@@ -113,8 +109,10 @@ export function resolveAnalysisModel(requested: unknown): AnalysisModelOption {
 let kit: ReturnType<typeof createChatKit> | undefined;
 
 /**
- * The chat kit, with a provider for every key the server has. Built once, on first use: not when
- * this module loads, which happens before server.ts has loaded `.env`.
+ * The chat kit, with a provider for every key the server has. Built on first use, not when this
+ * module loads: the module loads before server.ts has loaded `.env`. Built once: nothing changes
+ * these secrets after server.ts has loaded `.env`, so a changed secret needs a restart, which
+ * builds a new kit.
  */
 function chatKit() {
   kit ??= createChatKit({
