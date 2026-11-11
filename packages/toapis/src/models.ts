@@ -67,7 +67,8 @@ const TRANSPARENT = ["transparent"] as const;
  * The pixels Seedream maps each aspect ratio to at a resolution tier: Volcengine's table for
  * Seedream 5.0 pro / flash (`referenc-docs/volcengine/volcengine-seedream-image-size-doc.md`).
  * Seedream 5.5's `size` takes a tier or explicit pixels but no ratio, so an explicit ratio is
- * sent as these pixels.
+ * sent as these pixels. Checked on 2026-11-11: KIE's Seedream 5.5 rendered 16:9 at 1K as
+ * 1424x800, and ToAPIs billed an explicit 1424x800 at its 1K price.
  */
 const SEEDREAM_55_PIXELS: Record<ToapisSeedreamResolution, Record<Exclude<ToapisSeedream55AspectRatio, "auto">, string>> = {
   "1K": {
