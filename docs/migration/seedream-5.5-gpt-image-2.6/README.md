@@ -55,7 +55,7 @@ Part 1 的名稱跟隨各 app 現有的寫法。例如 app 把 Seedream 5.0 Pro 
 
 - **模型選單**：多了 GPT Image 2.6 Flare、GPT Image 2.6 Sunburst、Seedream 5.5（ToAPIs）和 Seedream 5.5（KIE）。
 - **Seedream 5.5 最高 2K**：兩個 provider 都沒有 4K。app 讓用戶選 4K 時，image-kit 會回「不支援 4K 解像度」。
-- **保留原圖比例**：只放一張參考圖並要求保留比例時，Seedream 5.5 會用 `auto`。實測 Seedream 5.5（KIE 和 ToAPIs）把 640×360 的參考圖輸出為 1360×768，比例保持不變。GPT Image 2.6 跟 2.5 一樣，改用最接近的比例：ToAPIs 的文件雖然列出 `auto`，但實測時兩個 2.6 模型一收到 `auto` 就回 503，所以 package 不提供它。
+- **保留原圖比例**：只放一張參考圖並要求保留比例時，Seedream 5.5 會用 `auto`。實測 Seedream 5.5（KIE 和 ToAPIs）把 640×360 的參考圖輸出為 1360×768，比例保持不變。GPT Image 2.6 跟 2.5 一樣，改用最接近的比例：2.6 的標準層不支援 `auto`（實測回 503，ToAPIs 的文件現在也寫明了），所以 package 不提供它。
 - **GPT Image 2.5 加價**：ToAPIs 已把 2.5 調到 4.5 credits 一張（sheet 上寫 ¥0.16），即 1K / 2K / 4K 為 US$0.0225 / 0.03 / 0.0375，各 app 的預估跟着更新。
 - **費用預估**（USD / 張，2026-11-11 在線上讀取，存於 [`toapis-image-pricing-doc.md`](../../../referenc-docs/toapis/toapis-image-pricing-doc.md) 和 [`kie-seedream-5-5-pricing-doc.md`](../../../referenc-docs/kie/kie-seedream-5-5-pricing-doc.md)）：
 

@@ -53,8 +53,8 @@ interface ToapisModelDefinition {
 const GEMINI_RATIOS = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "5:4", "4:5", "21:9", "1:4", "4:1", "1:8", "8:1"] as const;
 const GPT_IMAGE_2_RATIOS = ["1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "2:1", "1:2", "21:9", "9:21"] as const;
 const GPT_IMAGE_25_RATIOS = ["1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"] as const;
-// ToAPIs documents size auto for GPT Image 2.6, but on 2026-11-11 both models answered it with
-// HTTP 503 (model_not_found, "no available service") while explicit ratios worked, so it is not offered.
+// GPT Image 2.6's standard tier does not take size auto: on 2026-11-11 both models answered it with
+// HTTP 503 (model_not_found, "no available service"), and ToAPIs' docs now say so. It is not offered.
 const GPT_IMAGE_26_RATIOS = GPT_IMAGE_25_RATIOS;
 const SEEDREAM_RATIOS = ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "21:9", "9:21"] as const;
 const SEEDREAM_55_RATIOS = ["auto", "1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "21:9"] as const;
