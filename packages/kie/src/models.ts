@@ -88,7 +88,11 @@ function info(fields: Omit<ImageModelInfo, "provider" | "familyId" | "familyName
   };
 }
 
-/** Enforces KIE's documented GPT Image 2 aspect-ratio/resolution/background combinations. */
+/**
+ * Enforces KIE's documented GPT Image 2 aspect-ratio/resolution/background combinations. KIE's
+ * docs no longer limit 1:1 at 4K or auto to 1K; on 2026-11-11, 1:1 at 4K and auto at 2K and 4K
+ * rendered, and 3:1 at 4K was still refused.
+ */
 function refineGptImage2(request: NormalizedKieRequest, ctx: z.RefinementCtx): void {
   const ratio = request.aspectRatio ?? "auto";
   const resolution = request.resolution;
@@ -96,8 +100,7 @@ function refineGptImage2(request: NormalizedKieRequest, ctx: z.RefinementCtx): v
     ctx.addIssue({ code: "custom", path: [path], message });
   };
   if (resolution === "2K" && ["5:4", "4:5", "3:1", "1:3", "9:21"].includes(ratio)) fail("aspectRatio", `${ratio} is not supported at 2K`);
-  if (resolution === "4K" && ["1:1", "3:1", "1:3", "9:21"].includes(ratio)) fail("aspectRatio", `${ratio} is not supported at 4K`);
-  if (ratio === "auto" && resolution !== undefined && resolution !== "1K") fail("resolution", "aspectRatio auto (or omitted) only supports 1K");
+  if (resolution === "4K" && ["3:1", "1:3", "9:21"].includes(ratio)) fail("aspectRatio", `${ratio} is not supported at 4K`);
   if (request.background !== undefined && resolution !== undefined && resolution !== "1K") fail("background", "background is only supported at 1K");
 }
 
@@ -117,8 +120,7 @@ function gptImage2(id: "gpt-image-2-text-to-image" | "gpt-image-2-image-to-image
     background: option(GPT_BACKGROUNDS, null),
     notes: [
       "2K does not support 5:4, 4:5, 3:1, 1:3 or 9:21.",
-      "4K does not support 1:1, 3:1, 1:3 or 9:21.",
-      "aspectRatio auto (or omitted) only supports 1K.",
+      "4K does not support 3:1, 1:3 or 9:21.",
       "background is only supported at 1K.",
     ],
   });
@@ -204,7 +206,7 @@ const GROK_TEXT = info({
   familyId: "grok-imagine-image-2-0",
   familyName: "Grok Imagine Image 2.0",
   operationRole: "text-to-image",
-  promptMaxLength: null,
+  promptMaxLength: 8_000,
   referenceImages: references(0, 0),
   aspectRatio: option(GROK_RATIOS, null, true),
   notes: ["aspectRatio is required."],
