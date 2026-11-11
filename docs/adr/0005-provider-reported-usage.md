@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-28
-- Related: [DATA-4513](https://hk01-digital.atlassian.net/browse/DATA-4513), [DATA-4566](https://hk01-digital.atlassian.net/browse/DATA-4566), [DATA-4568](https://hk01-digital.atlassian.net/browse/DATA-4568)
+- Related: [DATA-4513](https://hk01-digital.atlassian.net/browse/DATA-4513), [DATA-4566](https://hk01-digital.atlassian.net/browse/DATA-4566), [DATA-4568](https://hk01-digital.atlassian.net/browse/DATA-4568), [DATA-4688](https://hk01-digital.atlassian.net/browse/DATA-4688)
 
 ## Context
 

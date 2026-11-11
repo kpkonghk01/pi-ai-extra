@@ -37,7 +37,7 @@ ToAPIs 改 host 對 app 沒有影響：image-kit 不讓 app 設定 ToAPIs 的 ho
 
 **升級 URL 和修改 policy 必須一起做**（都在 Part 1）。policy 寫了新模型、URL 卻仍是舊版時，image-kit 會報 `references unknown model family`，模型選單會載入失敗。只升級 URL、不改 policy 不會出錯，但新模型會用 catalogue 的預設名稱，也沒有價錢。
 
-Part 1 的名稱跟隨各 app 現有的寫法。例如 app 把 Seedream 5.0 Pro 叫「Doubao Seedream 5.0 Pro (ToAPIs)」，新模型就叫「Doubao Seedream 5.5 (ToAPIs)」和「Doubao Seedream 5.5 (KIE)」。
+Part 1 的名稱跟隨各 app 現有的寫法。例如 app 把 Seedream 5.0 Pro 叫「Doubao Seedream 5.0 Pro (ToAPIs)」，ToAPIs 的新模型就叫「Doubao Seedream 5.5 (ToAPIs)」。KIE 的一律叫「Seedream 5.5 (KIE)」，因為 KIE 不是用 Doubao 的名義出售。
 
 ## 各 app 要留意的地方
 
@@ -57,16 +57,16 @@ Part 1 的名稱跟隨各 app 現有的寫法。例如 app 把 Seedream 5.0 Pro 
 - **Seedream 5.5 最高 2K**：兩個 provider 都沒有 4K。app 讓用戶選 4K 時，image-kit 會回「不支援 4K 解像度」。
 - **保留原圖比例**：只放一張參考圖並要求保留比例時，Seedream 5.5 會用 `auto`。實測 Seedream 5.5（KIE 和 ToAPIs）把 640×360 的參考圖輸出為 1360×768，比例保持不變。GPT Image 2.6 跟 2.5 一樣，改用最接近的比例：ToAPIs 的文件雖然列出 `auto`，但實測時兩個 2.6 模型一收到 `auto` 就回 503，所以 package 不提供它。
 - **GPT Image 2.5 加價**：ToAPIs 已把 2.5 調到 4.5 credits 一張（sheet 上寫 ¥0.16），即 1K / 2K / 4K 為 US$0.0225 / 0.03 / 0.0375，各 app 的預估跟着更新。
-- **費用預估**（USD / 張，2026-11-11）：
+- **費用預估**（USD / 張，2026-11-11 在線上讀取，存於 [`toapis-image-pricing-doc.md`](../../../referenc-docs/toapis/toapis-image-pricing-doc.md) 和 [`kie-seedream-5-5-pricing-doc.md`](../../../referenc-docs/kie/kie-seedream-5-5-pricing-doc.md)）：
 
   | Model | 1K | 2K | 4K | 參考圖 | 來源 |
   | --- | --- | --- | --- | --- | --- |
-  | GPT Image 2.6 Flare / Sunburst（ToAPIs） | 0.018 | 0.024 | 0.03 | 不收 | ToAPIs model guide 和價目頁（3.6 / 4.8 / 6 credits） |
-  | Seedream 5.5（ToAPIs） | 0.016 | 0.028 | — | 不收 | ToAPIs 價目頁（3.2 / 5.6 credits） |
-  | Seedream 5.5（KIE） | 0.018 | 0.0315 | — | 每張 0.0072 | KIE model pricing（3.6 / 6.3 credits，參考圖 1.44 credits） |
-  | GPT Image 2.5 Flare / Sunburst（ToAPIs） | 0.0225 | 0.03 | 0.0375 | 不收 | ToAPIs model guide 和價目頁 |
+  | GPT Image 2.6 Flare / Sunburst（ToAPIs） | 0.018 | 0.024 | 0.03 | 不收 | ToAPIs 價目頁和 model guide |
+  | Seedream 5.5（ToAPIs） | 0.016 | 0.028 | — | 不收 | ToAPIs 價目頁和 model guide（3.2 / 5.6 credits） |
+  | Seedream 5.5（KIE） | 0.018 | 0.0315 | — | 每張 0.0072 | KIE 價目 API（3.6 / 6.3 credits，參考圖 1.44 credits） |
+  | GPT Image 2.5 Flare / Sunburst（ToAPIs） | 0.0225 | 0.03 | 0.0375 | 不收 | ToAPIs 價目頁和 model guide |
 
-  image-kit 的價錢格式只有每張圖價和每百萬 input token 價，表達不到 KIE 按參考圖張數收的費用，所以 policy 的預估不包括它。用 KIE Seedream 5.5 編輯時，實際收費會比預估多（每張參考圖 US$0.0072）。open-graph-single 自己計價，可以計算進去。
+  image-kit 的價錢格式只有每張圖價和每百萬 input token 價，表達不到 KIE 按參考圖張數收的費用，所以 policy 的預估不包括它。用 KIE Seedream 5.5 編輯時，實際收費會比預估多（每張參考圖 US$0.0072），所以 Part 1 把這筆費用寫在 KIE 模型的 description，讓用戶在選單看到。open-graph-single 自己計價，可以計算進去。
 
 ## 本機測試
 
