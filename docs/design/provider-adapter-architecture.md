@@ -71,8 +71,8 @@ There is no provider fallback, model fallback, cross-provider upload fallback, o
 
 | Adapter | Image operations | Chat protocols | Usage reported |
 | --- | --- | --- | --- |
-| KIE | Grok Imagine Image 2.0 text/edit; GPT Image 2 text/image; Nano Banana 2.1 | Codex via OpenAI Responses (`/openai/v1`); Claude via Anthropic Messages (`/anthropic`, Bearer) | `creditsConsumed`, `costTime` |
-| ToAPIs | Gemini Nano Banana 2.1; GPT Image 2; GPT Image 2.5 Flare/Sunburst; Seedream 5.0 Pro | Codex via OpenAI Responses; Claude via Anthropic Messages | `billing`, token `usage` |
+| KIE | Grok Imagine Image 2.0 text/edit; GPT Image 2 text/image; Nano Banana 2.1; Seedream 5.5 text/image | Codex via OpenAI Responses (`/openai/v1`); Claude via Anthropic Messages (`/anthropic`, Bearer) | `creditsConsumed`, `costTime` |
+| ToAPIs | Gemini Nano Banana 2.1; GPT Image 2; GPT Image 2.5 Flare/Sunburst; GPT Image 2.6 Flare/Sunburst; Seedream 5.0 Pro; Seedream 5.5 | Codex via OpenAI Responses; Claude via Anthropic Messages | `billing`, token `usage` |
 | Google | Gemini Nano Banana 2.1; Gemini 3 Pro Image | Gemini on AI Studio via pi-ai's Gemini adapter and catalogue (explicit key); Gemini on Agent Platform via pi-ai's Vertex adapter (express-mode key) | `usageMetadata` |
 | OpenRouter | None (pi-ai already serves OpenRouter's image generation) | OpenAI Completions and Anthropic Messages via pi-ai's OpenRouter provider (explicit key, live model list) | `usage` with `cost` |
 
