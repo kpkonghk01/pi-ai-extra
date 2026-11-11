@@ -29,6 +29,11 @@ import {
   type KieNanoBanana21AspectRatio,
   type KieNanoBanana21OutputFormat,
   type KieResolution,
+  type KieSeedream55AspectRatio,
+  type KieSeedream55Background,
+  type KieSeedream55EditAspectRatio,
+  type KieSeedream55OutputFormat,
+  type KieSeedream55Resolution,
 } from "./models.ts";
 import { waitForKieTask } from "./task.ts";
 
@@ -75,7 +80,29 @@ export interface KieNanoBanana21Request extends KieRequestBase {
   outputFormat?: KieNanoBanana21OutputFormat | undefined;
 }
 
-export type KieImageRequest = KieGrokTextToImageRequest | KieGrokImageEditRequest | KieGptImage2Request | KieNanoBanana21Request;
+export interface KieSeedream55TextToImageRequest extends KieRequestBase {
+  model: "seedream/5-5-text-to-image";
+  aspectRatio: KieSeedream55AspectRatio;
+  resolution?: KieSeedream55Resolution | undefined;
+  background?: KieSeedream55Background | undefined;
+  outputFormat?: KieSeedream55OutputFormat | undefined;
+}
+
+export interface KieSeedream55ImageToImageRequest extends KieRequestBase {
+  model: "seedream/5-5-image-to-image";
+  aspectRatio?: KieSeedream55EditAspectRatio | undefined;
+  resolution?: KieSeedream55Resolution | undefined;
+  background?: KieSeedream55Background | undefined;
+  outputFormat?: KieSeedream55OutputFormat | undefined;
+}
+
+export type KieImageRequest =
+  | KieGrokTextToImageRequest
+  | KieGrokImageEditRequest
+  | KieGptImage2Request
+  | KieNanoBanana21Request
+  | KieSeedream55TextToImageRequest
+  | KieSeedream55ImageToImageRequest;
 
 /** KIE recommends starting at 2-3 s, backing off gradually and stopping after 10-15 minutes. */
 const POLL_DEFAULTS: PollDefaults = { initialDelayMs: 2_500, maxDelayMs: 10_000, factor: 1.5, jitterRatio: 0.1, timeoutMs: 10 * 60_000 };

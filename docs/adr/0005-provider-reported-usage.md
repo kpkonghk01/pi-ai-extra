@@ -34,6 +34,8 @@ Amended 2026-10-16 ([DATA-4568](https://hk01-digital.atlassian.net/browse/DATA-4
 - The interim zero is gone, and with it the rule: chat model cost no longer defaults to `0` for any definition. `ChatModelDefinition.cost` is replaced by `rate`, a dated schedule ([ADR 0008](0008-chat-kit-package.md)). A definition without `rate` has no rate, and the chat kit reports no cost for it. pi-ai's `Model.cost` still cannot be absent, so such a model carries zeros there; they are a placeholder, not a rate.
 - The cache fill-in rule stays. A cache rate the provider does not publish is left out of the model's rate and derived when a request is priced: reads at the input rate, writes at 1.25 × input.
 
+Amended 2026-11-11 ([DATA-4688](https://hk01-digital.atlassian.net/browse/DATA-4688)): KIE `costTime` is seconds. A live check of two Seedream 5.5 tasks found `recordInfo` reporting 23 and 13 for tasks that ran 22.9 s and 13.1 s from `createTime` to `completeTime`, as KIE's callback schema says, not the milliseconds of its Get Task Details reference. From kie 0.8.0, `providerDurationMs` is `costTime` × 1,000; records stored from earlier versions hold seconds.
+
 ## Consequences
 
 Recorded spend matches what each provider settles, including refunds. Consumers must handle provider-specific units (KIE credits as numbers, ToAPIs credits/USD as decimal strings) and re-query pending ToAPIs billing later.

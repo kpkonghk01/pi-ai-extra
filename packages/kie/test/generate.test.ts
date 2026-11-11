@@ -125,6 +125,39 @@ describe("generateKieImage", () => {
     });
   });
 
+  it("maps Seedream 5.5 text-to-image to aspect_ratio and size", async () => {
+    const fake = createFakeFetch(kieRoutes());
+    await generateKieImage({
+      ...base,
+      model: "seedream/5-5-text-to-image",
+      prompt: "a harbour at night",
+      aspectRatio: "16:9",
+      resolution: "1K",
+      background: "transparent",
+      outputFormat: "png",
+      fetch: fake.fetch,
+    });
+    assert.deepEqual(bodyOf(fake.callsTo(CREATE_URL)[0]), {
+      model: "seedream/5-5-text-to-image",
+      input: { prompt: "a harbour at night", aspect_ratio: "16:9", size: "1K", background: "transparent", output_format: "png" },
+    });
+  });
+
+  it("maps Seedream 5.5 image-to-image to image_urls and leaves KIE's defaults unset", async () => {
+    const fake = createFakeFetch(kieRoutes());
+    await generateKieImage({
+      ...base,
+      model: "seedream/5-5-image-to-image",
+      prompt: "make it snow",
+      referenceImages: ["https://cdn.example.com/a.png", "https://cdn.example.com/b.png"],
+      fetch: fake.fetch,
+    });
+    assert.deepEqual(bodyOf(fake.callsTo(CREATE_URL)[0]).input, {
+      prompt: "make it snow",
+      image_urls: ["https://cdn.example.com/a.png", "https://cdn.example.com/b.png"],
+    });
+  });
+
   it("rejects reference-count and parameter violations before any network call", async () => {
     const fake = createFakeFetch(kieRoutes());
     const refs = (count: number) => Array.from({ length: count }, (_, index) => `https://cdn.example.com/${index}.png`);
@@ -140,6 +173,15 @@ describe("generateKieImage", () => {
       [{ ...base, model: "nano-banana-pro", prompt: "x" } as unknown as KieImageRequest, "invalid_request"],
       [{ ...base, model: "nano-banana-2", prompt: "x" } as unknown as KieImageRequest, "invalid_request"],
       [{ ...base, apiKey: " ", model: "nano-banana-2-1", prompt: "x" }, "invalid_request"],
+      [{ ...base, model: "seedream/5-5-text-to-image", prompt: "a fox" } as unknown as KieImageRequest, "invalid_request"],
+      [{ ...base, model: "seedream/5-5-text-to-image", prompt: "a fox", aspectRatio: "auto" } as unknown as KieImageRequest, "invalid_request"],
+      [{ ...base, model: "seedream/5-5-text-to-image", prompt: "a fox", aspectRatio: "1:1", resolution: "4K" } as unknown as KieImageRequest, "invalid_request"],
+      [{ ...base, model: "seedream/5-5-text-to-image", prompt: "a fox", aspectRatio: "1:1", background: "transparent", outputFormat: "jpeg" }, "invalid_request"],
+      [{ ...base, model: "seedream/5-5-text-to-image", prompt: "a fox", aspectRatio: "1:1", outputFormat: "jpg" } as unknown as KieImageRequest, "invalid_request"],
+      [{ ...base, model: "seedream/5-5-text-to-image", prompt: "a fox", aspectRatio: "1:1", referenceImages: refs(1) }, "reference_limit"],
+      [{ ...base, model: "seedream/5-5-image-to-image", prompt: "a fox" }, "reference_limit"],
+      [{ ...base, model: "seedream/5-5-image-to-image", prompt: "a fox", referenceImages: refs(11) }, "reference_limit"],
+      [{ ...base, model: "seedream/5-5-image-to-image", prompt: "x".repeat(5_001), referenceImages: refs(1) }, "invalid_request"],
     ];
     for (const [request, code] of cases) {
       await assert.rejects(generateKieImage({ ...request, fetch: fake.fetch }), isCode(code), `${request.model} should fail with ${code}`);
@@ -242,10 +284,12 @@ describe("KIE catalogue and pi-ai adapters", () => {
       "gpt-image-2-text-to-image": [0, 0],
       "gpt-image-2-image-to-image": [1, 16],
       "nano-banana-2-1": [0, 10],
+      "seedream/5-5-text-to-image": [0, 0],
+      "seedream/5-5-image-to-image": [1, 10],
     });
   });
 
-  it("declares GPT Image 2 and Grok operation families", () => {
+  it("declares the GPT Image 2, Grok and Seedream 5.5 operation families", () => {
     assert.deepEqual(
       KIE_IMAGE_MODELS.map((model) => [model.id, model.familyId, model.operationRole]),
       [
@@ -254,6 +298,8 @@ describe("KIE catalogue and pi-ai adapters", () => {
         ["gpt-image-2-text-to-image", "gpt-image-2", "text-to-image"],
         ["gpt-image-2-image-to-image", "gpt-image-2", "image-to-image"],
         ["nano-banana-2-1", "nano-banana-2-1", "unified"],
+        ["seedream/5-5-text-to-image", "seedream-5-5", "text-to-image"],
+        ["seedream/5-5-image-to-image", "seedream-5-5", "image-to-image"],
       ],
     );
   });
