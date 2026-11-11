@@ -158,11 +158,13 @@ describe("generateKieImage", () => {
     });
   });
 
-  it("accepts GPT Image 2 at 1:1 in 4K and auto at 2K and 4K, as KIE's docs now allow", async () => {
-    for (const [aspectRatio, resolution] of [["1:1", "4K"], ["auto", "2K"], ["auto", "4K"]] as const) {
+  it("accepts GPT Image 2 at 1:1 in 4K and auto (or no ratio) at 2K and 4K, as KIE's docs now allow", async () => {
+    const cases = [["1:1", "4K"], ["auto", "2K"], ["auto", "4K"], [undefined, "2K"], [undefined, "4K"]] as const;
+    for (const [aspectRatio, resolution] of cases) {
       const fake = createFakeFetch(kieRoutes());
       await generateKieImage({ ...base, model: "gpt-image-2-text-to-image", prompt: "a fox", aspectRatio, resolution, fetch: fake.fetch });
-      assert.deepEqual(bodyOf(fake.callsTo(CREATE_URL)[0]).input, { prompt: "a fox", aspect_ratio: aspectRatio, resolution });
+      const expected = aspectRatio === undefined ? { prompt: "a fox", resolution } : { prompt: "a fox", aspect_ratio: aspectRatio, resolution };
+      assert.deepEqual(bodyOf(fake.callsTo(CREATE_URL)[0]).input, expected, `${aspectRatio ?? "no ratio"} at ${resolution}`);
     }
   });
 
