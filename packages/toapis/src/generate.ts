@@ -90,7 +90,6 @@ export interface ToapisSeedreamRequest extends ToapisRequestBase {
 
 export interface ToapisGptImage26Request extends ToapisRequestBase {
   model: "gpt-image-2.6-flare" | "gpt-image-2.6-sunburst";
-  /** `auto` lets the provider choose the size; the ratio is not guaranteed. */
   aspectRatio?: ToapisGptImage26AspectRatio | undefined;
   resolution?: ToapisResolution | undefined;
   background?: "transparent" | undefined;

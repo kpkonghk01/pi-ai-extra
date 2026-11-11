@@ -24,7 +24,7 @@ export type ToapisGeminiAspectRatio =
 export type ToapisGptImage2AspectRatio =
   | "1:1" | "3:2" | "2:3" | "4:3" | "3:4" | "5:4" | "4:5" | "16:9" | "9:16" | "2:1" | "1:2" | "21:9" | "9:21";
 export type ToapisGptImage25AspectRatio = "1:1" | "3:2" | "2:3" | "4:3" | "3:4" | "5:4" | "4:5" | "16:9" | "9:16" | "21:9";
-export type ToapisGptImage26AspectRatio = ToapisGptImage25AspectRatio | "auto";
+export type ToapisGptImage26AspectRatio = ToapisGptImage25AspectRatio;
 export type ToapisSeedreamAspectRatio = "1:1" | "4:3" | "3:4" | "16:9" | "9:16" | "3:2" | "2:3" | "21:9" | "9:21";
 export type ToapisResolution = "1K" | "2K" | "4K";
 export type ToapisSeedreamResolution = "1K" | "2K";
@@ -53,7 +53,9 @@ interface ToapisModelDefinition {
 const GEMINI_RATIOS = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "5:4", "4:5", "21:9", "1:4", "4:1", "1:8", "8:1"] as const;
 const GPT_IMAGE_2_RATIOS = ["1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "2:1", "1:2", "21:9", "9:21"] as const;
 const GPT_IMAGE_25_RATIOS = ["1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "21:9"] as const;
-const GPT_IMAGE_26_RATIOS = [...GPT_IMAGE_25_RATIOS, "auto"] as const;
+// ToAPIs documents size auto for GPT Image 2.6, but on 2026-11-11 both models answered it with
+// HTTP 503 (model_not_found, "no available service") while explicit ratios worked, so it is not offered.
+const GPT_IMAGE_26_RATIOS = GPT_IMAGE_25_RATIOS;
 const SEEDREAM_RATIOS = ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "21:9", "9:21"] as const;
 const SEEDREAM_55_RATIOS = ["auto", "1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "21:9"] as const;
 const RESOLUTIONS = ["1K", "2K", "4K"] as const;
@@ -81,7 +83,11 @@ const SEEDREAM_55_PIXELS: Record<ToapisSeedreamResolution, Record<Exclude<Toapis
   },
 };
 
-/** ToAPIs' upload endpoint accepts files up to 10 MB. */
+/**
+ * ToAPIs' upload endpoint takes files up to 30 MB (its docs, 2026-11-11), but Seedream 5.0 Pro
+ * takes references up to 10 MB and the other models document no limit, so inline references stay
+ * at 10 MB.
+ */
 const INLINE_LIMIT_BYTES = 10 * 1024 * 1024;
 const COMMON_TYPES: readonly ImageMimeType[] = ["image/png", "image/jpeg", "image/webp"];
 
@@ -154,7 +160,6 @@ function gptImage26(id: "gpt-image-2.6-flare" | "gpt-image-2.6-sunburst"): Toapi
     notes: [
       "Up to 10 reference images.",
       "Quality is fixed to high by ToAPIs.",
-      "aspectRatio auto lets the provider choose the size; the ratio is not guaranteed.",
     ],
   });
   return {

@@ -381,7 +381,7 @@ describe("prepare: resolution, aspect ratio and reference format", () => {
     assert.equal(await keep("kie:gpt-image-2", "1200:675", "2K"), "16:9");
     assert.equal(await keep("kie:seedream-5-5"), "auto");
     assert.equal(await keep("toapis:doubao-seedream-5-5"), "auto");
-    assert.equal(await keep("toapis:gpt-image-2.6-sunburst"), "auto");
+    assert.equal(await keep("toapis:gpt-image-2.6-sunburst", "1200:675"), "16:9");
   });
 
   it("converts references only where the selected family operation cannot accept them", async () => {

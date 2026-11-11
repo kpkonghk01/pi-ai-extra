@@ -72,8 +72,8 @@ describe("generateToapisImage", () => {
         { model: "doubao-seedream-5-0-pro", prompt: "p", n: 1, metadata: { resolution: "1K", watermark: false } },
       ],
       [
-        { ...base, model: "gpt-image-2.6-flare", prompt: "p", aspectRatio: "auto", resolution: "2K", background: "transparent", referenceImages: ["https://cdn.example.com/a.png"] },
-        { model: "gpt-image-2.6-flare", prompt: "p", n: 1, size: "auto", resolution: "2K", background: "transparent", reference_images: ["https://cdn.example.com/a.png"] },
+        { ...base, model: "gpt-image-2.6-flare", prompt: "p", aspectRatio: "16:9", resolution: "2K", background: "transparent", referenceImages: ["https://cdn.example.com/a.png"] },
+        { model: "gpt-image-2.6-flare", prompt: "p", n: 1, size: "16:9", resolution: "2K", background: "transparent", reference_images: ["https://cdn.example.com/a.png"] },
       ],
       [
         { ...base, model: "gpt-image-2.6-sunburst", prompt: "p", aspectRatio: "21:9", resolution: "4K" },
@@ -142,6 +142,7 @@ describe("generateToapisImage", () => {
       [{ ...base, model: "gemini-3.1-flash-image", prompt: "p" } as unknown as ToapisImageRequest, "invalid_request"],
       [{ ...base, model: "gpt-image-2.6-flare", prompt: "p", referenceImages: refs(11) }, "reference_limit"],
       [{ ...base, model: "gpt-image-2.6-sunburst", prompt: "p", aspectRatio: "9:21" } as unknown as ToapisImageRequest, "invalid_request"],
+      [{ ...base, model: "gpt-image-2.6-flare", prompt: "p", aspectRatio: "auto" } as unknown as ToapisImageRequest, "invalid_request"],
       [{ ...base, model: "gpt-image-2.6-flare", prompt: "p", outputFormat: "gif" } as unknown as ToapisImageRequest, "invalid_request"],
       [{ ...base, model: "doubao-seedream-5-5", prompt: "p", referenceImages: refs(11) }, "reference_limit"],
       [{ ...base, model: "doubao-seedream-5-5", prompt: "p", referenceImages: [dataUrl(GIF_BYTES, "image/gif")] }, "invalid_reference"],
