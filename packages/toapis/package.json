@@ -1,6 +1,6 @@
 {
   "name": "@hk01/pi-ai-extra-toapis",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "ToAPIs image helper (Gemini Nano Banana 2.1, GPT Image 2/2.5/2.6, Seedream 5.0 Pro/5.5) and a pi-ai chat provider (Codex, Claude) with image models, a live model list and the chat kit's traits",
   "license": "UNLICENSED",
   "type": "module",
