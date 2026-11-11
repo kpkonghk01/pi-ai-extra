@@ -182,6 +182,7 @@ describe("generateKieImage", () => {
       [{ ...base, model: "seedream/5-5-image-to-image", prompt: "a fox" }, "reference_limit"],
       [{ ...base, model: "seedream/5-5-image-to-image", prompt: "a fox", referenceImages: refs(11) }, "reference_limit"],
       [{ ...base, model: "seedream/5-5-image-to-image", prompt: "x".repeat(5_001), referenceImages: refs(1) }, "invalid_request"],
+      [{ ...base, model: "seedream/5-5-text-to-image", prompt: "fox", aspectRatio: "1:1" }, "invalid_request"],
     ];
     for (const [request, code] of cases) {
       await assert.rejects(generateKieImage({ ...request, fetch: fake.fetch }), isCode(code), `${request.model} should fail with ${code}`);

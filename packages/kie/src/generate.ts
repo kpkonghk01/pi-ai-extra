@@ -31,7 +31,7 @@ import {
   type KieResolution,
   type KieSeedream55AspectRatio,
   type KieSeedream55Background,
-  type KieSeedream55EditAspectRatio,
+  type KieSeedream55ImageToImageAspectRatio,
   type KieSeedream55OutputFormat,
   type KieSeedream55Resolution,
 } from "./models.ts";
@@ -90,7 +90,7 @@ export interface KieSeedream55TextToImageRequest extends KieRequestBase {
 
 export interface KieSeedream55ImageToImageRequest extends KieRequestBase {
   model: "seedream/5-5-image-to-image";
-  aspectRatio?: KieSeedream55EditAspectRatio | undefined;
+  aspectRatio?: KieSeedream55ImageToImageAspectRatio | undefined;
   resolution?: KieSeedream55Resolution | undefined;
   background?: KieSeedream55Background | undefined;
   outputFormat?: KieSeedream55OutputFormat | undefined;

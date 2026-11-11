@@ -22,7 +22,7 @@ export {
   type KieResolution,
   type KieSeedream55AspectRatio,
   type KieSeedream55Background,
-  type KieSeedream55EditAspectRatio,
+  type KieSeedream55ImageToImageAspectRatio,
   type KieSeedream55OutputFormat,
   type KieSeedream55Resolution,
 } from "./models.ts";

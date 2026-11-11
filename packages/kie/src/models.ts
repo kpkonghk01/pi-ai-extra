@@ -29,7 +29,7 @@ export type KieNanoBanana21AspectRatio =
   | "5:4" | "1:8" | "8:1" | "9:16" | "16:9" | "21:9" | "auto";
 export type KieNanoBanana21OutputFormat = "png" | "jpg";
 export type KieSeedream55AspectRatio = "1:1" | "4:3" | "3:4" | "16:9" | "9:16" | "2:3" | "3:2" | "21:9";
-export type KieSeedream55EditAspectRatio = KieSeedream55AspectRatio | "auto";
+export type KieSeedream55ImageToImageAspectRatio = KieSeedream55AspectRatio | "auto";
 export type KieSeedream55Resolution = "1K" | "2K";
 export type KieSeedream55Background = "auto" | "transparent" | "opaque";
 export type KieSeedream55OutputFormat = "png" | "jpeg";
@@ -61,7 +61,7 @@ const GPT_BACKGROUNDS = ["transparent", "opaque", "auto"] as const;
 const NANO_RATIOS = ["1:1", "2:3", "3:2", "1:4", "4:1", "3:4", "4:3", "4:5", "5:4", "1:8", "8:1", "9:16", "16:9", "21:9", "auto"] as const;
 const NANO_FORMATS = ["png", "jpg"] as const;
 const SEEDREAM_55_RATIOS = ["1:1", "4:3", "3:4", "16:9", "9:16", "2:3", "3:2", "21:9"] as const;
-const SEEDREAM_55_EDIT_RATIOS = [...SEEDREAM_55_RATIOS, "auto"] as const;
+const SEEDREAM_55_IMAGE_TO_IMAGE_RATIOS = [...SEEDREAM_55_RATIOS, "auto"] as const;
 // KIE also offers 1.5K, at the 1K price; it is left out because the image kit's options and prices have no 1.5K tier.
 const SEEDREAM_55_RESOLUTIONS = ["1K", "2K"] as const;
 const SEEDREAM_55_BACKGROUNDS = ["auto", "transparent", "opaque"] as const;
@@ -143,8 +143,11 @@ function gptImage2(id: "gpt-image-2-text-to-image" | "gpt-image-2-image-to-image
   };
 }
 
-/** KIE renders a transparent Seedream 5.5 background only as PNG. */
+/** KIE's Seedream 5.5 prompt needs at least 5 characters, and KIE renders a transparent background only as PNG. */
 function refineSeedream55(request: NormalizedKieRequest, ctx: z.RefinementCtx): void {
+  if (request.prompt.length < 5) {
+    ctx.addIssue({ code: "custom", path: ["prompt"], message: "prompt needs at least 5 characters" });
+  }
   if (request.background === "transparent" && request.outputFormat === "jpeg") {
     ctx.addIssue({ code: "custom", path: ["background"], message: "background transparent requires outputFormat png" });
   }
@@ -161,7 +164,7 @@ function seedream55(id: "seedream/5-5-text-to-image" | "seedream/5-5-image-to-im
     operationRole: imageToImage ? "image-to-image" : "text-to-image",
     promptMaxLength: 5_000,
     referenceImages: imageToImage ? references(1, 10) : references(0, 0),
-    aspectRatio: imageToImage ? option(SEEDREAM_55_EDIT_RATIOS, "auto") : option(SEEDREAM_55_RATIOS, null, true),
+    aspectRatio: imageToImage ? option(SEEDREAM_55_IMAGE_TO_IMAGE_RATIOS, "auto") : option(SEEDREAM_55_RATIOS, null, true),
     resolution: option(SEEDREAM_55_RESOLUTIONS, "2K"),
     background: option(SEEDREAM_55_BACKGROUNDS, "auto"),
     outputFormat: option(SEEDREAM_55_FORMATS, "png"),
@@ -176,7 +179,7 @@ function seedream55(id: "seedream/5-5-text-to-image" | "seedream/5-5-image-to-im
     schema: z
       .strictObject({
         ...baseRequestShape(model),
-        aspectRatio: imageToImage ? z.enum(SEEDREAM_55_EDIT_RATIOS).optional() : z.enum(SEEDREAM_55_RATIOS),
+        aspectRatio: imageToImage ? z.enum(SEEDREAM_55_IMAGE_TO_IMAGE_RATIOS).optional() : z.enum(SEEDREAM_55_RATIOS),
         resolution: z.enum(SEEDREAM_55_RESOLUTIONS).optional(),
         background: z.enum(SEEDREAM_55_BACKGROUNDS).optional(),
         outputFormat: z.enum(SEEDREAM_55_FORMATS).optional(),

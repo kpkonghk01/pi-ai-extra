@@ -61,6 +61,8 @@ const SEEDREAM_55_RATIOS = ["auto", "1:1", "4:3", "3:4", "16:9", "9:16", "3:2", 
 const RESOLUTIONS = ["1K", "2K", "4K"] as const;
 // Seedream 5.5 also takes 1.5K, at the 1K price; it is left out because the image kit's options and prices have no 1.5K tier.
 const SEEDREAM_RESOLUTIONS = ["1K", "2K"] as const;
+/** ToAPIs' Seedream 5.5 default when `size` is omitted; an explicit ratio is sent at this tier too. */
+const SEEDREAM_55_DEFAULT_RESOLUTION: ToapisSeedreamResolution = "2K";
 const SEEDREAM_55_BACKGROUNDS = ["auto", "opaque", "transparent"] as const;
 const SEEDREAM_55_FORMATS = ["png", "jpeg"] as const;
 const TRANSPARENT = ["transparent"] as const;
@@ -85,8 +87,7 @@ const SEEDREAM_55_PIXELS: Record<ToapisSeedreamResolution, Record<Exclude<Toapis
 
 /**
  * ToAPIs' upload endpoint takes files up to 30 MB (its docs, 2026-11-11), but Seedream 5.0 Pro
- * takes references up to 10 MB and the other models document no limit, so inline references stay
- * at 10 MB.
+ * takes references of at most 10 MB, so inline references stay at 10 MB for every model.
  */
 const INLINE_LIMIT_BYTES = 10 * 1024 * 1024;
 const COMMON_TYPES: readonly ImageMimeType[] = ["image/png", "image/jpeg", "image/webp"];
@@ -183,10 +184,10 @@ function gptImage26(id: "gpt-image-2.6-flare" | "gpt-image-2.6-sunburst"): Toapi
   };
 }
 
-/** Seedream 5.5 `size`: the tier for `auto` (or no ratio), otherwise the ratio's pixels at the tier (default 2K). */
+/** Seedream 5.5 `size`: the tier for `auto` (or no ratio), otherwise the ratio's pixels at the tier. */
 function seedream55Size(aspectRatio: string | undefined, resolution: string | undefined): string | undefined {
   if (aspectRatio === undefined || aspectRatio === "auto") return resolution;
-  const tier = (resolution ?? "2K") as ToapisSeedreamResolution;
+  const tier = (resolution ?? SEEDREAM_55_DEFAULT_RESOLUTION) as ToapisSeedreamResolution;
   return SEEDREAM_55_PIXELS[tier][aspectRatio as Exclude<ToapisSeedream55AspectRatio, "auto">];
 }
 
@@ -238,7 +239,7 @@ const SEEDREAM_55 = info({
   promptMaxLength: null,
   referenceImages: references(10, ["image/png", "image/jpeg"]),
   aspectRatio: option(SEEDREAM_55_RATIOS, "auto"),
-  resolution: option(SEEDREAM_RESOLUTIONS, "2K"),
+  resolution: option(SEEDREAM_RESOLUTIONS, SEEDREAM_55_DEFAULT_RESOLUTION),
   background: option(SEEDREAM_55_BACKGROUNDS, "auto"),
   outputFormat: option(SEEDREAM_55_FORMATS, "png"),
   watermark: true,
