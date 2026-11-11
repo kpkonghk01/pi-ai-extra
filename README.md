@@ -301,14 +301,6 @@ createToapisProvider({
 
 KIE adds `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `gpt-6-sol`, `gpt-6-luna` and `gpt-6-1-sol`, and exports its credit price as `KIE_USD_PER_CREDIT`. The rate types (`ModelRate`, `RatePeriod`, `TokenRates`, `LargePromptRates`) are exported by each `/pi-ai` entry.
 
-### Upgrading to KIE 0.8.1, ToAPIs 0.7.1 and the image kit 0.2.1
-
-These patch releases follow changes in the providers' docs, each checked live on 2026-11-11. Nothing is removed.
-
-- **KIE 0.8.1**: GPT Image 2 now accepts 1:1 at 4K and `auto` (or no aspect ratio) at 2K and 4K, which KIE's docs no longer restrict; 2K still refuses 5:4, 4:5, 3:1, 1:3 and 9:21, 4K still refuses 3:1, 1:3 and 9:21, and `background` is still 1K only. Grok Imagine 2.0 text-to-image now rejects prompts over 8,000 characters before the request, the limit KIE documents.
-- **ToAPIs 0.7.1**: GPT Image 2 takes up to 14 reference images instead of 6.
-- **The image kit 0.2.1** drops the same KIE GPT Image 2 combinations from the list it avoids when it picks an aspect ratio, so an app can offer 1:1 at 4K, and keeping an input image's aspect at 2K or 4K now sends `auto`. Install it together with KIE 0.8.1.
-
 ### Upgrading to KIE 0.8 and ToAPIs 0.7
 
 Both releases add image models and remove none.
@@ -318,6 +310,9 @@ Both releases add image models and remove none.
 - **ToAPIs 0.7.0** adds `gpt-image-2.6-flare` and `gpt-image-2.6-sunburst` (the standard tier: GPT Image 2.5's options, up to 10 reference images) and `doubao-seedream-5-5` (Seedream 5.5). GPT Image 2.6's standard tier does not take `size: "auto"` (it answered HTTP 503 on 2026-11-11, and ToAPIs' docs now say so), so `auto` is not offered. For Seedream 5.5, `auto` (the default) sends only the resolution, and the model chooses the ratio or follows the reference image; any other ratio is sent as the pixels Seedream maps it to (Volcengine's table, for example 16:9 at 1K as `1424x800`). It takes 1K or 2K, JPEG or PNG references, `background`, `outputFormat` and `watermark`.
 - ToAPIs' default host moves from `https://toapis.com` to `https://api.toapis.com`, the host its GPT Image 2.6 docs use, for uploads, image tasks, chat and the live model list. In a 2026-11-11 check, uploads, image generation and task status worked on the new host, and both hosts gave the same answers for the model list and for errors; a successful chat turn was not checked, because the key used has no ToAPIs chat access. Mainland China users who set `https://toapis.cn` can move to `https://api.toapis.cn`. A chat kit that registers ToAPIs follows the provider's host; the chat kit itself is unchanged.
 - The image kit 0.2.0 offers the new families (`kie:seedream-5-5`, `toapis:gpt-image-2.6-flare`, `toapis:gpt-image-2.6-sunburst`, `toapis:doubao-seedream-5-5`) once the new releases are installed. Change the provider URLs and any policy override that names a new family together: see [docs/migration/seedream-5.5-gpt-image-2.6](docs/migration/seedream-5.5-gpt-image-2.6/README.md).
+- KIE 0.8.1, a patch, follows KIE's updated GPT Image 2 and Grok Imagine Image 2.0 docs (checked live on 2026-11-11). GPT Image 2 now accepts 1:1 at 4K and `auto` (or no aspect ratio) at 2K and 4K; 2K still refuses 5:4, 4:5, 3:1, 1:3 and 9:21, 4K still refuses 3:1, 1:3 and 9:21, and `background` is still 1K only. Grok Imagine Image 2.0 text-to-image rejects prompts over 8,000 characters before the request.
+- ToAPIs 0.7.1, a patch, lets GPT Image 2 take up to 14 reference images instead of 6, as ToAPIs now documents (a 14-image request rendered on 2026-11-11).
+- The image kit 0.2.1, a patch, stops avoiding those KIE GPT Image 2 combinations when it picks an aspect ratio, so an app can offer 1:1 at 4K, and keeping an input image's aspect at 2K or 4K sends `auto`, which kept a 16:9 input's aspect at 2K on 2026-11-11. It needs KIE 0.8.1: its peer range now starts there, because KIE 0.8.0 still rejects those combinations.
 
 ### Upgrading to KIE 0.7
 
