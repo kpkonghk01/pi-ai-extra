@@ -31,7 +31,7 @@ ToAPIs 改 host 對 app 沒有影響：image-kit 不讓 app 設定 ToAPIs 的 ho
 2. 在 AI Studio 匯出整個 app 的 ZIP 備份。
 3. 依序貼上兩段 prompt。貼完一段，等 Gemini 回報 `npm run lint` 的結果和改動清單，檢查過才貼下一段：
    1. [`gemini-prompt-part1.md`](gemini-prompt-part1.md)：升級 kie 和 toapis，在 policy 加入四個新模型的名稱、`maskEditing` 和價錢，並更新 GPT Image 2.5 的價錢。
-   2. [`gemini-prompt-part2.md`](gemini-prompt-part2.md)：處理 policy 以外按 model ID 寫的程式碼，例如 prompt 分支、價錢計算、顯示名稱表和 `.env.example` 的說明。
+   2. [`gemini-prompt-part2.md`](gemini-prompt-part2.md)：處理 policy 以外按 model ID 寫的程式碼，例如 prompt 分支、價錢計算、顯示名稱表和 `.env.example` 的說明；open-graph-single 另有一步，讓 KIE Seedream 5.5 也用 Seedream 的 prompt。
 4. 對照 Gemini 的報告和下面「各 app 要留意的地方」，檢查它有沒有漏改或改錯。
 5. 按「驗證清單」在 AI Studio 測試。
 
@@ -45,7 +45,7 @@ Part 1 的名稱跟隨各 app 現有的寫法。例如 app 把 Seedream 5.0 Pro 
 
 | App | 留意 |
 | --- | --- |
-| open-graph-single | <ul><li>價錢不在 policy，在 `src/lib/pricing.ts` 按 model ID 寫死：要把 GPT Image 2.5 改為新價，並加入四個新模型。這個函數會收到參考圖張數，所以 KIE Seedream 5.5 的每張參考圖費用（US$0.0072）可以計算進去。</li><li>`server/imagePrompts.ts` 有兩處 `includes('gpt-image-2.5')`，要加上 2.6。</li><li>`includes('doubao')` 的分支在 ToAPIs 分支之內，ToAPIs Seedream 5.5 會自動用它；KIE Seedream 5.5 走 KIE 通用的 prompt，不用 Seedream 的寫法。</li><li>`src/models.config.ts` 的顯示名稱表要加入四個新模型。</li></ul> |
+| open-graph-single | <ul><li>價錢不在 policy，在 `src/lib/pricing.ts` 按 model ID 寫死：要把 GPT Image 2.5 改為新價，並加入四個新模型。這個函數會收到參考圖張數，所以 KIE Seedream 5.5 的每張參考圖費用（US$0.0072）可以計算進去。</li><li>`server/imagePrompts.ts` 有兩處 `includes('gpt-image-2.5')`，要加上 2.6。</li><li>`includes('doubao')` 是 Seedream 專用的精簡 prompt（生圖和編輯各一段），放在 ToAPIs 分支之內。字節建議 Seedream 的 prompt 不超過 300 個中文字或 600 個英文詞，其他分支的 prompt 長得多，所以保留這段。Part 2 Step 3 把條件改為 `isSeedream`（`appModelId.includes('seedream')`），讓 KIE Seedream 5.5 也用它；prompt 文字不變。這段 prompt 沒有 logo 鎖定和參考圖角色的說明，Seedream 5.0 Pro 現在已是如此。</li><li>`src/models.config.ts` 的顯示名稱表要加入四個新模型。</li></ul> |
 | InfoCard | <ul><li>`package.json` 的 `overrides` 也寫了 provider URL。</li><li>`convertReference` 按模型接受的格式轉檔，ToAPIs Seedream 5.5 只收 PNG / JPEG，WebP 和 GIF 參考圖會自動轉換，不用改。</li><li>`.env.example` 仍寫「Nano Banana 2 Preview」，Part 2 會順帶改為「Nano Banana 2.1」。</li></ul> |
 | Auto OG | Seedream 5.0 Pro 的名稱是「Seedream 5.0 Pro (ToAPIs)」，沒有「Doubao」，新模型跟隨。預設模型 GPT Image 2.5 Flare 不變。`collage` 和 `edit` scope 只排除 Grok，新模型會出現在所有 scope。 |
 | opengraph2 | `package.json` 的 `dependencies`、`overrides` 和 `resolutions` 三處都有 provider URL。費用預估一律按 1K 計。 |
@@ -55,7 +55,7 @@ Part 1 的名稱跟隨各 app 現有的寫法。例如 app 把 Seedream 5.0 Pro 
 
 - **模型選單**：多了 GPT Image 2.6 Flare、GPT Image 2.6 Sunburst、Seedream 5.5（ToAPIs）和 Seedream 5.5（KIE）。
 - **Seedream 5.5 最高 2K**：兩個 provider 都沒有 4K。app 讓用戶選 4K 時，image-kit 會回「不支援 4K 解像度」。
-- **保留原圖比例**：只放一張參考圖並要求保留比例時，GPT Image 2.6 和 Seedream 5.5 會用 `auto`。實測 Seedream 5.5（KIE 和 ToAPIs）把 640×360 的參考圖輸出為 1360×768，比例保持不變。GPT Image 2.6 的文件說 `auto` 不保證比例，實測時 Sunburst 不可用（見下面），未能驗證。
+- **保留原圖比例**：只放一張參考圖並要求保留比例時，Seedream 5.5 會用 `auto`。實測 Seedream 5.5（KIE 和 ToAPIs）把 640×360 的參考圖輸出為 1360×768，比例保持不變。GPT Image 2.6 跟 2.5 一樣，改用最接近的比例：ToAPIs 的文件雖然列出 `auto`，但實測時兩個 2.6 模型一收到 `auto` 就回 503，所以 package 不提供它。
 - **GPT Image 2.5 加價**：ToAPIs 已把 2.5 調到 4.5 credits 一張（sheet 上寫 ¥0.16），即 1K / 2K / 4K 為 US$0.0225 / 0.03 / 0.0375，各 app 的預估跟着更新。
 - **費用預估**（USD / 張，2026-11-11）：
 
@@ -77,18 +77,18 @@ Part 1 的名稱跟隨各 app 現有的寫法。例如 app 把 Seedream 5.0 Pro 
 - **實測**（2026-11-11，用 portal 的 key，每個模型一張 1K）：
   - KIE Seedream 5.5 文生圖 16:9 輸出 1424×800，收 3.6 credits；編輯收 5.04 credits（3.6 + 1.44）。
   - ToAPIs Seedream 5.5 選了比例時以像素送出，16:9 送 1424×800，輸出也是 1424×800，收 US$0.016（1K 價）。
-  - GPT Image 2.6 Flare 輸出 1280×720，收 US$0.018，但用了約 4 分鐘。
-  - GPT Image 2.6 Sunburst 在 `api.toapis.com` 和 `toapis.com` 都回 503「請求的模型暫無可用服務」，沒有收費。這是 ToAPIs 那邊的問題。
+  - GPT Image 2.6 Flare 和 Sunburst 都成功（Sunburst 有試過帶參考圖），各收 US$0.018，但每張要約 4 分鐘。
+  - 兩個 2.6 模型收到 `size: "auto"` 時都回 503「請求的模型暫無可用服務」，所以 package 不提供 `auto`。
 
 ## 驗證清單（在 AI Studio，用真 key）
 
 1. 兩段 prompt 之後 `npm run lint` 都通過；Gemini 報告裏的每一處改動都合理。
 2. 模型選單：有四個新模型，名稱跟 app 其他模型的寫法一致，費用預估顯示上表的價錢。
-3. 用四個新模型各生成一張圖，都成功。GPT Image 2.6 Flare 可能要等幾分鐘；Sunburst 如果仍回 503，是 ToAPIs 未恢復服務，記下時間再試。
+3. 用四個新模型各生成一張圖，都成功。GPT Image 2.6 每張要約 4 分鐘。
 4. 選 Seedream 5.5（KIE 或 ToAPIs）配 2K，成功；選 4K 時顯示不支援。
 5. 用 Seedream 5.5 放一張參考圖編輯，成功，比例跟參考圖一致。
 6. GPT Image 2.5 的費用預估顯示新價錢。
-7. open-graph-single：舊歷史紀錄仍顯示 model 名稱；用 GPT Image 2.6 生圖時，用的是 2.5 那套 prompt。
+7. open-graph-single：舊歷史紀錄仍顯示 model 名稱；GPT Image 2.6 用 2.5 那套 prompt；兩個 Seedream 5.5 都用 Seedream 的精簡 prompt（可在 server log 或 Gemini 報告核對）。
 8. Server log 沒有 `unknown model family`。
 
 ## Rollback
