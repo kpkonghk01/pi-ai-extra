@@ -206,8 +206,8 @@ const OUTPUT_RESOLUTIONS: readonly OutputResolution[] = ["1K", "2K", "4K"];
  * as notes (the package rejects them), so they are repeated here to pick values it accepts.
  */
 const KIE_GPT_IMAGE_2_BLOCKED: Record<string, readonly string[]> = {
-  "2K": ["5:4", "4:5", "3:1", "1:3", "9:21", "auto"],
-  "4K": ["1:1", "3:1", "1:3", "9:21", "auto"],
+  "2K": ["5:4", "4:5", "3:1", "1:3", "9:21"],
+  "4K": ["3:1", "1:3", "9:21"],
 };
 
 function blockedAspects(

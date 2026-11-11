@@ -355,6 +355,7 @@ describe("prepare: resolution, aspect ratio and reference format", () => {
       "4:3",
     );
     assert.equal(await aspect("kie:gpt-image-2", "4:5", "2K"), "3:4");
+    assert.equal(await aspect("kie:gpt-image-2", "1:1", "4K"), "1:1");
     assert.equal(await aspect("kie:seedream-5-5", "1200:630"), "16:9");
     assert.equal(await aspect("toapis:doubao-seedream-5-5", "300x250"), "4:3");
     assert.equal(await aspect("toapis:gpt-image-2.6-flare", "1200:630"), "16:9");
@@ -378,7 +379,7 @@ describe("prepare: resolution, aspect ratio and reference format", () => {
       ).aspectRatio;
     assert.equal(await keep("google:gemini-nano-banana-2.1"), undefined);
     assert.equal(await keep("kie:nano-banana-2-1"), "auto");
-    assert.equal(await keep("kie:gpt-image-2", "1200:675", "2K"), "16:9");
+    assert.equal(await keep("kie:gpt-image-2", "1200:675", "2K"), "auto");
     assert.equal(await keep("kie:seedream-5-5"), "auto");
     assert.equal(await keep("toapis:doubao-seedream-5-5"), "auto");
     assert.equal(await keep("toapis:gpt-image-2.6-sunburst", "1200:675"), "16:9");
