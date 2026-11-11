@@ -4,8 +4,8 @@ Server-only extensions to [`@earendil-works/pi-ai`](https://www.npmjs.com/packag
 
 | Package | Image models | Chat (pi-ai `Models`) |
 | --- | --- | --- |
-| `@hk01/pi-ai-extra-kie` | Grok Imagine Image 2.0 (text-to-image, image edit), GPT Image 2 (text-to-image, image-to-image), Nano Banana 2.1 | Codex (OpenAI Responses), Claude (Anthropic Messages), Gemini (OpenAI Chat Completions) |
-| `@hk01/pi-ai-extra-toapis` | Gemini Nano Banana 2.1, GPT Image 2, GPT Image 2.5 Flare / Sunburst, Seedream 5.0 Pro | Codex (OpenAI Responses), Claude (Anthropic Messages) |
+| `@hk01/pi-ai-extra-kie` | Grok Imagine Image 2.0 (text-to-image, image edit), GPT Image 2 (text-to-image, image-to-image), Nano Banana 2.1, Seedream 5.5 (text-to-image, image-to-image) | Codex (OpenAI Responses), Claude (Anthropic Messages), Gemini (OpenAI Chat Completions) |
+| `@hk01/pi-ai-extra-toapis` | Gemini Nano Banana 2.1, GPT Image 2, GPT Image 2.5 Flare / Sunburst, GPT Image 2.6 Flare / Sunburst, Seedream 5.0 Pro, Seedream 5.5 | Codex (OpenAI Responses), Claude (Anthropic Messages) |
 | `@hk01/pi-ai-extra-google` | Nano Banana 2.1, Gemini 3 Pro Image | Gemini on Google AI Studio (pi-ai's Gemini adapter and catalogue, explicit key, live model list) and on Google Agent Platform (pi-ai's Vertex adapter, express-mode key) |
 | `@hk01/pi-ai-extra-openrouter` | None (pi-ai already serves OpenRouter's image generation) | OpenAI Completions, Anthropic Messages (pi-ai's OpenRouter provider, explicit key, live model list) |
 
@@ -33,8 +33,8 @@ Non-negotiable behaviour (see [ADR 0003](docs/adr/0003-explicit-provider-executi
 Install the exact release asset on the server (build) side and pin the full URL:
 
 ```sh
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.7.0/hk01-pi-ai-extra-kie-0.7.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.6.0/hk01-pi-ai-extra-toapis-0.6.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.8.0/hk01-pi-ai-extra-kie-0.8.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.7.0/hk01-pi-ai-extra-toapis-0.7.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.8.0/hk01-pi-ai-extra-google-0.8.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.1.0/hk01-pi-ai-extra-openrouter-0.1.0.tgz   # optional, chat only, needs pi-ai
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/image-kit-v0.2.0/hk01-pi-ai-extra-image-kit-0.2.0.tgz   # optional, needs all three
@@ -79,10 +79,14 @@ try {
 | KIE | `gpt-image-2-text-to-image` | 0 | `aspectRatio`, `resolution`, `background` |
 | KIE | `gpt-image-2-image-to-image` | 1–16 | `aspectRatio`, `resolution`, `background` |
 | KIE | `nano-banana-2-1` | 0–10 | `aspectRatio`, `resolution`, `outputFormat` |
+| KIE | `seedream/5-5-text-to-image` | 0 | `aspectRatio` (required), `resolution` (1K/2K), `background`, `outputFormat` (png/jpeg) |
+| KIE | `seedream/5-5-image-to-image` | 1–10 | `aspectRatio` (`auto` allowed), `resolution` (1K/2K), `background`, `outputFormat` (png/jpeg) |
 | ToAPIs | `gemini-nano-banana-2.1` | 0–14 | `aspectRatio`, `resolution` |
 | ToAPIs | `gpt-image-2` | 0–6 | `aspectRatio`, `resolution`, `background: "transparent"` |
 | ToAPIs | `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst` | not documented (not capped) | `aspectRatio`, `resolution`, `background: "transparent"` |
+| ToAPIs | `gpt-image-2.6-flare`, `gpt-image-2.6-sunburst` | 0–10 | `aspectRatio`, `resolution`, `background: "transparent"` |
 | ToAPIs | `doubao-seedream-5-0-pro` | 0–10 (JPEG/PNG) | `aspectRatio`, `resolution` (1K/2K), `watermark` |
+| ToAPIs | `doubao-seedream-5-5` | 0–10 (JPEG/PNG) | `aspectRatio` (`auto` allowed), `resolution` (1K/2K), `background`, `outputFormat` (png/jpeg), `watermark` |
 | Google | `gemini-nano-banana-2.1` | 0–14 | `aspectRatio`, `resolution` (1K/2K/4K), `safetySettings`, `temperature` (0–2), `systemInstruction` |
 | Google | `gemini-3-pro-image` | 0–14 | `aspectRatio`, `resolution` (1K/2K/4K), `safetySettings`, `temperature` (0–2), `systemInstruction` |
 
@@ -105,7 +109,7 @@ Reference images are data URLs or public `http(s)` URLs. KIE and ToAPIs upload d
 | `maxOutputBytes` | Largest accepted result image (default 50 MiB). |
 | `fetch` | Custom fetch for tests or instrumentation. |
 
-Provider settings: KIE `apiBaseUrl`, `uploadBaseUrl`, `poll`; ToAPIs `baseUrl` (for example `https://toapis.cn`), `poll`, `clientBusinessId`; Google `baseUrl`, `headers` (non-credential only, for example `{ "User-Agent": "aistudio-build" }`).
+Provider settings: KIE `apiBaseUrl`, `uploadBaseUrl`, `poll`; ToAPIs `baseUrl` (for example `https://api.toapis.cn`), `poll`, `clientBusinessId`; Google `baseUrl`, `headers` (non-credential only, for example `{ "User-Agent": "aistudio-build" }`).
 
 An option set to `undefined` counts as not set, so optional fields can be passed unconditionally. Any other unknown or misspelled key (for example `aspect_ratio`) is rejected with `invalid_request` instead of being ignored.
 
@@ -125,7 +129,7 @@ Only idempotent requests (status polls, downloads, uploads) are retried, against
 | `costUsd` | — | `billing.cost_usd` (decimal string) | — |
 | `billingStatus` | — | `billing.status`: `pending` / `settled` / `refunded` | — |
 | `tokens` | — | `usage.*` (input/output/total, text/image, cached) | `usageMetadata` (prompt, candidates, thoughts as `reasoning`, cached, per-modality) |
-| `providerDurationMs` | `costTime` (milliseconds per the Get Task Details reference) | — | — |
+| `providerDurationMs` | `costTime` (KIE reports seconds; converted to milliseconds) | — | — |
 
 `tokens` may contain `input`, `output`, `total`, `inputText`, `inputImage`, `cachedInput`, `cachedInputText`, `cachedInputImage`, `outputText`, `outputImage`, `reasoning` (Gemini thoughts, not included in `output`) and `toolUsePrompt`; `input` includes cached tokens. `result.taskId` is the provider task id for KIE and ToAPIs, and Gemini's `responseId` for Google (Gemini has no task to look up later).
 
@@ -158,7 +162,7 @@ import { createGoogleProvider } from "@hk01/pi-ai-extra-google/pi-ai";
 
 const models = createModels();
 models.setProvider(createKieProvider({ apiKey: kieKey }));       // Codex on https://api.kie.ai/openai/v1, Claude on https://api.kie.ai/anthropic (Bearer), Gemini on https://api.kie.ai/<id>-openai/v1
-models.setProvider(createToapisProvider({ apiKey: toapisKey })); // Codex on https://toapis.com/v1, Claude on https://toapis.com
+models.setProvider(createToapisProvider({ apiKey: toapisKey })); // Codex on https://api.toapis.com/v1, Claude on https://api.toapis.com
 models.setProvider(createGoogleProvider({ apiKey: geminiKey }));  // Gemini chat; never reads GEMINI_API_KEY
 
 const chat = models.getModel("toapis", "claude-sonnet-4-6")!;        // chat models only
@@ -297,6 +301,16 @@ createToapisProvider({
 
 KIE adds `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `gpt-6-sol`, `gpt-6-luna` and `gpt-6-1-sol`, and exports its credit price as `KIE_USD_PER_CREDIT`. The rate types (`ModelRate`, `RatePeriod`, `TokenRates`, `LargePromptRates`) are exported by each `/pi-ai` entry.
 
+### Upgrading to KIE 0.8 and ToAPIs 0.7
+
+Both releases add image models and remove none.
+
+- **KIE 0.8.0** adds Seedream 5.5 as the family `seedream-5-5`: `seedream/5-5-text-to-image` (an aspect ratio is required) and `seedream/5-5-image-to-image` (1–10 reference images; `auto`, the default, follows the input). Both take `resolution` 1K or 2K (default 2K; KIE's 1.5K, priced as 1K, is not offered), `background` and `outputFormat` (`png` or `jpeg`; a transparent background needs png). KIE bills each input image of an edit.
+- KIE's `costTime` is now converted to milliseconds. `recordInfo` reports seconds, not the milliseconds its reference documents (checked on 2026-11-11), so `usage.providerDurationMs` from KIE 0.7 and earlier was 1,000 times too small; records stored from those versions hold seconds.
+- **ToAPIs 0.7.0** adds `gpt-image-2.6-flare` and `gpt-image-2.6-sunburst` (the standard tier: GPT Image 2.5's options, up to 10 reference images) and `doubao-seedream-5-5` (Seedream 5.5). GPT Image 2.6's standard tier does not take `size: "auto"` (it answered HTTP 503 on 2026-11-11, and ToAPIs' docs now say so), so `auto` is not offered. For Seedream 5.5, `auto` (the default) sends only the resolution, and the model chooses the ratio or follows the reference image; any other ratio is sent as the pixels Seedream maps it to (Volcengine's table, for example 16:9 at 1K as `1424x800`). It takes 1K or 2K, JPEG or PNG references, `background`, `outputFormat` and `watermark`.
+- ToAPIs' default host moves from `https://toapis.com` to `https://api.toapis.com`, the host its GPT Image 2.6 docs use, for uploads, image tasks, chat and the live model list. In a 2026-11-11 check, uploads, image generation and task status worked on the new host, and both hosts gave the same answers for the model list and for errors; a successful chat turn was not checked, because the key used has no ToAPIs chat access. Mainland China users who set `https://toapis.cn` can move to `https://api.toapis.cn`. A chat kit that registers ToAPIs follows the provider's host; the chat kit itself is unchanged.
+- The image kit 0.2.0 offers the new families (`kie:seedream-5-5`, `toapis:gpt-image-2.6-flare`, `toapis:gpt-image-2.6-sunburst`, `toapis:doubao-seedream-5-5`) once the new releases are installed. Change the provider URLs and any policy override that names a new family together: see [docs/migration/seedream-5.5-gpt-image-2.6](docs/migration/seedream-5.5-gpt-image-2.6/README.md).
+
 ### Upgrading to KIE 0.7
 
 KIE 0.7.0 is additive: it adds `gemini-3-8-flash`, `gemini-3-6-flash` and `gemini-4-argon` on KIE's OpenAI Chat Completions route ([ADR 0010](docs/adr/0010-kie-gemini-chat-completions-route.md)). Each reads images and carries KIE's published rate (for 3.8 and 3.6 Flash, the discount and then the regular price; see [Chat rates](#chat-rates)); a turn's cost is KIE's `credits_consumed`. The chat kit 0.4.1 runs them unchanged. Each definition carries its own `baseUrl` (`https://api.kie.ai/<id>-openai/v1`). KIE names no Gemini model in its model lists, so the models are always offered, and a withdrawn model fails with KIE's message. A reply cut off at `maxTokens` ends `stop`, because KIE reports no finish reason. A response schema is sent, and KIE follows its shape but does not enforce it (see [Response schema](#response-schema)).
@@ -353,8 +367,8 @@ pnpm add @earendil-works/pi-ai@1.2.0   # peer
 # and the provider packages you register (each its own release asset, see Install above):
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.8.0/hk01-pi-ai-extra-google-0.8.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.1.0/hk01-pi-ai-extra-openrouter-0.1.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.7.0/hk01-pi-ai-extra-kie-0.7.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.6.0/hk01-pi-ai-extra-toapis-0.6.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.8.0/hk01-pi-ai-extra-kie-0.8.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.7.0/hk01-pi-ai-extra-toapis-0.7.0.tgz
 ```
 
 The chat kit and the provider `/pi-ai` entries are ESM-only. A TypeScript project that resolves with `module: NodeNext` needs `"type": "module"` in its `package.json` to import them (with `moduleResolution: Bundler`, as Next.js projects use, nothing is needed). A project with `moduleResolution: node10` cannot resolve the `/pi-ai` subpaths at all. `require()` of any of them fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
@@ -587,7 +601,7 @@ Both releases are additive, and a `google-vertex` turn needs both: chat-kit 0.3 
 ## Google AI Studio (server) integration
 
 1. **Secrets.** Put `KIE_API_KEY`, `TOAPIS_API_KEY` and `GEMINI_API_KEY` in the app's server-side Secrets. Never expose them through Vite `define`, client code or a browser request.
-2. **Install.** Add the pinned release URLs to `dependencies` (`"@hk01/pi-ai-extra-kie": "https://github.com/…/kie-v0.7.0/hk01-pi-ai-extra-kie-0.7.0.tgz"`, likewise for ToAPIs and Google; each package has its own version, see Install). Import the packages only from server modules such as `server.ts`. A CommonJS server bundle (`esbuild --format=cjs --packages=external`) works with the main entries.
+2. **Install.** Add the pinned release URLs to `dependencies` (`"@hk01/pi-ai-extra-kie": "https://github.com/…/kie-v0.8.0/hk01-pi-ai-extra-kie-0.8.0.tgz"`, likewise for ToAPIs and Google; each package has its own version, see Install). Import the packages only from server modules such as `server.ts`. A CommonJS server bundle (`esbuild --format=cjs --packages=external`) works with the main entries.
 
    The `/pi-ai` subpath (and pi-ai itself) is ESM-only. AI Studio's preview runs `server.ts` as ESM, so a static `/pi-ai` import works there, but the CommonJS production bundle then fails at startup with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Before using `/pi-ai`, either build the server as ESM (`--format=esm --outfile=dist/server.mjs` and `"start": "node dist/server.mjs"`), or load it with `await import("@earendil-works/pi-ai")` and `await import("@hk01/pi-ai-extra-<provider>/pi-ai")`, which esbuild keeps as runtime imports.
 3. **Generate / edit.** Read the secret on the server and call the helper. Text-to-image and editing differ only by `model` and `referenceImages`:
@@ -609,7 +623,7 @@ Both releases are additive, and a `google-vertex` turn needs both: chat-kit 0.3 
 6. **Usage.** Log `result.taskId` and `result.usage` per request. Send a unique `clientBusinessId` on ToAPIs requests. Re-read ToAPIs tasks whose `billingStatus` is `pending` with `getToapisTask()`, and keep one record per task id.
 7. **Upgrade / rollback.** Change the release URL in `package.json` to the new (or previous) version and redeploy. Released assets are never replaced, so a URL always installs the same bytes.
 
-A worked migration through the image kit, with paste-ready files, is in [docs/migration/og-master](docs/migration/og-master/README.md); the image kit covers steps 3–6 (and the model selector and error panel) for you. That guide pins the releases before Nano Banana 2.1, so its policy still names the retired Nano Banana 2 families. To move an app that already uses the image kit to google 0.7.0, kie 0.6.0 and toapis 0.6.0, follow [docs/migration/nano-banana-2.1](docs/migration/nano-banana-2.1/README.md). The finished guides for open-graph-single, Auto OG, InfoCard and opengraph2 remain in the history at [`4f87f16`](https://github.com/kpkonghk01/pi-ai-extra/tree/4f87f16/docs/migration).
+A worked migration through the image kit, with paste-ready files, is in [docs/migration/og-master](docs/migration/og-master/README.md); the image kit covers steps 3–6 (and the model selector and error panel) for you. That guide pins the releases before Nano Banana 2.1, so its policy still names the retired Nano Banana 2 families. To add Seedream 5.5 and GPT Image 2.6 to an app that already uses the image kit (kie 0.8.0, toapis 0.7.0), follow [docs/migration/seedream-5.5-gpt-image-2.6](docs/migration/seedream-5.5-gpt-image-2.6/README.md). The finished guides for open-graph-single, Auto OG, InfoCard and opengraph2 remain in the history at [`4f87f16`](https://github.com/kpkonghk01/pi-ai-extra/tree/4f87f16/docs/migration), and the Nano Banana 2.1 guide (google 0.7.0, kie 0.6.0, toapis 0.6.0) at [`493b58f`](https://github.com/kpkonghk01/pi-ai-extra/tree/493b58f/docs/migration/nano-banana-2.1).
 
 ## Playground (not released)
 

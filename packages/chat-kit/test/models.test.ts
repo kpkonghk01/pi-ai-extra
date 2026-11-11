@@ -27,7 +27,7 @@ const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 const GEMINI_MODELS_URL = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\?pageSize=1000/;
 const KIE_CODEX_MODELS_URL = "https://api.kie.ai/openai/v1/models";
 const KIE_CLAUDE_MODELS_URL = "https://api.kie.ai/anthropic/v1/models";
-const TOAPIS_MODELS_URL = "https://toapis.com/v1/models?type=text";
+const TOAPIS_MODELS_URL = "https://api.toapis.com/v1/models?type=text";
 
 function listed(id: string): Model<Api> {
   return { id } as Model<Api>;
@@ -885,7 +885,7 @@ describe("listModels", () => {
     const chat = testKit(["toapis", "openrouter"], fake.fetch);
     const [toapis, router] = await chat.listModels();
     assert.ok(toapis && "models" in toapis && router && "models" in router);
-    assert.deepEqual([toapis.provider, toapis.source, toapis.refreshError], ["toapis", "installed", "HTTP 502 from https://toapis.com/v1/models"]);
+    assert.deepEqual([toapis.provider, toapis.source, toapis.refreshError], ["toapis", "installed", "HTTP 502 from https://api.toapis.com/v1/models"]);
     assert.deepEqual([router.provider, router.source], ["openrouter", "live"]);
   });
 

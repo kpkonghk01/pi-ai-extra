@@ -158,10 +158,14 @@ describe("listModels", () => {
         "toapis:gpt-image-2",
         "toapis:gpt-image-2.5-flare",
         "toapis:gpt-image-2.5-sunburst",
+        "toapis:gpt-image-2.6-flare",
+        "toapis:gpt-image-2.6-sunburst",
         "toapis:doubao-seedream-5-0-pro",
+        "toapis:doubao-seedream-5-5",
         "kie:grok-imagine-image-2-0",
         "kie:gpt-image-2",
         "kie:nano-banana-2-1",
+        "kie:seedream-5-5",
       ],
     );
     const byId = new Map(models.map((model) => [model.id, model]));
@@ -309,6 +313,12 @@ describe("prepare: validation before any provider call", () => {
       request({ appModelId: "kie:gpt-image-2" }),
     );
     assert.equal(edit.info.id, "gpt-image-2-image-to-image");
+    const seedreamText = await client().prepare(
+      request({ appModelId: "kie:seedream-5-5", parts: [{ text: "a car" }], aspectRatio: "1200:630" }),
+    );
+    assert.deepEqual([seedreamText.info.id, seedreamText.aspectRatio], ["seedream/5-5-text-to-image", "16:9"]);
+    const seedreamEdit = await client().prepare(request({ appModelId: "kie:seedream-5-5" }));
+    assert.equal(seedreamEdit.info.id, "seedream/5-5-image-to-image");
   });
 
   it("rejects a prompt over the selected operation limit before calling the provider", async () => {
@@ -345,6 +355,9 @@ describe("prepare: resolution, aspect ratio and reference format", () => {
       "4:3",
     );
     assert.equal(await aspect("kie:gpt-image-2", "4:5", "2K"), "3:4");
+    assert.equal(await aspect("kie:seedream-5-5", "1200:630"), "16:9");
+    assert.equal(await aspect("toapis:doubao-seedream-5-5", "300x250"), "4:3");
+    assert.equal(await aspect("toapis:gpt-image-2.6-flare", "1200:630"), "16:9");
   });
 
   it("keeps the input aspect where the chosen family operation supports it", async () => {
@@ -366,6 +379,9 @@ describe("prepare: resolution, aspect ratio and reference format", () => {
     assert.equal(await keep("google:gemini-nano-banana-2.1"), undefined);
     assert.equal(await keep("kie:nano-banana-2-1"), "auto");
     assert.equal(await keep("kie:gpt-image-2", "1200:675", "2K"), "16:9");
+    assert.equal(await keep("kie:seedream-5-5"), "auto");
+    assert.equal(await keep("toapis:doubao-seedream-5-5"), "auto");
+    assert.equal(await keep("toapis:gpt-image-2.6-sunburst", "1200:675"), "16:9");
   });
 
   it("converts references only where the selected family operation cannot accept them", async () => {

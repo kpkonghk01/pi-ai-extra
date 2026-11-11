@@ -23,9 +23,13 @@ import {
   toapisModelDefinition,
   type ToapisGeminiAspectRatio,
   type ToapisGptImage25AspectRatio,
+  type ToapisGptImage26AspectRatio,
   type ToapisGptImage2AspectRatio,
   type ToapisImageModelId,
   type ToapisResolution,
+  type ToapisSeedream55AspectRatio,
+  type ToapisSeedream55Background,
+  type ToapisSeedream55OutputFormat,
   type ToapisSeedreamAspectRatio,
   type ToapisSeedreamResolution,
 } from "./models.ts";
@@ -33,7 +37,7 @@ import { waitForToapisTask } from "./task.ts";
 
 /** Advanced transport settings. Defaults follow ToAPIs' documentation. */
 export interface ToapisImageSettings {
-  /** Host for uploads and image tasks. Default `https://toapis.com`; mainland China users may set `https://toapis.cn`. */
+  /** Host for uploads and image tasks. Default `https://api.toapis.com`; mainland China users may set `https://api.toapis.cn`. */
   baseUrl?: string | undefined;
   /** Status polling cadence. Default: 5 s, growing 1.5x up to 10 s, with jitter. */
   poll?: { initialDelayMs?: number | undefined; maxDelayMs?: number | undefined } | undefined;
@@ -84,7 +88,32 @@ export interface ToapisSeedreamRequest extends ToapisRequestBase {
   watermark?: boolean | undefined;
 }
 
-export type ToapisImageRequest = ToapisGeminiNanoBanana21Request | ToapisGptImage2Request | ToapisGptImage25Request | ToapisSeedreamRequest;
+export interface ToapisGptImage26Request extends ToapisRequestBase {
+  model: "gpt-image-2.6-flare" | "gpt-image-2.6-sunburst";
+  aspectRatio?: ToapisGptImage26AspectRatio | undefined;
+  resolution?: ToapisResolution | undefined;
+  background?: "transparent" | undefined;
+}
+
+export interface ToapisSeedream55Request extends ToapisRequestBase {
+  model: "doubao-seedream-5-5";
+  /** `auto` (default) sends only the resolution; an explicit ratio is sent as Seedream's pixels for it. */
+  aspectRatio?: ToapisSeedream55AspectRatio | undefined;
+  resolution?: ToapisSeedreamResolution | undefined;
+  /** `transparent` requires `outputFormat` png. */
+  background?: ToapisSeedream55Background | undefined;
+  outputFormat?: ToapisSeedream55OutputFormat | undefined;
+  /** Default false. */
+  watermark?: boolean | undefined;
+}
+
+export type ToapisImageRequest =
+  | ToapisGeminiNanoBanana21Request
+  | ToapisGptImage2Request
+  | ToapisGptImage25Request
+  | ToapisGptImage26Request
+  | ToapisSeedreamRequest
+  | ToapisSeedream55Request;
 
 /** ToAPIs recommends waiting at least 5-10 s with jitter between status queries. */
 const POLL_DEFAULTS: PollDefaults = { initialDelayMs: 5_000, maxDelayMs: 10_000, factor: 1.5, jitterRatio: 0.2, timeoutMs: 6 * 60_000 };

@@ -54,53 +54,47 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - model
-                - input
               properties:
                 model:
-                  type: string
+                  default: gpt-image-2-text-to-image
                   description: >-
                     The model name used for generation. This field is required.
                     This endpoint must use the `gpt-image-2-text-to-image`
                     model.
                   enum:
                     - gpt-image-2-text-to-image
-                  default: gpt-image-2-text-to-image
-                  x-apidog-enum:
-                    - value: gpt-image-2-text-to-image
-                      name: ''
-                      description: ''
                   examples:
                     - gpt-image-2-text-to-image
-                callBackUrl:
                   type: string
-                  format: uri
+                  x-apidog-enum:
+                    - description: ''
+                      name: ''
+                      value: gpt-image-2-text-to-image
+                callBackUrl:
                   description: >-
                     Callback URL for task completion notifications. Optional
                     parameter. If provided, the system will send a POST request
                     to this URL when the task completes, whether it succeeds or
-                    fails. If omitted, no callback notification will be sent.
+                    fails. If omitted, no callback notification will be sent. To
+                    ensure callback security, see [Webhook Verification
+                    Guide](/common-api/webhook-verification).
                   examples:
                     - https://your-domain.com/api/callback
+                  format: uri
+                  type: string
                 input:
-                  type: object
                   description: Input parameters for the text-to-image task.
-                  required:
-                    - prompt
                   properties:
                     prompt:
-                      type: string
                       description: Text prompt. Required, maximum 20,000 characters.
-                      minLength: 1
-                      maxLength: 20000
                       examples:
                         - >-
                           A cinematic night city poster with neon reflections on
                           a rainy street.
-                    aspect_ratio:
+                      maxLength: 20000
+                      minLength: 1
                       type: string
+                    aspect_ratio:
                       description: >-
                         The aspect ratio of the generated image is set to auto
                         by default.
@@ -127,79 +121,78 @@ paths:
                         - '1:3'
                         - '21:9'
                         - '9:21'
-                      x-apidog-enum:
-                        - label: auto
-                          value: auto
-                          description: ''
-                        - label: '1:1'
-                          value: '1:1'
-                          description: ''
-                        - label: '3:2'
-                          value: '3:2'
-                          description: ''
-                        - label: '2:3'
-                          value: '2:3'
-                          description: ''
-                        - label: '4:3'
-                          value: '4:3'
-                          description: ''
-                        - label: '3:4'
-                          value: '3:4'
-                          description: ''
-                        - label: '5:4'
-                          value: '5:4'
-                          description: ''
-                        - label: '4:5'
-                          value: '4:5'
-                          description: ''
-                        - label: '16:9'
-                          value: '16:9'
-                          description: ''
-                        - label: '9:16'
-                          value: '9:16'
-                          description: ''
-                        - label: '2:1'
-                          value: '2:1'
-                          description: ''
-                        - label: '1:2'
-                          value: '1:2'
-                          description: ''
-                        - label: '3:1'
-                          value: '3:1'
-                          description: ''
-                        - label: '1:3'
-                          value: '1:3'
-                          description: ''
-                        - label: '21:9'
-                          value: '21:9'
-                          description: ''
-                        - value: '9:21'
-                          name: ''
-                          description: ''
-                    resolution:
                       type: string
+                      x-apidog-enum:
+                        - description: ''
+                          label: auto
+                          value: auto
+                        - description: ''
+                          label: '1:1'
+                          value: '1:1'
+                        - description: ''
+                          label: '3:2'
+                          value: '3:2'
+                        - description: ''
+                          label: '2:3'
+                          value: '2:3'
+                        - description: ''
+                          label: '4:3'
+                          value: '4:3'
+                        - description: ''
+                          label: '3:4'
+                          value: '3:4'
+                        - description: ''
+                          label: '5:4'
+                          value: '5:4'
+                        - description: ''
+                          label: '4:5'
+                          value: '4:5'
+                        - description: ''
+                          label: '16:9'
+                          value: '16:9'
+                        - description: ''
+                          label: '9:16'
+                          value: '9:16'
+                        - description: ''
+                          label: '2:1'
+                          value: '2:1'
+                        - description: ''
+                          label: '1:2'
+                          value: '1:2'
+                        - description: ''
+                          label: '3:1'
+                          value: '3:1'
+                        - description: ''
+                          label: '1:3'
+                          value: '1:3'
+                        - description: ''
+                          label: '21:9'
+                          value: '21:9'
+                        - description: ''
+                          name: ''
+                          value: '9:21'
+                    resolution:
+                      description: >-
+                        Output resolution: 1K, 2K or 4K. Set this field
+                        explicitly. 2K does not support 5:4, 4:5, 3:1, 1:3 or
+                        9:21; 4K does not support 3:1, 1:3 or 9:21. The
+                        background parameter is only available at 1K.
                       enum:
                         - 1K
                         - 2K
                         - 4K
-                      x-apidog-enum:
-                        - value: 1K
-                          name: ''
-                          description: ''
-                        - value: 2K
-                          name: ''
-                          description: ''
-                        - value: 4K
-                          name: ''
-                          description: ''
-                      description: >-
-                        Image resolution: Note: Images with a 1:1 aspect ratio
-                        cannot be converted to 4K images. Images with the aspect
-                        ratio set to "auto" or without a specified aspect ratio
-                        parameter will only be converted to 1K images;
-                        otherwise, the task will fail to create.
-                    background:
                       type: string
+                      x-apidog-enum:
+                        - description: ''
+                          name: ''
+                          value: 1K
+                        - description: ''
+                          name: ''
+                          value: 2K
+                        - description: ''
+                          name: ''
+                          value: 4K
+                    background:
                       description: >-
                         Image background
 
@@ -209,22 +202,30 @@ paths:
                         - transparent
                         - opaque
                         - auto
+                      type: string
                       x-apidog-enum:
-                        - value: transparent
+                        - description: Transparency
                           name: ''
-                          description: Transparency
-                        - value: opaque
+                          value: transparent
+                        - description: Opaque
                           name: ''
-                          description: Opaque
-                        - value: auto
+                          value: opaque
+                        - description: Automatically
                           name: ''
-                          description: Automatically
+                          value: auto
+                  required:
+                    - prompt
+                  type: object
                   x-apidog-orders:
                     - prompt
                     - aspect_ratio
                     - resolution
                     - background
                   x-apidog-ignore-properties: []
+              required:
+                - model
+                - input
+              type: object
               x-apidog-orders:
                 - model
                 - callBackUrl
@@ -245,55 +246,18 @@ paths:
             application/json:
               schema:
                 allOf:
-                  - type: object
-                    properties:
+                  - properties:
                       code:
                         type: integer
                         description: >-
-                          Response Status Codes
-
-
-                          200: Success - The request was successfully processed.
-
-
-                          401: Unauthorized - Insufficient or invalid
-                          authentication credentials.
-
-
-                          402: Insufficient Quota - The account has insufficient
-                          quota to perform this operation.
-
-
-                          404: Not Found - The requested resource or interface
-                          does not exist.
-
-
-                          422: Validation Error - The request parameters failed
-                          the validation check.
-
-
-                          429: Request Restricted - The request frequency limit
-                          for this resource has been exceeded.
-
-
-                          433: Request Limit - The subkey usage exceeded the
-                          limit.
-
-
-                          455: Service Unavailable - The system is currently
-                          under maintenance.
-
-
-                          500: Server Error - An unexpected error occurred while
-                          processing the request.
-
-
-                          501: Generation Failed - The content generation task
-                          failed.
-
-
-                          505: Feature Disabled - The requested feature is
-                          currently disabled.
+                          Status code of the request. The HTTP status is 200
+                          even when the request fails, so always check this
+                          field: 200 means success; any other value means the
+                          request failed and msg describes the reason. Common
+                          values: 401 invalid or missing API key; 402
+                          insufficient credits; 429 rate limit exceeded; 422 or
+                          500 the request could not be processed (read msg and
+                          check your parameters before retrying).
                         enum:
                           - 200
                           - 401
@@ -326,10 +290,11 @@ paths:
                         x-apidog-orders:
                           - taskId
                         x-apidog-ignore-properties: []
-                    x-apidog-orders:
-                      - 01KPR07RANE520VZS4M5X3TGNY
                     required:
                       - data
+                    type: object
+                    x-apidog-orders:
+                      - 01KPR07RANE520VZS4M5X3TGNY
                     x-apidog-refs:
                       01KPR07RANE520VZS4M5X3TGNY:
                         $ref: '#/components/schemas/response%20not%20with%20recordId'
@@ -362,9 +327,7 @@ paths:
           '{$request.body#/callBackUrl}':
             post:
               summary: Image Generation Callback
-              description: >-
-                When the image generation task is completed, the system sends
-                the result to your callback URL via a POST request.
+              description: Sent when the task succeeds or fails.
               requestBody:
                 required: true
                 content:
@@ -375,22 +338,10 @@ paths:
                         code:
                           type: integer
                           description: >-
-                            Status code
-
-
-                            - **200**: Success - Image generation task completed
-                            successfully
-
-                            - **400**: Invalid request parameters or content
-                            violates policy
-
-                            - **500**: Internal error. Please try again later.
-
-                            - **501**: Failed - Image generation task failed
+                            200: success. 501: failure; see data.failCode and
+                            data.failMsg.
                           enum:
                             - 200
-                            - 400
-                            - 500
                             - 501
                         msg:
                           type: string
@@ -408,7 +359,9 @@ paths:
                               example: 1786432830000
                             costTime:
                               type: integer
-                              description: Task duration in seconds
+                              description: >-
+                                Processing time in seconds. Present on both
+                                success and failure callbacks.
                               example: 83
                             createTime:
                               type: integer
@@ -420,7 +373,9 @@ paths:
                             creditsConsumed:
                               type: number
                               format: double
-                              description: Number of credits consumed by the task
+                              description: >-
+                                Credits consumed by the task; 0 for failed
+                                tasks.
                               example: 3
                             model:
                               type: string
@@ -435,13 +390,13 @@ paths:
                                 {"input":"{\"aspect_ratio\":\"auto\",\"prompt\":\"A
                                 cinematic night city poster with neon
                                 reflections on a rainy
-                                street.\"}","callBackUrl":"https://webhook.uutool.cn/5f723555-ec59-4b8f-8feb-bed810982785","model":"gpt-image-2-text-to-image"}
+                                street.\"}","callBackUrl":"https://your-domain.com/api/callback","model":"gpt-image-2-text-to-image"}
                             resultJson:
                               type: string
                               description: >-
                                 Image generation result in JSON string format.
                                 resultUrls contains the list of generated image
-                                URLs.
+                                URLs. Present only when state is success.
                               example: >-
                                 {"resultUrls":["https://tempfile.aiquickdraw.com/images/chatgpt/file_000000002b24820caef9f1684a4f4747.png"]}
                             state:
@@ -459,9 +414,62 @@ paths:
                               type: integer
                               format: int64
                               description: >-
-                                Last task update time, represented as a Unix
-                                timestamp in milliseconds
+                                Use completeTime as the completion time;
+                                updateTime may equal createTime.
                               example: 1786432830000
+                            failCode:
+                              type: string
+                              description: >-
+                                Failure code, a numeric string such as "400" or
+                                "500". Present only when state is fail.
+                              example: '500'
+                            failMsg:
+                              type: string
+                              description: Failure reason. Present only when state is fail.
+                              example: <error detail>
+                    examples:
+                      success:
+                        summary: Success
+                        value:
+                          code: 200
+                          msg: Playground task completed successfully.
+                          data:
+                            taskId: ed578231bfed231f0884c564579a965d
+                            model: gpt-image-2-text-to-image
+                            state: success
+                            param: >-
+                              {"input":"{\"aspect_ratio\":\"auto\",\"prompt\":\"A
+                              cinematic night city poster with neon reflections
+                              on a rainy
+                              street.\"}","callBackUrl":"https://your-domain.com/api/callback","model":"gpt-image-2-text-to-image"}
+                            resultJson: >-
+                              {"resultUrls":["https://tempfile.aiquickdraw.com/images/chatgpt/file_000000002b24820caef9f1684a4f4747.png"]}
+                            completeTime: 1786432830000
+                            createTime: 1786432746000
+                            costTime: 83
+                            creditsConsumed: 3
+                            updateTime: 1786432830000
+                      failure:
+                        summary: Failure
+                        value:
+                          code: 501
+                          msg: Playground task failed.
+                          data:
+                            taskId: ed578231bfed231f0884c564579a965d
+                            model: gpt-image-2-text-to-image
+                            state: fail
+                            param: >-
+                              {"input":"{\"aspect_ratio\":\"auto\",\"prompt\":\"A
+                              cinematic night city poster with neon reflections
+                              on a rainy
+                              street.\"}","callBackUrl":"https://your-domain.com/api/callback","model":"gpt-image-2-text-to-image"}
+                            failCode: '500'
+                            failMsg: <error detail>
+                            completeTime: 1786432830000
+                            createTime: 1786432746000
+                            costTime: 83
+                            creditsConsumed: 0
+                            updateTime: 1786432830000
               responses:
                 '200':
                   description: Callback received successfully
@@ -478,46 +486,12 @@ components:
         code:
           type: integer
           description: >-
-            Response Status Codes
-
-
-            200: Success - The request was successfully processed.
-
-
-            401: Unauthorized - Insufficient or invalid authentication
-            credentials.
-
-
-            402: Insufficient Quota - The account has insufficient quota to
-            perform this operation.
-
-
-            404: Not Found - The requested resource or interface does not exist.
-
-
-            422: Validation Error - The request parameters failed the validation
-            check.
-
-
-            429: Request Restricted - The request frequency limit for this
-            resource has been exceeded.
-
-
-            433: Request Limit - The subkey usage exceeded the limit.
-
-
-            455: Service Unavailable - The system is currently under
-            maintenance.
-
-
-            500: Server Error - An unexpected error occurred while processing
-            the request.
-
-
-            501: Generation Failed - The content generation task failed.
-
-
-            505: Feature Disabled - The requested feature is currently disabled.
+            Status code of the request. The HTTP status is 200 even when the
+            request fails, so always check this field: 200 means success; any
+            other value means the request failed and msg describes the reason.
+            Common values: 401 invalid or missing API key; 402 insufficient
+            credits; 429 rate limit exceeded; 422 or 500 the request could not
+            be processed (read msg and check your parameters before retrying).
           enum:
             - 200
             - 401

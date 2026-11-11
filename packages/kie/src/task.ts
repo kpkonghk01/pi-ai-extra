@@ -133,14 +133,16 @@ function taskFailedError(ctx: OperationContext, record: KieTaskRecord) {
 }
 
 /**
- * `creditsConsumed` (credits deducted) and `costTime` from `recordInfo`. KIE's
- * "Get Task Details" (recordInfo) reference documents `costTime` in milliseconds,
- * while its callback schema says seconds; this follows the recordInfo reference.
+ * `creditsConsumed` (credits deducted) and `costTime` from `recordInfo`. `costTime` is in
+ * seconds, as KIE's "Get Task Details" reference and callback schema say (the reference said
+ * milliseconds until November 2026): on 2026-11-11, Seedream 5.5 tasks that ran 22.9 s and
+ * 13.1 s from `createTime` to `completeTime` reported 23 and 13, and a Nano Banana 2.1 task
+ * that ran 25.6 s reported 26. It is converted to milliseconds.
  */
 function kieUsage(ctx: OperationContext, data: { creditsConsumed?: unknown; costTime?: unknown }): ImageUsage | undefined {
   return compactUsage({
     credits: parseUsageBlock(ctx, z.number().nonnegative(), data.creditsConsumed, "KIE creditsConsumed"),
-    providerDurationMs: parseUsageBlock(ctx, z.number().int().nonnegative(), data.costTime, "KIE costTime"),
+    providerDurationMs: parseUsageBlock(ctx, z.number().int().nonnegative().transform((seconds) => seconds * 1_000), data.costTime, "KIE costTime"),
   });
 }
 

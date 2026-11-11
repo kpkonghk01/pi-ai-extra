@@ -6,6 +6,8 @@ export {
   type KieImageRequest,
   type KieImageSettings,
   type KieNanoBanana21Request,
+  type KieSeedream55ImageToImageRequest,
+  type KieSeedream55TextToImageRequest,
 } from "./generate.ts";
 export {
   KIE_IMAGE_MODEL_IDS,
@@ -18,6 +20,11 @@ export {
   type KieNanoBanana21AspectRatio,
   type KieNanoBanana21OutputFormat,
   type KieResolution,
+  type KieSeedream55AspectRatio,
+  type KieSeedream55Background,
+  type KieSeedream55ImageToImageAspectRatio,
+  type KieSeedream55OutputFormat,
+  type KieSeedream55Resolution,
 } from "./models.ts";
 export { getKieTask, type GetKieTaskOptions, type KieTaskInfo } from "./get-task.ts";
 export type { KieTaskState } from "./task.ts";

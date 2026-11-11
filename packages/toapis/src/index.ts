@@ -3,9 +3,11 @@ export {
   generateToapisImage,
   type ToapisGeminiNanoBanana21Request,
   type ToapisGptImage25Request,
+  type ToapisGptImage26Request,
   type ToapisGptImage2Request,
   type ToapisImageRequest,
   type ToapisImageSettings,
+  type ToapisSeedream55Request,
   type ToapisSeedreamRequest,
 } from "./generate.ts";
 export {
@@ -13,9 +15,13 @@ export {
   TOAPIS_IMAGE_MODELS,
   type ToapisGeminiAspectRatio,
   type ToapisGptImage25AspectRatio,
+  type ToapisGptImage26AspectRatio,
   type ToapisGptImage2AspectRatio,
   type ToapisImageModelId,
   type ToapisResolution,
+  type ToapisSeedream55AspectRatio,
+  type ToapisSeedream55Background,
+  type ToapisSeedream55OutputFormat,
   type ToapisSeedreamAspectRatio,
   type ToapisSeedreamResolution,
 } from "./models.ts";

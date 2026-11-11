@@ -1,11 +1,11 @@
 # @hk01/pi-ai-extra-toapis
 
-Server-only extension to `@earendil-works/pi-ai`: ToAPIs chat (Codex and Claude, a chat provider with a live model list) and image generation. Image models: Gemini Nano Banana 2.1 (`gemini-nano-banana-2.1`), GPT Image 2 (`gpt-image-2`), GPT Image 2.5 (`gpt-image-2.5-flare`, `gpt-image-2.5-sunburst`) and Seedream 5.0 Pro (`doubao-seedream-5-0-pro`).
+Server-only extension to `@earendil-works/pi-ai`: ToAPIs chat (Codex and Claude, a chat provider with a live model list) and image generation. Image models: Gemini Nano Banana 2.1 (`gemini-nano-banana-2.1`), GPT Image 2 (`gpt-image-2`), GPT Image 2.5 (`gpt-image-2.5-flare`, `gpt-image-2.5-sunburst`), GPT Image 2.6 (`gpt-image-2.6-flare`, `gpt-image-2.6-sunburst`), Seedream 5.0 Pro (`doubao-seedream-5-0-pro`) and Seedream 5.5 (`doubao-seedream-5-5`). The default host is `https://api.toapis.com` (mainland China: `https://api.toapis.cn`).
 
 - Main entry (CommonJS and ESM): `generateToapisImage()`, `getToapisTask()`, `TOAPIS_IMAGE_MODELS`, `PiAiExtraError` / `isPiAiExtraError`.
 - `/pi-ai` subpath (ESM only, needs `@earendil-works/pi-ai@1.2.0`): `createToapisProvider()`, one chat provider (a pi-ai `Provider` with the chat kit's `chatKit` traits and a live model list) serving the chat models and `TOAPIS_IMAGE_MODELS` (image settings in `imageSettings`).
 
-Chat: Codex on OpenAI Responses (`https://toapis.com/v1`) and Claude on Anthropic Messages (`https://toapis.com`), each with ToAPIs' published `rate` (USD per 1M tokens). Usage: `billing` (status, decimal-string credits/cost) and token `usage`; billing can be `pending` at completion, so re-read with `getToapisTask` and record one value per task id. `clientBusinessId` is sent as `client_business_id`.
+Chat: Codex on OpenAI Responses (`https://api.toapis.com/v1`) and Claude on Anthropic Messages (`https://api.toapis.com`), each with ToAPIs' published `rate` (USD per 1M tokens). Usage: `billing` (status, decimal-string credits/cost) and token `usage`; billing can be `pending` at completion, so re-read with `getToapisTask` and record one value per task id. `clientBusinessId` is sent as `client_business_id`.
 
 ```ts
 import { generateToapisImage } from "@hk01/pi-ai-extra-toapis";

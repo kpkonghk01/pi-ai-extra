@@ -60,7 +60,7 @@ export interface ToapisProviderOptions {
   apiKey: string;
   /** Replaces the default chat model list. The image models are always `TOAPIS_IMAGE_MODELS`. */
   models?: readonly ChatModelDefinition[] | undefined;
-  /** Chat host. Default `https://toapis.com`; mainland China users may choose `https://toapis.cn` explicitly. */
+  /** Chat host. Default `https://api.toapis.com`; mainland China users may choose `https://api.toapis.cn` explicitly. */
   baseUrl?: string | undefined;
   /**
    * Image helper settings (`baseUrl`, `poll`, `clientBusinessId`) applied to every image request.

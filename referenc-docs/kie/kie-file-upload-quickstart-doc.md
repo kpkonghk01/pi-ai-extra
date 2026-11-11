@@ -25,7 +25,7 @@ Uploading files to our service incurs no charges. You can upload files confident
 :::
 
 :::warning[**Important Reminder**]
-Uploaded files are temporary and will be automatically deleted after **24 hours**. Please download or migrate important files promptly.
+Uploaded files are deleted 24 hours after upload. Please download or migrate important files promptly.
 :::
 
 ## Authentication
@@ -281,16 +281,13 @@ After successful upload, you'll receive a response containing file information:
   "code": 200,
   "msg": "File upload successful",
   "data": {
-    "fileId": "file_abc123456",
+    "success": true,
     "fileName": "my-image.jpg",
-    "originalName": "sample-image.jpg",
+    "filePath": "kieai/12345/images/my-image.jpg",
+    "downloadUrl": "https://tempfile.redpandaai.co/kieai/12345/images/my-image.jpg",
     "fileSize": 245760,
     "mimeType": "image/jpeg",
-    "uploadPath": "images",
-    "fileUrl": "https://kieai.redpandaai.co/files/images/my-image.jpg",
-    "downloadUrl": "https://kieai.redpandaai.co/download/file_abc123456",
-    "uploadTime": "2025-01-15T10:30:00Z",
-    "expiresAt": "2025-01-18T10:30:00Z"
+    "uploadedAt": "2025-01-15T10:30:00.000Z"
   }
 }
 ```
@@ -363,10 +360,10 @@ Process multiple files using file stream upload:
         this.baseUrl = 'https://kieai.redpandaai.co';
       }
       
-      async uploadFile(file, uploadPath = '', fileName = null) {
+      async uploadFile(file, uploadPath, fileName = null) {
         const formData = new FormData();
         formData.append('file', file);
-        if (uploadPath) formData.append('uploadPath', uploadPath);
+        formData.append('uploadPath', uploadPath);
         if (fileName) formData.append('fileName', fileName);
         
         const response = await fetch(`${this.baseUrl}/api/file-stream-upload`, {
@@ -377,14 +374,13 @@ Process multiple files using file stream upload:
           body: formData
         });
         
-        if (!response.ok) {
-          throw new Error(`Upload failed: ${response.statusText}`);
-        }
+        const r = await response.json();
+        if (!r.success || r.code !== 200) throw new Error(r.msg);
         
-        return response.json();
+        return r;
       }
       
-      async uploadFromUrl(fileUrl, uploadPath = '', fileName = null) {
+      async uploadFromUrl(fileUrl, uploadPath, fileName = null) {
         const response = await fetch(`${this.baseUrl}/api/file-url-upload`, {
           method: 'POST',
           headers: {
@@ -398,14 +394,13 @@ Process multiple files using file stream upload:
           })
         });
         
-        if (!response.ok) {
-          throw new Error(`Upload failed: ${response.statusText}`);
-        }
+        const r = await response.json();
+        if (!r.success || r.code !== 200) throw new Error(r.msg);
         
-        return response.json();
+        return r;
       }
       
-      async uploadBase64(base64Data, uploadPath = '', fileName = null) {
+      async uploadBase64(base64Data, uploadPath, fileName = null) {
         const response = await fetch(`${this.baseUrl}/api/file-base64-upload`, {
           method: 'POST',
           headers: {
@@ -419,11 +414,10 @@ Process multiple files using file stream upload:
           })
         });
         
-        if (!response.ok) {
-          throw new Error(`Upload failed: ${response.statusText}`);
-        }
+        const r = await response.json();
+        if (!r.success || r.code !== 200) throw new Error(r.msg);
         
-        return response.json();
+        return r;
       }
     }
 
@@ -442,7 +436,7 @@ Process multiple files using file stream upload:
             `file-${i + 1}-${files[i].name}`
           );
           results.push(result);
-          console.log(`File ${i + 1} upload successful:`, result.data.fileUrl);
+          console.log(`File ${i + 1} upload successful:`, result.data.downloadUrl);
         } catch (error) {
           console.error(`File ${i + 1} upload failed:`, error.message);
         }
@@ -463,7 +457,7 @@ Process multiple files using file stream upload:
             `download-${i + 1}.jpg`
           );
           results.push(result);
-          console.log(`URL ${i + 1} upload successful:`, result.data.fileUrl);
+          console.log(`URL ${i + 1} upload successful:`, result.data.downloadUrl);
         } catch (error) {
           console.error(`URL ${i + 1} upload failed:`, error.message);
         }
@@ -489,7 +483,7 @@ Process multiple files using file stream upload:
                 'Authorization': f'Bearer {api_key}'
             }
         
-        def upload_file(self, file_path: str, upload_path: str = '', 
+        def upload_file(self, file_path: str, upload_path: str, 
                        file_name: Optional[str] = None) -> dict:
             """File stream upload"""
             files = {
@@ -497,8 +491,7 @@ Process multiple files using file stream upload:
             }
             
             data = {}
-            if upload_path:
-                data['uploadPath'] = upload_path
+            data['uploadPath'] = upload_path
             if file_name:
                 data['fileName'] = file_name
             
@@ -509,12 +502,13 @@ Process multiple files using file stream upload:
                 data=data
             )
             
-            if not response.ok:
-                raise Exception(f'Upload failed: {response.text}')
+            r = response.json()
+            if not r.get('success') or r.get('code') != 200:
+                raise Exception(r.get('msg'))
             
-            return response.json()
+            return r
         
-        def upload_from_url(self, file_url: str, upload_path: str = '', 
+        def upload_from_url(self, file_url: str, upload_path: str, 
                            file_name: Optional[str] = None) -> dict:
             """URL file upload"""
             payload = {
@@ -529,12 +523,13 @@ Process multiple files using file stream upload:
                 json=payload
             )
             
-            if not response.ok:
-                raise Exception(f'Upload failed: {response.text}')
+            r = response.json()
+            if not r.get('success') or r.get('code') != 200:
+                raise Exception(r.get('msg'))
             
-            return response.json()
+            return r
         
-        def upload_base64(self, base64_data: str, upload_path: str = '', 
+        def upload_base64(self, base64_data: str, upload_path: str, 
                          file_name: Optional[str] = None) -> dict:
             """Base64 file upload"""
             payload = {
@@ -549,10 +544,11 @@ Process multiple files using file stream upload:
                 json=payload
             )
             
-            if not response.ok:
-                raise Exception(f'Upload failed: {response.text}')
+            r = response.json()
+            if not r.get('success') or r.get('code') != 200:
+                raise Exception(r.get('msg'))
             
-            return response.json()
+            return r
 
     # Usage example
     def main():
@@ -573,7 +569,7 @@ Process multiple files using file stream upload:
                     'user-uploads', 
                     f'file-{i + 1}-{os.path.basename(file_path)}'
                 )
-                print(f"File {i + 1} upload successful: {result['data']['fileUrl']}")
+                print(f"File {i + 1} upload successful: {result['data']['downloadUrl']}")
             except Exception as e:
                 print(f"File {i + 1} upload failed: {e}")
         
@@ -591,7 +587,7 @@ Process multiple files using file stream upload:
                     'downloads', 
                     f'download-{i + 1}.jpg'
                 )
-                print(f"URL {i + 1} upload successful: {result['data']['fileUrl']}")
+                print(f"URL {i + 1} upload successful: {result['data']['downloadUrl']}")
             except Exception as e:
                 print(f"URL {i + 1} upload failed: {e}")
 
@@ -603,14 +599,15 @@ Process multiple files using file stream upload:
 
 ## Error Handling
 
-Common errors and how to handle them:
+Errors are returned with HTTP 200 and an error `code` in the response body. Common errors and how to handle them:
 
 <details>
   <summary>401 Unauthorized</summary>
 
   ```javascript
   // Check if API key is correct
-  if (response.status === 401) {
+  const result = await response.json();
+  if (result.code === 401) {
     console.error('Invalid API key, please check Authorization header');
     // Re-obtain or update API key
   }
@@ -622,9 +619,9 @@ Common errors and how to handle them:
 
   ```javascript
   // Check request parameters
-  if (response.status === 400) {
-    const error = await response.json();
-    console.error('Request parameter error:', error.msg);
+  const result = await response.json();
+  if (result.code === 400) {
+    console.error('Request parameter error:', result.msg);
     // Check if required parameters are provided
     // Check if file format is supported
     // Check if URL is accessible
@@ -666,7 +663,6 @@ Common errors and how to handle them:
 <details>
   <summary>Performance Optimization</summary>
   * Implement concurrency control to avoid uploading too many files simultaneously
-  * Consider chunked upload strategy for large files
   * Use appropriate retry mechanisms for network issues
   * Monitor upload progress and provide user feedback
 </details>
@@ -676,7 +672,6 @@ Common errors and how to handle them:
   * Keep API keys secure and rotate regularly
   * Validate file types and sizes
   * Consider encrypted transmission for sensitive files
-  * Download important files promptly to avoid deletion after 3 days
 </details>
 
 <details>
@@ -690,16 +685,16 @@ Common errors and how to handle them:
 ## File Storage Information
 
 :::warning[**Important Reminder**]
-All uploaded files are temporary and will be automatically deleted **3 days** after upload.
+Uploaded files are deleted 24 hours after upload.
 :::
 
 * Files are accessible and downloadable immediately after upload
-* File URLs remain valid for 24 hours
-* The system provides an `expiresAt` field in the response indicating expiration time
 * Recommended to download or migrate important files before expiration
 * Use the `downloadUrl` field to get direct download links
 
 ## Status Codes
+
+Error codes are in the response body `code`; the HTTP status is 200.
 
 *   **200** (Success): Request successfully processed, file upload completed
 *   **400** (Bad Request): Incorrect request parameters or missing required parameters
@@ -730,7 +725,6 @@ Need help? Our technical support team is here for you.
 
 * **Email**: [support@kie.ai](mailto:support@kie.ai)
 * **Documentation**: [docs.kie.ai](https://docs.kie.ai)
-* **API Status**: Check our status page for real-time API health
 :::
 
 ***

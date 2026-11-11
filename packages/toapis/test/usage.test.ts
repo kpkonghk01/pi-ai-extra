@@ -5,8 +5,8 @@ import { bytesResponse, createFakeFetch, jsonResponse, PNG_BYTES, type FakeRoute
 import { generateToapisImage, getToapisTask, isPiAiExtraError, type ImageProgressEvent } from "../src/index.ts";
 import { createToapisProvider } from "../src/pi-ai/index.ts";
 
-const SUBMIT_URL = "https://toapis.com/v1/images/generations";
-const STATUS_URL = /^https:\/\/toapis\.com\/v1\/images\/generations\/tsk_1$/;
+const SUBMIT_URL = "https://api.toapis.com/v1/images/generations";
+const STATUS_URL = /^https:\/\/api\.toapis\.com\/v1\/images\/generations\/tsk_1$/;
 const RESULT_URL = "https://files.toapis.com/generated/1.png";
 
 const completed = (extra: Record<string, unknown>) => () =>

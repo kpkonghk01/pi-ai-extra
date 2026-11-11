@@ -108,10 +108,9 @@ paths:
                     prompt:
                       description: >-
                         A text description specifying the desired content or
-                        style of the generated image. (Max length: 8000
-                        characters)
+                        style of the generated image. Up to 8,000 characters.
                       type: string
-                      maxLength: 390000
+                      maxLength: 8000
                       examples:
                         - >-
                           Recreate the Titanic movie poster with two adorable
@@ -127,6 +126,18 @@ paths:
                           ocean, and orange-pink sunset sky. Center title:
                           “CATANIC” in the same gold metallic serif style as
                           Titanic, same size and position.
+                    image_urls:
+                      type: array
+                      items:
+                        type: string
+                        format: uri
+                      description: >-
+                        An array containing up to 5 and at least 1 URL strings
+                        pointing to a reference image.
+                      maxItems: 5
+                      examples:
+                        - - >-
+                            https://static.aiquickdraw.com/tools/example/1767602105243_0MmMCrwq.png
                     aspect_ratio:
                       type: string
                       description: >-
@@ -159,32 +170,28 @@ paths:
                         - value: auto
                           name: ''
                           description: ''
-                    image_urls:
-                      type: array
-                      items:
-                        type: string
-                        format: uri
-                      description: >-
-                        An array containing up to 5 and at least 1 URL strings
-                        pointing to a reference image.
-                      maxItems: 5
-                      examples:
-                        - - >-
-                            https://static.aiquickdraw.com/tools/example/1767602105243_0MmMCrwq.png
                   required:
-                    - aspect_ratio
                     - image_urls
+                    - aspect_ratio
                   x-apidog-orders:
                     - prompt
                     - aspect_ratio
                     - image_urls
                   x-apidog-refs: {}
-                  x-apidog-ignore-properties: []
+                  x--orders:
+                    - prompt
+                    - image_urls
+                    - aspect_ratio
+                  x--ignore-properties: []
               x-apidog-orders:
                 - model
                 - callBackUrl
                 - input
-              x-apidog-ignore-properties: []
+              x--orders:
+                - model
+                - callBackUrl
+                - input
+              x--ignore-properties: []
             example:
               model: grok-imagine-image-2-0/image-edit
               callBackUrl: https://your-domain.com/api/callback
@@ -238,9 +245,7 @@ paths:
           '{$request.body#/callBackUrl}':
             post:
               summary: Image Generation Callback
-              description: >-
-                When the image generation task is completed, the system sends
-                the result to your callback URL via a POST request.
+              description: Sent when the task succeeds or fails.
               requestBody:
                 required: true
                 content:
@@ -251,22 +256,10 @@ paths:
                         code:
                           type: integer
                           description: >-
-                            Status code
-
-
-                            - **200**: Success - Image generation task completed
-                            successfully
-
-                            - **400**: Invalid request parameters or content
-                            violates policy
-
-                            - **500**: Internal error. Please try again later.
-
-                            - **501**: Failed - Image generation task failed
+                            200: success. 501: failure; see data.failCode and
+                            data.failMsg.
                           enum:
                             - 200
-                            - 400
-                            - 500
                             - 501
                         msg:
                           type: string
@@ -284,7 +277,9 @@ paths:
                               example: 1787284560000
                             costTime:
                               type: integer
-                              description: Task duration in seconds
+                              description: >-
+                                Processing time in seconds. Present on both
+                                success and failure callbacks.
                               example: 35
                             createTime:
                               type: integer
@@ -296,7 +291,9 @@ paths:
                             creditsConsumed:
                               type: number
                               format: double
-                              description: Number of credits consumed by the task
+                              description: >-
+                                Credits consumed by the task; 0 for failed
+                                tasks.
                               example: 4
                             model:
                               type: string
@@ -329,7 +326,7 @@ paths:
                               description: >-
                                 Image generation result in JSON string format.
                                 resultUrls contains the list of generated image
-                                URLs.
+                                URLs. Present only when state is success.
                               example: >-
                                 {"resultUrls":["https://tempfile.aiquickdraw.com/ggg/23e972d3-9761-4467-9cc1-29a5aa30b1a6.jpg"]}
                             state:
@@ -347,9 +344,86 @@ paths:
                               type: integer
                               format: int64
                               description: >-
-                                Last task update time, represented as a Unix
-                                timestamp in milliseconds
+                                Use completeTime as the completion time;
+                                updateTime may equal createTime.
                               example: 1787284560000
+                            failCode:
+                              type: string
+                              description: >-
+                                Failure code, a numeric string such as "400" or
+                                "500". Present only when state is fail.
+                              example: '500'
+                            failMsg:
+                              type: string
+                              description: Failure reason. Present only when state is fail.
+                              example: <error detail>
+                    examples:
+                      success:
+                        summary: Task completed successfully
+                        value:
+                          code: 200
+                          msg: Playground task completed successfully.
+                          data:
+                            taskId: 6948da647cafec99c49d1dcde91b4b05
+                            model: grok-imagine-image-2-0/image-edit
+                            state: success
+                            param: >-
+                              {"input":"{\"aspect_ratio\":\"auto\",\"image_urls\":[\"https://static.aiquickdraw.com/tools/example/1767602105243_0MmMCrwq.png\"],\"prompt\":\"Recreate
+                              the Titanic movie poster with two adorable
+                              anthropomorphic cats in the same romantic pose at
+                              the bow of the ship. The male cat is an orange
+                              tabby wearing a vest, standing behind a white
+                              long-haired female cat in a lace dress, holding
+                              her paws as they stretch forward in the wind. Both
+                              cats are photorealistic with detailed fur,
+                              wind-swept hair, and dramatic sunset lighting
+                              (warm golden highlights, cool blue shadows).
+                              Background: the Titanic ship at dusk with four
+                              smokestacks, glowing deck lights, calm ocean, and
+                              orange-pink sunset sky. Center title: “CATANIC” in
+                              the same gold metallic serif style as Titanic,
+                              same size and
+                              position.\"}","callBackUrl":"http://localhost:8555/api/v1/config/test","model":"grok-imagine-image-2-0/image-edit"}
+                            resultJson: >-
+                              {"resultUrls":["https://tempfile.aiquickdraw.com/ggg/23e972d3-9761-4467-9cc1-29a5aa30b1a6.jpg"]}
+                            costTime: 35
+                            createTime: 1787284517000
+                            completeTime: 1787284560000
+                            updateTime: 1787284560000
+                            creditsConsumed: 4
+                      failure:
+                        summary: Task failed
+                        value:
+                          code: 501
+                          msg: Playground task failed.
+                          data:
+                            taskId: 6948da647cafec99c49d1dcde91b4b05
+                            model: grok-imagine-image-2-0/image-edit
+                            state: fail
+                            param: >-
+                              {"input":"{\"aspect_ratio\":\"auto\",\"image_urls\":[\"https://static.aiquickdraw.com/tools/example/1767602105243_0MmMCrwq.png\"],\"prompt\":\"Recreate
+                              the Titanic movie poster with two adorable
+                              anthropomorphic cats in the same romantic pose at
+                              the bow of the ship. The male cat is an orange
+                              tabby wearing a vest, standing behind a white
+                              long-haired female cat in a lace dress, holding
+                              her paws as they stretch forward in the wind. Both
+                              cats are photorealistic with detailed fur,
+                              wind-swept hair, and dramatic sunset lighting
+                              (warm golden highlights, cool blue shadows).
+                              Background: the Titanic ship at dusk with four
+                              smokestacks, glowing deck lights, calm ocean, and
+                              orange-pink sunset sky. Center title: “CATANIC” in
+                              the same gold metallic serif style as Titanic,
+                              same size and
+                              position.\"}","callBackUrl":"http://localhost:8555/api/v1/config/test","model":"grok-imagine-image-2-0/image-edit"}
+                            costTime: 35
+                            createTime: 1787284517000
+                            completeTime: 1787284560000
+                            updateTime: 1787284560000
+                            creditsConsumed: 0
+                            failCode: '500'
+                            failMsg: <error detail>
               responses:
                 '200':
                   description: Callback received successfully
@@ -366,46 +440,12 @@ components:
         code:
           type: integer
           description: >-
-            Response Status Codes
-
-
-            200: Success - The request was successfully processed.
-
-
-            401: Unauthorized - Insufficient or invalid authentication
-            credentials.
-
-
-            402: Insufficient Quota - The account has insufficient quota to
-            perform this operation.
-
-
-            404: Not Found - The requested resource or interface does not exist.
-
-
-            422: Validation Error - The request parameters failed the validation
-            check.
-
-
-            429: Request Restricted - The request frequency limit for this
-            resource has been exceeded.
-
-
-            433: Request Limit - The subkey usage exceeded the limit.
-
-
-            455: Service Unavailable - The system is currently under
-            maintenance.
-
-
-            500: Server Error - An unexpected error occurred while processing
-            the request.
-
-
-            501: Generation Failed - The content generation task failed.
-
-
-            505: Feature Disabled - The requested feature is currently disabled.
+            Status code of the request. The HTTP status is 200 even when the
+            request fails, so always check this field: 200 means success; any
+            other value means the request failed and msg describes the reason.
+            Common values: 401 invalid or missing API key; 402 insufficient
+            credits; 429 rate limit exceeded; 422 or 500 the request could not
+            be processed (read msg and check your parameters before retrying).
           enum:
             - 200
             - 401
@@ -437,12 +477,18 @@ components:
                 - dc1928bfcbc77cb6c85f3359a9c718b3
           x-apidog-orders:
             - taskId
-          x-apidog-ignore-properties: []
+          x--orders:
+            - taskId
+          x--ignore-properties: []
       x-apidog-orders:
         - code
         - msg
         - data
-      x-apidog-ignore-properties: []
+      x--orders:
+        - code
+        - msg
+        - data
+      x--ignore-properties: []
       x-apidog-folder: ''
   securitySchemes:
     BearerAuth:

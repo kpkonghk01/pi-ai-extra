@@ -417,7 +417,7 @@ describe("targetsOpenRouter", () => {
     assert.equal(targetsOpenRouter(model("openrouter", "https://proxy.example.com/openrouter")), true);
     assert.equal(targetsOpenRouter(model("custom", "https://openrouter.ai/api")), true);
     assert.equal(targetsOpenRouter(model("kie", "https://api.kie.ai/anthropic")), false);
-    assert.equal(targetsOpenRouter(model("toapis", "https://toapis.com")), false);
+    assert.equal(targetsOpenRouter(model("toapis", "https://api.toapis.com")), false);
     assert.equal(targetsOpenRouter(model("kie", "https://openrouter.ai.example.com")), false);
   });
 });

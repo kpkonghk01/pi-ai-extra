@@ -13,7 +13,7 @@ paths:
     get:
       summary: Get Task Details
       deprecated: false
-      description: >-
+      description: >
         Query the status and results of any task created in the Market models.
         This is a unified query interface that works with all models under the
         Market category.
@@ -21,20 +21,8 @@ paths:
 
         ### Supported Models
 
-        This endpoint works with all Market models including:
-
-        - **Seedream**: seedream, seedream-v4-text-to-image, etc.
-
-        - **Grok Imagine**: text-to-image, image-to-video, text-to-video,
-        upscale
-
-        - **Kling**: text-to-video, image-to-video models
-
-        - **ElevenLabs**: Audio processing models
-
-        - **Claude**: Language models
-
-        - **And any future models added to the Market**
+        Works for every task created via POST /api/v1/jobs/createTask. Chat
+        models are synchronous and have no task to query.
 
 
         ### Task States
@@ -58,10 +46,17 @@ paths:
         - **Implement exponential backoff**: Start with 2-3 second intervals,
         increase gradually
 
-        - **Handle timeouts**: Stop polling after 10-15 minutes
+        - **Long-running tasks**: Some video tasks take longer than 10 minutes.
+        Keep polling until state is success or fail.
 
-        - **Download results immediately**: Generated content URLs typically
-        expire after 24 hours
+        - **Download results**: Generated files are kept for 14 days.
+
+
+        ### Errors
+
+        Errors are returned with HTTP 200; check `code`. Common values: `401`
+        invalid or missing API key; `422` taskId is missing, or the task does
+        not exist or does not belong to your account.
       operationId: get-task-details
       tags:
         - docs/en/Market
@@ -83,28 +78,28 @@ paths:
                 allOf:
                   - &ref_0
                     $ref: '#/components/schemas/response%20not%20with%20recordId'
-                  - type: object
-                    properties:
+                  - properties:
                       data:
-                        type: object
                         description: The task data object containing all task information
                         properties:
                           taskId:
-                            type: string
                             description: The unique identifier for this task
                             examples:
                               - task_12345678
-                          model:
                             type: string
+                          model:
                             description: >-
                               The model used for this task (e.g.,
                               grok-imagine/text-to-image, seedream-4.0,
                               kling-1.0)
                             examples:
-                              - grok-imagine/text-to-image
-                          state:
+                              - bytedance/seedance-2-5
+                              - gpt-image-2-text-to-image
                             type: string
-                            description: Current state of the task
+                          state:
+                            description: >-
+                              Current state of the task. Check state to
+                              determine the outcome.
                             enum:
                               - waiting
                               - queuing
@@ -113,37 +108,29 @@ paths:
                               - fail
                             examples:
                               - success
-                          param:
                             type: string
+                          param:
                             description: >-
                               JSON string containing the original request
-                              parameters used to create the task
+                              parameters used to create the task. Its `input` is
+                              itself a JSON string — parse it twice.
                             examples:
                               - >-
-                                {"model":"grok-imagine/text-to-image","callBackUrl":"https://your-domain.com/api/callback","input":{"prompt":"Cinematic
-                                portrait...","aspect_ratio":"3:2"}}
-                          resultJson:
+                                {"model":"grok-imagine/text-to-image","callBackUrl":"https://your-domain.com/api/callback","input":"{\"prompt\":\"Cinematic
+                                portrait...\",\"aspect_ratio\":\"3:2\"}"}
                             type: string
-                            examples:
-                              - >-
-                                {"resultUrls":["https://example.com/generated-content.jpg"]}
-                              - '{"resultObject":{"subject_status":1}}'
-                              - >-
-                                {"resultObject":{"mask_urls":["https://example.com/mask_1",
-                                "https://example.com/mask_2"]}}
+                          resultJson:
                             description: >-
-                              A JSON string containing the generated URL. Only
-                              exists if the status is "success".
+                              Result JSON string. Present when state is success;
+                              on failure it may be null or an empty string.
 
 
-                              Depending on `outputMediaType`, the structure is
-                              as follows:
+                              The structure is as follows:
 
                               - For images/media/videos: {resultUrls: []}
 
-                              - If using Seedance 2 or Seedance 2 Fast with
-                              `return_last_frame` enabled: {resultUrls: [],
-                              firstFrameUrl: [], lastFrameUrl: []}
+                              - If return_last_frame is enabled on Seedance 2.x
+                              models: {resultUrls: [], lastFrameUrl: []}
 
                               - For text output: {resultObject: {}}
 
@@ -163,112 +150,105 @@ paths:
                               `subject_status` means 0 = no subject detected, 1
                               = subject detected, indicating whether a human
                               subject is detected in the image.
+                            examples:
+                              - >-
+                                {"resultUrls":["https://example.com/generated-content.jpg"]}
+                              - '{"resultObject":{"subject_status":1}}'
+                              - >-
+                                {"resultObject":{"mask_urls":["https://example.com/mask_1",
+                                "https://example.com/mask_2"]}}
+                            type: string
+                          response:
+                            type: object
+                            description: >-
+                              Parsed form of resultJson. Present only when state
+                              is success.
+                            x-apidog-orders: []
+                            properties: {}
+                            x-apidog-ignore-properties: []
                           failCode:
-                            type: string
                             description: >-
-                              Error code if the task failed. Empty string if
-                              successful
+                              Failure code (numeric string, e.g. "500"). Present
+                              when state is fail; on success it may be null or
+                              an empty string.
                             examples:
                               - ''
+                            type: string
                           failMsg:
-                            type: string
                             description: >-
-                              Error message if the task failed. Empty string if
-                              successful
+                              Failure reason. Present when state is fail; on
+                              success it may be null or an empty string.
                             examples:
                               - ''
+                            type: string
                           costTime:
-                            type: integer
-                            format: int64
                             description: >-
-                              Processing time in milliseconds (available when
-                              successful)
+                              Processing time in seconds. Present for both
+                              successful and failed tasks.
                             examples:
-                              - 15000
-                          completeTime:
-                            type: integer
+                              - 15
                             format: int64
+                            type: integer
+                          completeTime:
                             description: >-
                               Completion timestamp (Unix timestamp in
                               milliseconds)
                             examples:
                               - 1698765432000
-                          createTime:
-                            type: integer
                             format: int64
+                            type: integer
+                          createTime:
                             description: >-
                               Creation timestamp (Unix timestamp in
                               milliseconds)
                             examples:
                               - 1698765400000
-                          updateTime:
-                            type: integer
                             format: int64
-                            description: Update timestamp (Unix timestamp in milliseconds)
-                            examples:
-                              - 1698765432000
-                          progress:
                             type: integer
-                            description: >-
-                              Generation progress (0-100). Only returned when
-                              model is sora2 or sora2 pro.
-                            minimum: 0
-                            maximum: 100
-                            examples:
-                              - 45
                           creditsConsumed:
-                            type: number
                             description: >-
                               Credit consumption details for this task,
                               indicating the actual number of credits deducted
                               during task execution.
+                            type: number
+                        type: object
                         x-apidog-orders:
                           - taskId
                           - model
                           - state
                           - param
                           - resultJson
+                          - response
                           - failCode
                           - failMsg
                           - costTime
                           - completeTime
                           - createTime
-                          - updateTime
-                          - progress
                           - creditsConsumed
                         x-apidog-ignore-properties: []
+                    type: object
                     x-apidog-orders:
                       - data
                     x-apidog-ignore-properties: []
               example:
-                code: 505
+                code: 200
                 msg: success
                 data:
                   taskId: task_12345678
                   model: grok-imagine/text-to-image
                   state: success
                   param: >-
-                    {"model":"grok-imagine/text-to-image","callBackUrl":"https://your-domain.com/api/callback","input":{"prompt":"Cinematic
-                    portrait...","aspect_ratio":"3:2"}}
+                    {"model":"grok-imagine/text-to-image","callBackUrl":"https://your-domain.com/api/callback","input":"{\"prompt\":\"Cinematic
+                    portrait...\",\"aspect_ratio\":\"3:2\"}"}
                   resultJson: '{"resultUrls":["https://example.com/generated-content.jpg"]}'
                   failCode: ''
                   failMsg: ''
-                  costTime: 15000
+                  costTime: 15
                   completeTime: 1698765432000
                   createTime: 1698765400000
                   updateTime: 1698765432000
                   progress: 45
                   creditsConsumed: 50
-          headers: {}
-          x-apidog-name: ''
-        '400':
-          description: Bad Request - Missing or invalid taskId parameter
-          content:
-            application/json:
-              schema: *ref_0
-              example:
-                code: 400
-                msg: taskId parameter is required
           headers: {}
           x-apidog-name: ''
         '401':
@@ -281,18 +261,8 @@ paths:
                 msg: Unauthorized
           headers: {}
           x-apidog-name: ''
-        '404':
-          description: Task Not Found - The specified taskId does not exist
-          content:
-            application/json:
-              schema: *ref_0
-              example:
-                code: 404
-                msg: Task not found
-          headers: {}
-          x-apidog-name: ''
         '422':
-          description: ''
+          description: Validation error.
           content:
             application/json:
               schema:
@@ -330,7 +300,7 @@ paths:
           headers: {}
           x-apidog-name: ''
         '500':
-          description: request failed
+          description: Server error.
           content:
             application/json:
               schema:
@@ -354,8 +324,8 @@ paths:
                       - **404**: Not Found - The requested resource or endpoint
                       does not exist
 
-                      - **408**: Upstream is currently experiencing service
-                      issues. No result has been returned for over 10 minutes.
+                      - **408**: Timeout - No result has been returned for over
+                      10 minutes.
 
                       - **422**: Validation Error - The request parameters
                       failed validation checks
@@ -398,7 +368,7 @@ paths:
                   the request
                 data: null
           headers: {}
-          x-apidog-name: 'Error '
+          x-apidog-name: Error
       security:
         - BearerAuth: []
           x-apidog:
@@ -425,46 +395,12 @@ components:
         code:
           type: integer
           description: >-
-            Response Status Codes
-
-
-            200: Success - The request was successfully processed.
-
-
-            401: Unauthorized - Insufficient or invalid authentication
-            credentials.
-
-
-            402: Insufficient Quota - The account has insufficient quota to
-            perform this operation.
-
-
-            404: Not Found - The requested resource or interface does not exist.
-
-
-            422: Validation Error - The request parameters failed the validation
-            check.
-
-
-            429: Request Restricted - The request frequency limit for this
-            resource has been exceeded.
-
-
-            433: Request Limit - The subkey usage exceeded the limit.
-
-
-            455: Service Unavailable - The system is currently under
-            maintenance.
-
-
-            500: Server Error - An unexpected error occurred while processing
-            the request.
-
-
-            501: Generation Failed - The content generation task failed.
-
-
-            505: Feature Disabled - The requested feature is currently disabled.
+            Status code of the request. The HTTP status is 200 even when the
+            request fails, so always check this field: 200 means success; any
+            other value means the request failed and msg describes the reason.
+            Common values: 401 invalid or missing API key; 402 insufficient
+            credits; 429 rate limit exceeded; 422 or 500 the request could not
+            be processed (read msg and check your parameters before retrying).
           enum:
             - 200
             - 401

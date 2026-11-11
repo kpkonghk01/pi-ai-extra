@@ -13,7 +13,9 @@ export type KieImageModelId =
   | "grok-imagine-image-2-0/image-edit"
   | "gpt-image-2-text-to-image"
   | "gpt-image-2-image-to-image"
-  | "nano-banana-2-1";
+  | "nano-banana-2-1"
+  | "seedream/5-5-text-to-image"
+  | "seedream/5-5-image-to-image";
 
 export type KieGrokAspectRatio = "1:1" | "2:3" | "3:2" | "16:9" | "9:16";
 export type KieGrokEditAspectRatio = KieGrokAspectRatio | "auto";
@@ -26,6 +28,11 @@ export type KieNanoBanana21AspectRatio =
   | "1:1" | "2:3" | "3:2" | "1:4" | "4:1" | "3:4" | "4:3" | "4:5"
   | "5:4" | "1:8" | "8:1" | "9:16" | "16:9" | "21:9" | "auto";
 export type KieNanoBanana21OutputFormat = "png" | "jpg";
+export type KieSeedream55AspectRatio = "1:1" | "4:3" | "3:4" | "16:9" | "9:16" | "2:3" | "3:2" | "21:9";
+export type KieSeedream55ImageToImageAspectRatio = KieSeedream55AspectRatio | "auto";
+export type KieSeedream55Resolution = "1K" | "2K";
+export type KieSeedream55Background = "auto" | "transparent" | "opaque";
+export type KieSeedream55OutputFormat = "png" | "jpeg";
 
 /** Validated, provider-neutral view of a KIE request before it is mapped to the model's `input` fields. */
 export interface NormalizedKieRequest {
@@ -53,6 +60,12 @@ const RESOLUTIONS = ["1K", "2K", "4K"] as const;
 const GPT_BACKGROUNDS = ["transparent", "opaque", "auto"] as const;
 const NANO_RATIOS = ["1:1", "2:3", "3:2", "1:4", "4:1", "3:4", "4:3", "4:5", "5:4", "1:8", "8:1", "9:16", "16:9", "21:9", "auto"] as const;
 const NANO_FORMATS = ["png", "jpg"] as const;
+const SEEDREAM_55_RATIOS = ["1:1", "4:3", "3:4", "16:9", "9:16", "2:3", "3:2", "21:9"] as const;
+const SEEDREAM_55_IMAGE_TO_IMAGE_RATIOS = [...SEEDREAM_55_RATIOS, "auto"] as const;
+// KIE also offers 1.5K, at the 1K price; it is left out because the image kit's options and prices have no 1.5K tier.
+const SEEDREAM_55_RESOLUTIONS = ["1K", "2K"] as const;
+const SEEDREAM_55_BACKGROUNDS = ["auto", "transparent", "opaque"] as const;
+const SEEDREAM_55_FORMATS = ["png", "jpeg"] as const;
 
 /** KIE's base64 upload is intended for images up to about 10 MB. */
 const INLINE_LIMIT_BYTES = 10 * 1024 * 1024;
@@ -130,6 +143,60 @@ function gptImage2(id: "gpt-image-2-text-to-image" | "gpt-image-2-image-to-image
   };
 }
 
+/** KIE's Seedream 5.5 prompt needs at least 5 characters, and KIE renders a transparent background only as PNG. */
+function refineSeedream55(request: NormalizedKieRequest, ctx: z.RefinementCtx): void {
+  if (request.prompt.length < 5) {
+    ctx.addIssue({ code: "custom", path: ["prompt"], message: "prompt needs at least 5 characters" });
+  }
+  if (request.background === "transparent" && request.outputFormat === "jpeg") {
+    ctx.addIssue({ code: "custom", path: ["background"], message: "background transparent requires outputFormat png" });
+  }
+}
+
+function seedream55(id: "seedream/5-5-text-to-image" | "seedream/5-5-image-to-image"): KieModelDefinition {
+  const imageToImage = id === "seedream/5-5-image-to-image";
+  const model = info({
+    id,
+    name: imageToImage ? "Seedream 5.5 (image to image)" : "Seedream 5.5 (text to image)",
+    kind: imageToImage ? "image-to-image" : "text-to-image",
+    familyId: "seedream-5-5",
+    familyName: "Seedream 5.5",
+    operationRole: imageToImage ? "image-to-image" : "text-to-image",
+    promptMaxLength: 5_000,
+    referenceImages: imageToImage ? references(1, 10) : references(0, 0),
+    aspectRatio: imageToImage ? option(SEEDREAM_55_IMAGE_TO_IMAGE_RATIOS, "auto") : option(SEEDREAM_55_RATIOS, null, true),
+    resolution: option(SEEDREAM_55_RESOLUTIONS, "2K"),
+    background: option(SEEDREAM_55_BACKGROUNDS, "auto"),
+    outputFormat: option(SEEDREAM_55_FORMATS, "png"),
+    notes: [
+      imageToImage ? "Reference images: JPEG, PNG or WebP, up to 10 MB each; KIE bills each input image." : "aspectRatio is required.",
+      "The prompt needs at least 5 characters.",
+      "background transparent requires outputFormat png.",
+    ],
+  });
+  return {
+    info: model,
+    schema: z
+      .strictObject({
+        ...baseRequestShape(model),
+        aspectRatio: imageToImage ? z.enum(SEEDREAM_55_IMAGE_TO_IMAGE_RATIOS).optional() : z.enum(SEEDREAM_55_RATIOS),
+        resolution: z.enum(SEEDREAM_55_RESOLUTIONS).optional(),
+        background: z.enum(SEEDREAM_55_BACKGROUNDS).optional(),
+        outputFormat: z.enum(SEEDREAM_55_FORMATS).optional(),
+      })
+      .superRefine(refineSeedream55),
+    buildInput: (request, imageUrls) =>
+      omitUndefined({
+        prompt: request.prompt,
+        image_urls: imageToImage ? [...imageUrls] : undefined,
+        aspect_ratio: request.aspectRatio,
+        size: request.resolution,
+        background: request.background,
+        output_format: request.outputFormat,
+      }),
+  };
+}
+
 const GROK_TEXT = info({
   id: "grok-imagine-image-2-0/text-to-image",
   name: "Grok Imagine Image 2.0 (text to image)",
@@ -198,6 +265,8 @@ const DEFINITIONS: Record<KieImageModelId, KieModelDefinition> = {
         output_format: request.outputFormat,
       }),
   },
+  "seedream/5-5-text-to-image": seedream55("seedream/5-5-text-to-image"),
+  "seedream/5-5-image-to-image": seedream55("seedream/5-5-image-to-image"),
 };
 
 export const KIE_IMAGE_MODEL_IDS: readonly KieImageModelId[] = Object.keys(DEFINITIONS) as KieImageModelId[];

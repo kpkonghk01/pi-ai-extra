@@ -25,8 +25,8 @@ function routes(recordResponder: FakeRoute["respond"]): FakeRoute[] {
 const request = { apiKey: "kie-key", model: "nano-banana-2-1" as const, prompt: "x", poll: { initialDelayMs: 1, maxDelayMs: 1 } };
 
 describe("KIE usage", () => {
-  it("returns creditsConsumed and costTime (milliseconds per recordInfo docs)", async () => {
-    const fake = createFakeFetch(routes([record({ state: "generating" }), success({ creditsConsumed: 3.5, costTime: 15_000 })]));
+  it("returns creditsConsumed and costTime, converting KIE's seconds to milliseconds", async () => {
+    const fake = createFakeFetch(routes([record({ state: "generating" }), success({ creditsConsumed: 3.5, costTime: 15 })]));
     const result = await generateKieImage({ ...request, fetch: fake.fetch });
     assert.deepEqual(result.usage, { credits: 3.5, providerDurationMs: 15_000 });
   });
@@ -41,10 +41,10 @@ describe("KIE usage", () => {
 
   it("keeps the image and warns when usage fields are malformed", async () => {
     const events: ImageProgressEvent[] = [];
-    const fake = createFakeFetch(routes(success({ creditsConsumed: "lots", costTime: 900 })));
+    const fake = createFakeFetch(routes(success({ creditsConsumed: "lots", costTime: 9 })));
     const result = await generateKieImage({ ...request, fetch: fake.fetch, onProgress: (event) => events.push(event) });
     assert.equal(result.images.length, 1);
-    assert.deepEqual(result.usage, { providerDurationMs: 900 });
+    assert.deepEqual(result.usage, { providerDurationMs: 9_000 });
     assert.ok(events.some((event) => event.type === "warning" && /creditsConsumed/.test(event.message)));
   });
 
@@ -62,7 +62,7 @@ describe("KIE usage", () => {
 
 describe("getKieTask", () => {
   it("re-reads a finished task with its usage", async () => {
-    const fake = createFakeFetch(routes(success({ creditsConsumed: 4, costTime: 1_200 })));
+    const fake = createFakeFetch(routes(success({ creditsConsumed: 4, costTime: 12 })));
     const task = await getKieTask({ apiKey: "kie-key", taskId: "task_1", fetch: fake.fetch });
     assert.deepEqual(task, {
       provider: "kie",
@@ -72,7 +72,7 @@ describe("getKieTask", () => {
       resultUrls: [RESULT_URL],
       failCode: undefined,
       failMessage: undefined,
-      usage: { credits: 4, providerDurationMs: 1_200 },
+      usage: { credits: 4, providerDurationMs: 12_000 },
     });
     assert.equal(fake.calls.length, 1);
   });

@@ -21,10 +21,14 @@ describe('catalogue policy', () => {
         'toapis:gpt-image-2',
         'toapis:gpt-image-2.5-flare',
         'toapis:gpt-image-2.5-sunburst',
+        'toapis:gpt-image-2.6-flare',
+        'toapis:gpt-image-2.6-sunburst',
         'toapis:doubao-seedream-5-0-pro',
+        'toapis:doubao-seedream-5-5',
         'kie:grok-imagine-image-2-0',
         'kie:gpt-image-2',
         'kie:nano-banana-2-1',
+        'kie:seedream-5-5',
       ],
     );
   });
