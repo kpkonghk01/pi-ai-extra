@@ -4,7 +4,7 @@ import { createModels } from "@earendil-works/pi-ai";
 import { createFakeFetch, jsonResponse } from "@hk01/pi-ai-extra-internal/testing";
 import { createToapisProvider, TOAPIS_CHAT_MODELS } from "../src/pi-ai/index.ts";
 
-const MODELS_URL = "https://toapis.com/v1/models?type=text";
+const MODELS_URL = "https://api.toapis.com/v1/models?type=text";
 const collection = () => createModels({ authContext: { env: async () => undefined, fileExists: async () => false } });
 
 describe("ToAPIs chat provider", () => {

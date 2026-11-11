@@ -208,7 +208,7 @@ describe("streamSimple on OpenAI Responses (KIE Codex)", () => {
 describe("streamSimple on OpenAI Responses: ambient configuration", () => {
   const ROUTES = [
     { provider: "kie", model: "gpt-5-6-sol", url: KIE_RESPONSES_URL, key: "kie-key" },
-    { provider: "toapis", model: "gpt-5.3-codex-official", url: "https://toapis.com/v1/responses", key: "t-key" },
+    { provider: "toapis", model: "gpt-5.3-codex-official", url: "https://api.toapis.com/v1/responses", key: "t-key" },
   ] as const;
 
   for (const route of ROUTES) {

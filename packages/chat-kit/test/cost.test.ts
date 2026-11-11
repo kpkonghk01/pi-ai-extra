@@ -68,7 +68,7 @@ describe("turn cost", () => {
     const fake = createFakeFetch([
       {
         method: "POST",
-        url: /^https:\/\/toapis\.com\/v1\/messages\b/,
+        url: /^https:\/\/api\.toapis\.com\/v1\/messages\b/,
         respond: () => sseResponse(anthropicEvents({ blocks: [{ type: "text", text: "ok" }], stopReason: "end_turn" })),
       },
     ]);

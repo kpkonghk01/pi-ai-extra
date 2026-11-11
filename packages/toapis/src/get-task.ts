@@ -18,7 +18,7 @@ export interface GetToapisTaskOptions {
   taskId: string;
   /** Model id used only for error context when known. */
   model?: string | undefined;
-  /** Default `https://toapis.com`. */
+  /** Default `https://api.toapis.com`. */
   baseUrl?: string | undefined;
   signal?: AbortSignal | undefined;
   /** Request timeout in milliseconds. Default 30 s. */

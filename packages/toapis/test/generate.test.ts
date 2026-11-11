@@ -15,10 +15,10 @@ import {
 import { generateToapisImage, isPiAiExtraError, TOAPIS_IMAGE_MODELS, type ToapisImageRequest } from "../src/index.ts";
 import { createToapisProvider, TOAPIS_CHAT_MODELS } from "../src/pi-ai/index.ts";
 
-const HOST = "https://toapis.com";
+const HOST = "https://api.toapis.com";
 const UPLOAD_URL = `${HOST}/v1/uploads/images`;
 const SUBMIT_URL = `${HOST}/v1/images/generations`;
-const STATUS_URL = /^https:\/\/toapis\.com\/v1\/images\/generations\/tsk_1$/;
+const STATUS_URL = /^https:\/\/api\.toapis\.com\/v1\/images\/generations\/tsk_1$/;
 const RESULT_URL = "https://files.toapis.com/generated/1.png";
 const FAST_POLL = { initialDelayMs: 1, maxDelayMs: 2 };
 
@@ -71,6 +71,30 @@ describe("generateToapisImage", () => {
         { ...base, model: "doubao-seedream-5-0-pro", prompt: "p", resolution: "1K", watermark: false },
         { model: "doubao-seedream-5-0-pro", prompt: "p", n: 1, metadata: { resolution: "1K", watermark: false } },
       ],
+      [
+        { ...base, model: "gpt-image-2.6-flare", prompt: "p", aspectRatio: "auto", resolution: "2K", background: "transparent", referenceImages: ["https://cdn.example.com/a.png"] },
+        { model: "gpt-image-2.6-flare", prompt: "p", n: 1, size: "auto", resolution: "2K", background: "transparent", reference_images: ["https://cdn.example.com/a.png"] },
+      ],
+      [
+        { ...base, model: "gpt-image-2.6-sunburst", prompt: "p", aspectRatio: "21:9", resolution: "4K" },
+        { model: "gpt-image-2.6-sunburst", prompt: "p", n: 1, size: "21:9", resolution: "4K" },
+      ],
+      [
+        { ...base, model: "doubao-seedream-5-5", prompt: "p" },
+        { model: "doubao-seedream-5-5", prompt: "p", n: 1 },
+      ],
+      [
+        { ...base, model: "doubao-seedream-5-5", prompt: "p", aspectRatio: "auto", resolution: "1K", referenceImages: ["https://cdn.example.com/a.png"] },
+        { model: "doubao-seedream-5-5", prompt: "p", n: 1, size: "1K", image_urls: ["https://cdn.example.com/a.png"] },
+      ],
+      [
+        { ...base, model: "doubao-seedream-5-5", prompt: "p", aspectRatio: "16:9", resolution: "1K", background: "transparent", outputFormat: "png", watermark: false },
+        { model: "doubao-seedream-5-5", prompt: "p", n: 1, size: "1424x800", metadata: { output_format: "png", background: "transparent", watermark: false } },
+      ],
+      [
+        { ...base, model: "doubao-seedream-5-5", prompt: "p", aspectRatio: "21:9" },
+        { model: "doubao-seedream-5-5", prompt: "p", n: 1, size: "3136x1344" },
+      ],
     ];
     for (const [request, expected] of cases) {
       const fake = createFakeFetch(routes());
@@ -116,6 +140,15 @@ describe("generateToapisImage", () => {
       [{ ...base, model: "gemini-2.5-flash-image-preview", prompt: "p" } as unknown as ToapisImageRequest, "invalid_request"],
       [{ ...base, model: "gemini-3.1-flash-image-preview", prompt: "p" } as unknown as ToapisImageRequest, "invalid_request"],
       [{ ...base, model: "gemini-3.1-flash-image", prompt: "p" } as unknown as ToapisImageRequest, "invalid_request"],
+      [{ ...base, model: "gpt-image-2.6-flare", prompt: "p", referenceImages: refs(11) }, "reference_limit"],
+      [{ ...base, model: "gpt-image-2.6-sunburst", prompt: "p", aspectRatio: "9:21" } as unknown as ToapisImageRequest, "invalid_request"],
+      [{ ...base, model: "gpt-image-2.6-flare", prompt: "p", outputFormat: "gif" } as unknown as ToapisImageRequest, "invalid_request"],
+      [{ ...base, model: "doubao-seedream-5-5", prompt: "p", referenceImages: refs(11) }, "reference_limit"],
+      [{ ...base, model: "doubao-seedream-5-5", prompt: "p", referenceImages: [dataUrl(GIF_BYTES, "image/gif")] }, "invalid_reference"],
+      [{ ...base, model: "doubao-seedream-5-5", prompt: "p", resolution: "4K" } as unknown as ToapisImageRequest, "invalid_request"],
+      [{ ...base, model: "doubao-seedream-5-5", prompt: "p", resolution: "1.5K" } as unknown as ToapisImageRequest, "invalid_request"],
+      [{ ...base, model: "doubao-seedream-5-5", prompt: "p", aspectRatio: "9:21" } as unknown as ToapisImageRequest, "invalid_request"],
+      [{ ...base, model: "doubao-seedream-5-5", prompt: "p", background: "transparent", outputFormat: "jpeg" }, "invalid_request"],
     ];
     for (const [request, code] of cases) {
       await assert.rejects(generateToapisImage({ ...request, fetch: fake.fetch }), isCode(code), `${request.model} → ${code}`);
@@ -174,11 +207,11 @@ describe("generateToapisImage", () => {
 
   it("uses an explicitly chosen host for every request", async () => {
     const fake = createFakeFetch([
-      { method: "POST", url: "https://toapis.cn/v1/images/generations", respond: () => jsonResponse({ id: "tsk_1" }) },
-      { method: "GET", url: "https://toapis.cn/v1/images/generations/tsk_1", respond: completed },
+      { method: "POST", url: "https://api.toapis.cn/v1/images/generations", respond: () => jsonResponse({ id: "tsk_1" }) },
+      { method: "GET", url: "https://api.toapis.cn/v1/images/generations/tsk_1", respond: completed },
       { method: "GET", url: RESULT_URL, respond: () => bytesResponse(PNG_BYTES, "image/png") },
     ]);
-    await generateToapisImage({ ...base, baseUrl: "https://toapis.cn/", model: "gpt-image-2", prompt: "p", fetch: fake.fetch });
+    await generateToapisImage({ ...base, baseUrl: "https://api.toapis.cn/", model: "gpt-image-2", prompt: "p", fetch: fake.fetch });
     assert.equal(fake.calls.length, 3);
   });
 });
@@ -191,7 +224,10 @@ describe("ToAPIs catalogue and pi-ai adapters", () => {
       "gpt-image-2": 6,
       "gpt-image-2.5-flare": null,
       "gpt-image-2.5-sunburst": null,
+      "gpt-image-2.6-flare": 10,
+      "gpt-image-2.6-sunburst": 10,
       "doubao-seedream-5-0-pro": 10,
+      "doubao-seedream-5-5": 10,
     });
   });
 
@@ -217,8 +253,8 @@ describe("ToAPIs catalogue and pi-ai adapters", () => {
   it("registers Codex on Responses (host/v1) and Claude on Messages (host)", () => {
     const provider = createToapisProvider({ apiKey: "toapis-key" });
     const byId = new Map(provider.getModels().map((model) => [model.id, model]));
-    assert.equal(byId.get("gpt-5.3-codex-official")?.baseUrl, "https://toapis.com/v1");
-    assert.equal(byId.get("claude-sonnet-4-6")?.baseUrl, "https://toapis.com");
+    assert.equal(byId.get("gpt-5.3-codex-official")?.baseUrl, "https://api.toapis.com/v1");
+    assert.equal(byId.get("claude-sonnet-4-6")?.baseUrl, "https://api.toapis.com");
     assert.equal(byId.get("claude-sonnet-4-6")?.api, "anthropic-messages");
     assert.deepEqual(
       provider.getModels().map((model) => model.id),
@@ -251,6 +287,6 @@ describe("ToAPIs catalogue and pi-ai adapters", () => {
     });
     const codex = provider.getModels().find((model) => model.id === "gpt-5.3-codex");
     assert.equal(codex?.api, "openai-responses");
-    assert.equal(codex?.baseUrl, "https://toapis.com/v1");
+    assert.equal(codex?.baseUrl, "https://api.toapis.com/v1");
   });
 });
