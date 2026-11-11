@@ -132,7 +132,7 @@ describe("generateToapisImage", () => {
     const refs = (count: number) => Array.from({ length: count }, (_, index) => `https://cdn.example.com/${index}.png`);
     const cases: Array<[ToapisImageRequest, string]> = [
       [{ ...base, model: "gemini-nano-banana-2.1", prompt: "p", referenceImages: refs(15) }, "reference_limit"],
-      [{ ...base, model: "gpt-image-2", prompt: "p", referenceImages: refs(7) }, "reference_limit"],
+      [{ ...base, model: "gpt-image-2", prompt: "p", referenceImages: refs(15) }, "reference_limit"],
       [{ ...base, model: "doubao-seedream-5-0-pro", prompt: "p", referenceImages: refs(11) }, "reference_limit"],
       [{ ...base, model: "doubao-seedream-5-0-pro", prompt: "p", referenceImages: [dataUrl(GIF_BYTES, "image/gif")] }, "invalid_reference"],
       [{ ...base, model: "doubao-seedream-5-0-pro", prompt: "p", resolution: "4K" } as unknown as ToapisImageRequest, "invalid_request"],
@@ -157,11 +157,13 @@ describe("generateToapisImage", () => {
     assert.equal(fake.calls.length, 0);
   });
 
-  it("sends up to 14 reference images to Gemini Nano Banana 2.1", async () => {
-    const fake = createFakeFetch(routes());
+  it("sends up to 14 reference images to GPT Image 2 and Gemini Nano Banana 2.1", async () => {
     const urls = Array.from({ length: 14 }, (_, index) => `https://cdn.example.com/${index}.png`);
-    await generateToapisImage({ ...base, model: "gemini-nano-banana-2.1", prompt: "p", referenceImages: urls, fetch: fake.fetch });
-    assert.deepEqual(bodyOf(fake.callsTo(SUBMIT_URL)[0]).image_urls, urls);
+    for (const [model, field] of [["gpt-image-2", "reference_images"], ["gemini-nano-banana-2.1", "image_urls"]] as const) {
+      const fake = createFakeFetch(routes());
+      await generateToapisImage({ ...base, model, prompt: "p", referenceImages: urls, fetch: fake.fetch });
+      assert.deepEqual(bodyOf(fake.callsTo(SUBMIT_URL)[0])[field], urls, model);
+    }
   });
 
   it("does not list or accept temperature or a system instruction (undocumented by ToAPIs)", async () => {
@@ -222,7 +224,7 @@ describe("ToAPIs catalogue and pi-ai adapters", () => {
     const limits = Object.fromEntries(TOAPIS_IMAGE_MODELS.map((model) => [model.id, model.referenceImages.max]));
     assert.deepEqual(limits, {
       "gemini-nano-banana-2.1": 14,
-      "gpt-image-2": 6,
+      "gpt-image-2": 14,
       "gpt-image-2.5-flare": null,
       "gpt-image-2.5-sunburst": null,
       "gpt-image-2.6-flare": 10,

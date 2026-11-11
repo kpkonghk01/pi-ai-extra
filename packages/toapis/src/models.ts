@@ -212,7 +212,8 @@ const GPT_IMAGE_2 = info({
   id: "gpt-image-2",
   name: "GPT Image 2",
   promptMaxLength: 32_000,
-  referenceImages: references(6),
+  // ToAPIs raised the limit from 6 to 14; a request with 14 references rendered on 2026-11-11.
+  referenceImages: references(14),
   aspectRatio: option(GPT_IMAGE_2_RATIOS, "1:1"),
   resolution: option(RESOLUTIONS, "1K"),
   background: option(TRANSPARENT, null),

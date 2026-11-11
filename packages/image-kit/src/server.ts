@@ -204,10 +204,12 @@ const OUTPUT_RESOLUTIONS: readonly OutputResolution[] = ["1K", "2K", "4K"];
 /**
  * KIE GPT Image 2 values that are unavailable at a resolution. The catalogue states these only
  * as notes (the package rejects them), so they are repeated here to pick values it accepts.
+ * `auto` is allowed at every resolution since kie 0.8.1; on 2026-11-11 it kept a 16:9 input's
+ * aspect at 2K (2736x1536).
  */
 const KIE_GPT_IMAGE_2_BLOCKED: Record<string, readonly string[]> = {
-  "2K": ["5:4", "4:5", "3:1", "1:3", "9:21", "auto"],
-  "4K": ["1:1", "3:1", "1:3", "9:21", "auto"],
+  "2K": ["5:4", "4:5", "3:1", "1:3", "9:21"],
+  "4K": ["3:1", "1:3", "9:21"],
 };
 
 function blockedAspects(

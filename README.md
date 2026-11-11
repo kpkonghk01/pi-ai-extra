@@ -33,11 +33,11 @@ Non-negotiable behaviour (see [ADR 0003](docs/adr/0003-explicit-provider-executi
 Install the exact release asset on the server (build) side and pin the full URL:
 
 ```sh
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.8.0/hk01-pi-ai-extra-kie-0.8.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.7.0/hk01-pi-ai-extra-toapis-0.7.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.8.1/hk01-pi-ai-extra-kie-0.8.1.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.7.1/hk01-pi-ai-extra-toapis-0.7.1.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.8.0/hk01-pi-ai-extra-google-0.8.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.1.0/hk01-pi-ai-extra-openrouter-0.1.0.tgz   # optional, chat only, needs pi-ai
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/image-kit-v0.2.0/hk01-pi-ai-extra-image-kit-0.2.0.tgz   # optional, needs all three
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/image-kit-v0.2.1/hk01-pi-ai-extra-image-kit-0.2.1.tgz   # optional, needs all three
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.4.1/hk01-pi-ai-extra-chat-kit-0.4.1.tgz     # optional, needs pi-ai and the providers you register
 ```
 
@@ -82,7 +82,7 @@ try {
 | KIE | `seedream/5-5-text-to-image` | 0 | `aspectRatio` (required), `resolution` (1K/2K), `background`, `outputFormat` (png/jpeg) |
 | KIE | `seedream/5-5-image-to-image` | 1–10 | `aspectRatio` (`auto` allowed), `resolution` (1K/2K), `background`, `outputFormat` (png/jpeg) |
 | ToAPIs | `gemini-nano-banana-2.1` | 0–14 | `aspectRatio`, `resolution` |
-| ToAPIs | `gpt-image-2` | 0–6 | `aspectRatio`, `resolution`, `background: "transparent"` |
+| ToAPIs | `gpt-image-2` | 0–14 | `aspectRatio`, `resolution`, `background: "transparent"` |
 | ToAPIs | `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst` | not documented (not capped) | `aspectRatio`, `resolution`, `background: "transparent"` |
 | ToAPIs | `gpt-image-2.6-flare`, `gpt-image-2.6-sunburst` | 0–10 | `aspectRatio`, `resolution`, `background: "transparent"` |
 | ToAPIs | `doubao-seedream-5-0-pro` | 0–10 (JPEG/PNG) | `aspectRatio`, `resolution` (1K/2K), `watermark` |
@@ -310,6 +310,9 @@ Both releases add image models and remove none.
 - **ToAPIs 0.7.0** adds `gpt-image-2.6-flare` and `gpt-image-2.6-sunburst` (the standard tier: GPT Image 2.5's options, up to 10 reference images) and `doubao-seedream-5-5` (Seedream 5.5). GPT Image 2.6's standard tier does not take `size: "auto"` (it answered HTTP 503 on 2026-11-11, and ToAPIs' docs now say so), so `auto` is not offered. For Seedream 5.5, `auto` (the default) sends only the resolution, and the model chooses the ratio or follows the reference image; any other ratio is sent as the pixels Seedream maps it to (Volcengine's table, for example 16:9 at 1K as `1424x800`). It takes 1K or 2K, JPEG or PNG references, `background`, `outputFormat` and `watermark`.
 - ToAPIs' default host moves from `https://toapis.com` to `https://api.toapis.com`, the host its GPT Image 2.6 docs use, for uploads, image tasks, chat and the live model list. In a 2026-11-11 check, uploads, image generation and task status worked on the new host, and both hosts gave the same answers for the model list and for errors; a successful chat turn was not checked, because the key used has no ToAPIs chat access. Mainland China users who set `https://toapis.cn` can move to `https://api.toapis.cn`. A chat kit that registers ToAPIs follows the provider's host; the chat kit itself is unchanged.
 - The image kit 0.2.0 offers the new families (`kie:seedream-5-5`, `toapis:gpt-image-2.6-flare`, `toapis:gpt-image-2.6-sunburst`, `toapis:doubao-seedream-5-5`) once the new releases are installed. Change the provider URLs and any policy override that names a new family together: see [docs/migration/seedream-5.5-gpt-image-2.6](docs/migration/seedream-5.5-gpt-image-2.6/README.md).
+- KIE 0.8.1, a patch, follows KIE's updated GPT Image 2 and Grok Imagine Image 2.0 docs (checked live on 2026-11-11). GPT Image 2 now accepts 1:1 at 4K and `auto` (or no aspect ratio) at 2K and 4K; 2K still refuses 5:4, 4:5, 3:1, 1:3 and 9:21, 4K still refuses 3:1, 1:3 and 9:21, and `background` is still 1K only. Grok Imagine Image 2.0 text-to-image rejects prompts over 8,000 characters before the request.
+- ToAPIs 0.7.1, a patch, lets GPT Image 2 take up to 14 reference images instead of 6, as ToAPIs now documents (a 14-image request rendered on 2026-11-11).
+- The image kit 0.2.1, a patch, stops avoiding those KIE GPT Image 2 combinations when it picks an aspect ratio, so an app can offer 1:1 at 4K, and keeping an input image's aspect at 2K or 4K sends `auto`, which kept a 16:9 input's aspect at 2K on 2026-11-11. It needs KIE 0.8.1: its peer range now starts there, because KIE 0.8.0 still rejects those combinations.
 
 ### Upgrading to KIE 0.7
 
@@ -367,8 +370,8 @@ pnpm add @earendil-works/pi-ai@1.2.0   # peer
 # and the provider packages you register (each its own release asset, see Install above):
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.8.0/hk01-pi-ai-extra-google-0.8.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.1.0/hk01-pi-ai-extra-openrouter-0.1.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.8.0/hk01-pi-ai-extra-kie-0.8.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.7.0/hk01-pi-ai-extra-toapis-0.7.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.8.1/hk01-pi-ai-extra-kie-0.8.1.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.7.1/hk01-pi-ai-extra-toapis-0.7.1.tgz
 ```
 
 The chat kit and the provider `/pi-ai` entries are ESM-only. A TypeScript project that resolves with `module: NodeNext` needs `"type": "module"` in its `package.json` to import them (with `moduleResolution: Bundler`, as Next.js projects use, nothing is needed). A project with `moduleResolution: node10` cannot resolve the `/pi-ai` subpaths at all. `require()` of any of them fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
@@ -601,7 +604,7 @@ Both releases are additive, and a `google-vertex` turn needs both: chat-kit 0.3 
 ## Google AI Studio (server) integration
 
 1. **Secrets.** Put `KIE_API_KEY`, `TOAPIS_API_KEY` and `GEMINI_API_KEY` in the app's server-side Secrets. Never expose them through Vite `define`, client code or a browser request.
-2. **Install.** Add the pinned release URLs to `dependencies` (`"@hk01/pi-ai-extra-kie": "https://github.com/…/kie-v0.8.0/hk01-pi-ai-extra-kie-0.8.0.tgz"`, likewise for ToAPIs and Google; each package has its own version, see Install). Import the packages only from server modules such as `server.ts`. A CommonJS server bundle (`esbuild --format=cjs --packages=external`) works with the main entries.
+2. **Install.** Add the pinned release URLs to `dependencies` (`"@hk01/pi-ai-extra-kie": "https://github.com/…/kie-v0.8.1/hk01-pi-ai-extra-kie-0.8.1.tgz"`, likewise for ToAPIs and Google; each package has its own version, see Install). Import the packages only from server modules such as `server.ts`. A CommonJS server bundle (`esbuild --format=cjs --packages=external`) works with the main entries.
 
    The `/pi-ai` subpath (and pi-ai itself) is ESM-only. AI Studio's preview runs `server.ts` as ESM, so a static `/pi-ai` import works there, but the CommonJS production bundle then fails at startup with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Before using `/pi-ai`, either build the server as ESM (`--format=esm --outfile=dist/server.mjs` and `"start": "node dist/server.mjs"`), or load it with `await import("@earendil-works/pi-ai")` and `await import("@hk01/pi-ai-extra-<provider>/pi-ai")`, which esbuild keeps as runtime imports.
 3. **Generate / edit.** Read the secret on the server and call the helper. Text-to-image and editing differ only by `model` and `referenceImages`:

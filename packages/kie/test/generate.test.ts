@@ -158,6 +158,16 @@ describe("generateKieImage", () => {
     });
   });
 
+  it("accepts GPT Image 2 at 1:1 in 4K and auto (or no ratio) at 2K and 4K, as KIE's docs now allow", async () => {
+    const cases = [["1:1", "4K"], ["auto", "2K"], ["auto", "4K"], [undefined, "2K"], [undefined, "4K"]] as const;
+    for (const [aspectRatio, resolution] of cases) {
+      const fake = createFakeFetch(kieRoutes());
+      await generateKieImage({ ...base, model: "gpt-image-2-text-to-image", prompt: "a fox", aspectRatio, resolution, fetch: fake.fetch });
+      const expected = aspectRatio === undefined ? { prompt: "a fox", resolution } : { prompt: "a fox", aspect_ratio: aspectRatio, resolution };
+      assert.deepEqual(bodyOf(fake.callsTo(CREATE_URL)[0]).input, expected, `${aspectRatio ?? "no ratio"} at ${resolution}`);
+    }
+  });
+
   it("rejects reference-count and parameter violations before any network call", async () => {
     const fake = createFakeFetch(kieRoutes());
     const refs = (count: number) => Array.from({ length: count }, (_, index) => `https://cdn.example.com/${index}.png`);
@@ -165,8 +175,9 @@ describe("generateKieImage", () => {
       [{ ...base, model: "grok-imagine-image-2-0/image-edit", prompt: "x", aspectRatio: "auto", referenceImages: refs(6) }, "reference_limit"],
       [{ ...base, model: "gpt-image-2-image-to-image", prompt: "x" }, "reference_limit"],
       [{ ...base, model: "grok-imagine-image-2-0/text-to-image", prompt: "x", aspectRatio: "1:1", referenceImages: refs(1) }, "reference_limit"],
-      [{ ...base, model: "gpt-image-2-text-to-image", prompt: "x", aspectRatio: "1:1", resolution: "4K" }, "invalid_request"],
-      [{ ...base, model: "gpt-image-2-text-to-image", prompt: "x", resolution: "2K" }, "invalid_request"],
+      [{ ...base, model: "gpt-image-2-text-to-image", prompt: "x", aspectRatio: "3:1", resolution: "4K" }, "invalid_request"],
+      [{ ...base, model: "gpt-image-2-text-to-image", prompt: "x", aspectRatio: "9:21", resolution: "2K" }, "invalid_request"],
+      [{ ...base, model: "grok-imagine-image-2-0/text-to-image", prompt: "x".repeat(8_001), aspectRatio: "1:1" }, "invalid_request"],
       [{ ...base, model: "gpt-image-2-text-to-image", prompt: "x", aspectRatio: "16:9", resolution: "2K", background: "transparent" }, "invalid_request"],
       [{ ...base, model: "nano-banana-2-1", prompt: "x", aspect_ratio: "1:1" } as unknown as KieImageRequest, "invalid_request"],
       [{ ...base, model: "nano-banana-2-1", prompt: "x", referenceImages: refs(11) }, "reference_limit"],

@@ -1,6 +1,6 @@
 {
   "name": "@hk01/pi-ai-extra-kie",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "KIE image helper (Grok Imagine, GPT Image 2, Nano Banana 2.1, Seedream 5.5) and a pi-ai chat provider (Codex, Claude, Gemini) with image models, a live model list and the chat kit's traits",
   "license": "UNLICENSED",
   "type": "module",
