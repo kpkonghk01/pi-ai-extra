@@ -30,7 +30,7 @@ curl --fail-with-body --request POST \
   --header 'Content-Type: application/json' \
   --data '{
     "model": "gpt-image-2.6-flare",
-    "prompt": "Children's picture book style, a veterinarian listening to a baby otter's heartbeat with a stethoscope",
+    "prompt": "Picture book style for children, a veterinarian using a stethoscope to listen to the heartbeat of a baby otter",
     "quality": "high",
     "size": "1:1",
     "resolution": "1K",
@@ -88,11 +88,11 @@ Always uses `high`. This field is optional; other string values such as `medium`
 
 Default: "1:1"
 
-Aspect ratio, for example `1:1`, `3:2`, `2:3`, `4:3`, `3:4`, `5:4`, `4:5`, `16:9`, `9:16`, `21:9`.
+Aspect ratio. Supported values: `1:1`, `3:2`, `2:3`, `4:3`, `3:4`, `5:4`, `4:5`, `16:9`, `9:16`, `21:9`.
 
-We recommend setting `size` to an aspect ratio and passing `resolution` explicitly. The service uses both values to calculate the output dimensions in pixels.
+The standard tier does not support `auto`. When omitted, `size` defaults to `1:1`, including requests with reference images. It does not automatically match the reference image ratio. To keep that ratio, set `size` explicitly to the matching value.
 
-You can pass `auto` to let the upstream provider choose the dimensions, but the final aspect ratio and pixel dimensions are not guaranteed.
+`size` controls the aspect ratio, and `resolution` controls the resolution tier. For example, use `"size": "16:9"` and `"resolution": "2K"` for a landscape image.
 
 **resolution (string)**
 
@@ -114,7 +114,7 @@ Works with both text-to-image requests and requests containing `reference_images
 
 **output_format (string)**
 
-Output format: `png`, `jpeg`, `webp`, `gif`, or `svg`. Uses the upstream default when omitted. See the GIF and SVG sections for their extra parameters and restrictions.
+Output format: `png`, `jpeg`, `webp`, `gif`, or `svg`. Set this field explicitly if you need a specific format. See the GIF and SVG sections for their extra parameters and restrictions.
 
 **frame_count (integer)**
 
@@ -214,21 +214,15 @@ curl --fail-with-body --request POST \
   }'
 ```
 
-## Ratio and Resolution Examples
+## Aspect Ratio and Resolution
 
-| size | 1K | 2K | 4K |
-| --- | --- | --- | --- |
-| `1:1` | `1024x1024` | `2048x2048` | `2880x2880` |
-| `3:2` | `1536x1024` | `2048x1360` | `3520x2336` |
-| `2:3` | `1024x1536` | `1360x2048` | `2336x3520` |
-| `16:9` | `1536x864` | `2048x1152` | `3840x2160` |
-| `9:16` | `864x1536` | `1152x2048` | `2160x3840` |
+`size` sets the aspect ratio, and `resolution` selects the `1K`, `2K`, or `4K` resolution tier. If both fields are omitted, the defaults are `1:1` and `1K`.
 
-`4K` is a resolution tier; the actual width and height depend on the aspect ratio. A square 4K output, for example, is `2880x2880`.
+A resolution tier does not specify a fixed pixel width and height. `4K` does not mean every side is 4096 pixels. Check the generated image for its actual pixel dimensions.
 
 ## Generation with Reference Images
 
-Use the same generation endpoint and add `reference_images`, up to 10 images. The example below uses Sunburst and still returns an async task:
+Use the same generation endpoint and add `reference_images`, up to 10 images. The example below uses Sunburst, explicitly sets a `16:9` aspect ratio and the `2K` resolution tier, and returns an async task:
 
 ```bash
 curl --fail-with-body --request POST \
@@ -240,7 +234,7 @@ curl --fail-with-body --request POST \
     "prompt": "Keep the baby otter and the veterinarian from the reference image, and add a yellow scarf to the baby otter",
     "reference_images": ["https://example.com/otter.png"],
     "quality": "high",
-    "size": "1:1",
+    "size": "16:9",
     "resolution": "2K",
     "n": 1
   }'
@@ -254,4 +248,4 @@ The standard tier bills per generated image, and the `resolution` tier determine
 
 ## Related models
 
-The [GPT-Image-2.6 Official](/docs/en/api-reference/images/gpt-image-2.6-official/generation) edition runs on the official channel with six quality tiers, custom pixel sizes, markup-guided editing, and token-based billing. Use the `-official` suffix model names for that channel.
+The [GPT-Image-2.6 Official](/docs/en/api-reference/images/gpt-image-2.6-official/generation) edition offers six quality tiers, custom pixel sizes, and markup-guided editing, with token-based billing. Use model names with the `-official` suffix. Official and standard models have different parameter and billing rules; follow the documentation for the edition you use.

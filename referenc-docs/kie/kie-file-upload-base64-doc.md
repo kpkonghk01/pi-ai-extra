@@ -15,7 +15,7 @@ paths:
       deprecated: false
       description: >-
         :::info[]
-          Uploaded files are temporary and will be automatically deleted after 24h
+          Uploaded files are deleted 24 hours after upload.
         :::
 
 
@@ -24,7 +24,8 @@ paths:
 
         * Supports Base64 encoded data and data URL formats
 
-        * Automatically identifies MIME types and file extensions
+        * The MIME type and extension are taken from the data URL prefix (e.g.
+        data:image/png;base64,...) or from the fileName extension.
 
         * Supports custom filenames or auto-generation (identical filenames will
         overwrite old files, potential caching delays may occur)
@@ -32,9 +33,6 @@ paths:
         * Returns complete file information and download links
 
         * Protected by API Key authentication
-
-        * Uploaded files are temporary and will be automatically deleted after 3
-        days
 
 
         ### Supported Formats
@@ -157,19 +155,10 @@ paths:
             application/json:
               schema: &ref_0
                 $ref: '#/components/schemas/ApiResponse'
-              examples:
-                '2':
-                  summary: missing_parameter
-                  value:
-                    success: false
-                    code: 400
-                    msg: 'Missing required parameter: uploadPath'
-                '3':
-                  summary: invalid_format
-                  value:
-                    success: false
-                    code: 400
-                    msg: 'Base64 decoding failed: Invalid Base64 format'
+              example:
+                success: false
+                code: 400
+                msg: 'Missing required parameter: uploadPath'
           headers: {}
           x-apidog-name: BadRequestError
         '401':
@@ -177,7 +166,45 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiResponse1'
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    enum:
+                      - 200
+                      - 401
+                      - 402
+                      - 404
+                      - 422
+                      - 429
+                      - 455
+                      - 500
+                      - 501
+                      - 505
+                    description: >-
+                      Status code of the request. The HTTP status is 200 even
+                      when the request fails, so always check this field: 200
+                      means success; any other value means the request failed
+                      and msg describes the reason. Common values: 401 invalid
+                      or missing API key; 402 insufficient credits; 429 rate
+                      limit exceeded; 422 or 500 the request could not be
+                      processed (read msg and check your parameters before
+                      retrying).
+                  msg:
+                    type: string
+                    description: Response message, error description when failed
+                    examples:
+                      - success
+                  success:
+                    type: boolean
+                    description: Whether the request was successful
+                x-apidog-orders:
+                  - code
+                  - msg
+                  - success
+                required:
+                  - success
+                x-apidog-ignore-properties: []
               example:
                 success: false
                 code: 401
@@ -305,8 +332,33 @@ components:
           type: boolean
           description: Whether the request was successful
         code:
-          type: object
-          properties: {}
+          type: integer
+          enum:
+            - 200
+            - 400
+            - 401
+            - 405
+            - 500
+          description: >-
+            Response status code
+
+
+            | Code | Description |
+
+            |------|-------------|
+
+            | 200 | Success - Request has been processed successfully |
+
+            | 400 | Bad Request - Request parameters are incorrect or missing
+            required parameters |
+
+            | 401 | Unauthorized - Authentication credentials are missing or
+            invalid |
+
+            | 405 | Method Not Allowed - Request method is not supported |
+
+            | 500 | Server Error - An unexpected error occurred while processing
+            the request |
         msg:
           type: string
           description: Response message
@@ -320,51 +372,6 @@ components:
         - success
         - code
         - msg
-      x-apidog-ignore-properties: []
-      x-apidog-folder: ''
-    ApiResponse1:
-      type: object
-      properties:
-        code:
-          type: integer
-          enum:
-            - 200
-            - 401
-            - 402
-            - 404
-            - 422
-            - 429
-            - 455
-            - 500
-            - 501
-            - 505
-          description: |-
-            响应状态码
-
-            - **200**: 成功 - 请求已处理完成
-            - **401**: 未授权 - 身份验证凭据缺失或无效
-            - **402**: 积分不足 - 账户余额不足以执行该操作
-            - **404**: 未找到 - 请求的资源或接口不存在
-            - **422**: 参数验证错误 - 请求参数未通过校验
-            - **429**: 调用频率超限 - 已超出该资源的请求限制
-            - **455**: 服务不可用 - 系统正在维护中
-            - **500**: 服务器内部错误 - 处理请求时发生意外故障
-            - **501**: 生成失败 - 内容生成任务执行失败
-            - **505**: 功能禁用 - 当前请求的功能已被禁用
-        msg:
-          type: string
-          description: 响应消息，请求失败时返回错误描述
-          examples:
-            - success
-        success:
-          type: boolean
-          description: 是否成功
-      x-apidog-orders:
-        - code
-        - msg
-        - success
-      required:
-        - success
       x-apidog-ignore-properties: []
       x-apidog-folder: ''
   securitySchemes:

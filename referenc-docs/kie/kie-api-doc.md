@@ -153,6 +153,7 @@
 - Image    Models > Flux-3 [FLUX 3 Klein Edit Image](https://docs.kie.ai/market/flux3/klein-edit-image.md): 
 - Image    Models > 4o Image API [Generate 4o Image](https://docs.kie.ai/4o-image-api/generate-4-o-image.md): :::warning
 - Image    Models > Flux Kontext API [Generate or Edit Image](https://docs.kie.ai/flux-kontext-api/generate-or-edit-image.md): :::warning
+- Image    Models > Kie [Kie - Image Upscale](https://docs.kie.ai/market/kie/image-upscale.md): Upscale an image by `1x`, `2x`, `4x`, or `8x` while keeping the original aspect ratio. Detail is restored generatively, and text regions are upscaled with a fidelity pass so the text is never rewritten.
 - Video Models > Grok Imagine [Grok Imagine Text to Video](https://docs.kie.ai/market/grok-imagine/text-to-video.md): Output is an MP4 video with an audio track generated together with the video (dialogue written in the prompt is spoken). Audio cannot be turned off.
 - Video Models > Grok Imagine [Grok Imagine Image to Video](https://docs.kie.ai/market/grok-imagine/image-to-video.md): Output is an MP4 video with an audio track generated together with the video (dialogue written in the prompt is spoken). Audio cannot be turned off.
 - Video Models > Grok Imagine [Grok Imagine - Video Upscale](https://docs.kie.ai/market/grok-imagine/upscale.md): Output is an MP4 video with an audio track generated together with the video (dialogue written in the prompt is spoken). Audio cannot be turned off.
@@ -323,6 +324,10 @@
 - Chat  Models > Gemini [Gemini 3.8 Flash (openai)](https://docs.kie.ai/market/gemini/gemini-3-8-flash-openai.md): :::warning
 - Chat  Models > Gemini [Gemini 4 Argon](https://docs.kie.ai/market/gemini/gemini-4-argon.md): :::warning
 - Chat  Models > Gemini [Gemini 4 Argon (openai)](https://docs.kie.ai/market/gemini/gemini-4-argon-openai.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Carbon](https://docs.kie.ai/46858082e0.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Carbon (openai)](https://docs.kie.ai/46858085e0.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Carbon](https://docs.kie.ai/market/gemini/gemini-4-carbon.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Carbon (openai)](https://docs.kie.ai/market/gemini/gemini-4-carbon-openai.md): :::warning
 - Chat  Models > Grok [Grok 4.7](https://docs.kie.ai/market/grok/grok-4-7.md): > Grok 4.7 uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
 - Chat  Models > Grok [Grok 4.3](https://docs.kie.ai/market/grok/grok-4-3.md): > Grok 4.3 uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
 - Chat  Models > Grok [Grok 4.5](https://docs.kie.ai/market/grok/grok-4-5.md): > Grok 4.5 uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
@@ -412,6 +417,7 @@
 - Image    Models > Flux Kontext API [生成或编辑图像](https://docs.kie.ai/cn/flux-kontext-api/generate-or-edit-image.md): :::warning
 - Image    Models > Wan [Wan 2.7 Image](https://docs.kie.ai/cn/market/wan/2-7-image.md): 基于 wan/2-7-image 实现图像生成与编辑
 - Image    Models > Wan [Wan 2.7 Image Pro](https://docs.kie.ai/cn/market/wan/2-7-image-pro.md): 基于 wan/2-7-image-pro 实现图像生成与编辑
+- Image    Models > Kie [Kie - 图片放大](https://docs.kie.ai/cn/market/kie/image-upscale.md): 将图片按 `1x`、`2x`、`4x` 或 `8x` 放大，并保持原画面比例。采用生成式放大补充细节，文字区域单独做保真放大，**不会改写文字**。
 - Video Models > Grok Imagine [Grok Imagine 文生视频](https://docs.kie.ai/cn/market/grok-imagine/text-to-video.md): 输出为 MP4 视频，带与画面同步生成的音轨（prompt 中的台词会被念出）。音频无法关闭。
 - Video Models > Grok Imagine [Grok Imagine 图生视频](https://docs.kie.ai/cn/market/grok-imagine/image-to-video.md): 输出为 MP4 视频，带与画面同步生成的音轨（prompt 中的台词会被念出）。音频无法关闭。
 - Video Models > Grok Imagine [放大 Grok Imagine 视频](https://docs.kie.ai/cn/market/grok-imagine/upscale.md): 输出为 MP4 视频，带与画面同步生成的音轨（prompt 中的台词会被念出）。音频无法关闭。
@@ -581,6 +587,8 @@
 - Chat  Models > Gemini [Gemini 3.8 Flash (openai)](https://docs.kie.ai/cn/market/gemini/gemini-3-8-flash-openai.md): :::warning
 - Chat  Models > Gemini [Gemini 4 Argon](https://docs.kie.ai/cn/market/gemini/gemini-4-argon.md): :::warning
 - Chat  Models > Gemini [Gemini 4 Argon (openai)](https://docs.kie.ai/cn/market/gemini/gemini-4-argon-openai.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Carbon](https://docs.kie.ai/cn/market/gemini/gemini-4-carbon.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Carbon (openai)](https://docs.kie.ai/cn/market/gemini/gemini-4-carbon-openai.md): :::warning
 - Chat  Models > Codex [Codex API(Responses)](https://docs.kie.ai/cn/market/codex/gpt-codex.md): # Codex API
 - Chat  Models > Grok [Grok 4.7](https://docs.kie.ai/cn/market/grok/grok-4-7.md): 
 - Chat  Models > Grok [Grok 4.3](https://docs.kie.ai/cn/market/grok/grok-4-3.md): # Grok 4.3
