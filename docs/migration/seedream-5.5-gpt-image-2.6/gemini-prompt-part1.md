@@ -1,4 +1,4 @@
-# Part 1 of 2: upgrade the KIE and ToAPIs packages and add the new image models to the policy
+# Part 1 of 2: upgrade the KIE, ToAPIs and image kit packages and add the new image models to the policy
 
 You are editing this Google AI Studio app. Its server already generates images through the image kit package (`@hk01/pi-ai-extra-image-kit`) and three provider packages: `@hk01/pi-ai-extra-google`, `@hk01/pi-ai-extra-kie` and `@hk01/pi-ai-extra-toapis`.
 
@@ -11,7 +11,9 @@ New versions of the KIE and ToAPIs packages add four image model families. Once 
 | `toapis:doubao-seedream-5-5` | Seedream 5.5, on ToAPIs |
 | `kie:seedream-5-5` | Seedream 5.5, on KIE |
 
-This part upgrades the two packages, gives the four new models their labels and prices in the catalogue policy, and updates the GPT Image 2.5 prices. Part 2, a separate prompt, handles other code that names models.
+The new image kit version follows the KIE package's GPT Image 2 rules and requires the new KIE version, so the three packages are upgraded together.
+
+This part upgrades the three packages, gives the four new models their labels and prices in the catalogue policy, and updates the GPT Image 2.5 prices. Part 2, a separate prompt, handles other code that names models.
 
 The image kit refuses to start if the policy names a model key that the installed packages do not have ("references unknown model family"). So do Step 1 and Step 2 together, before you run the app.
 
@@ -20,20 +22,21 @@ The image kit refuses to start if the policy names a model key that the installe
 1. **Change only what the steps say.** Keep every prompt text, system instruction, label of other models, layout and styling exactly as it is.
 2. **No fallback and no retry.** Do not add an alternative model or provider anywhere.
 3. **Do not edit history.** Do not edit Markdown files (`*.md`), and do not edit anything inside a folder whose name contains `migration` (for example `pi-ai-migration/` or `pi-ai-extra-migration/`).
-4. **Do not change the URLs of `@hk01/pi-ai-extra-image-kit` and `@hk01/pi-ai-extra-google`.** They stay at their current versions.
+4. **Do not change the URL of `@hk01/pi-ai-extra-google`.** It stays at its current version.
 5. **Do not change the app's default image model.**
 6. If something does not fit these steps, do not guess. Describe it in your final report.
 
-## Step 1: upgrade the KIE and ToAPIs packages
+## Step 1: upgrade the KIE, ToAPIs and image kit packages
 
-Open `package.json`. Replace **every** URL of these two packages, wherever it appears (`dependencies`, and also `overrides`, `resolutions` or any other section), with these exact URLs:
+Open `package.json`. Replace **every** URL of these three packages, wherever it appears (`dependencies`, and also `overrides`, `resolutions` or any other section), with these exact URLs:
 
 | Package | New URL |
 | --- | --- |
-| `@hk01/pi-ai-extra-kie` | `https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.8.0/hk01-pi-ai-extra-kie-0.8.0.tgz` |
-| `@hk01/pi-ai-extra-toapis` | `https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.7.0/hk01-pi-ai-extra-toapis-0.7.0.tgz` |
+| `@hk01/pi-ai-extra-kie` | `https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.8.1/hk01-pi-ai-extra-kie-0.8.1.tgz` |
+| `@hk01/pi-ai-extra-toapis` | `https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.7.1/hk01-pi-ai-extra-toapis-0.7.1.tgz` |
+| `@hk01/pi-ai-extra-image-kit` | `https://github.com/kpkonghk01/pi-ai-extra/releases/download/image-kit-v0.2.1/hk01-pi-ai-extra-image-kit-0.2.1.tgz` |
 
-Then run `npm install` so that `package-lock.json` is updated.
+Then run `npm install` so that `package-lock.json` is updated. If `npm install` reports a peer dependency conflict for `@hk01/pi-ai-extra-kie`, a section still holds the old KIE or image kit URL: find it and replace it too. Do not use `--force` or `--legacy-peer-deps`.
 
 ## Step 2: update the catalogue policy
 
