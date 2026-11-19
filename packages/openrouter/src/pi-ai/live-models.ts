@@ -44,9 +44,10 @@ const ROUTER_TOKENIZER = "Router";
 
 /**
  * OpenRouter's live chat list from its public `GET <root>/v1/models` (no key needed): every model
- * that answers in text, as a pi-ai model built the way pi-ai's own catalogue generator builds one
- * (`scripts/openrouter-catalog.ts` in pi-ai 1.2), with what pi-ai's `Model` has no field for in
- * `info`. Differences from the generator:
+ * that answers in text, as a pi-ai model built the way pi-ai's own catalogue builds one
+ * (`catalog/providers/openrouter.ts` in pi-ai 1.5), with what pi-ai's `Model` has no field for in
+ * `info`. A new id gets the one compat setting pi-ai's catalogue gives every OpenRouter Completions
+ * model that its runtime detection does not infer, `supportsStrictMode`. Differences from the catalogue:
  *
  * - a model id pi-ai's catalogue already has keeps that entry (its API choice, compat and
  *   thinking fixes), updated with the live limits and price, as pi-ai's
@@ -121,6 +122,7 @@ function openRouterModel(
     cost,
     contextWindow,
     maxTokens,
+    compat: { supportsStrictMode: true },
   };
   return { model, info };
 }

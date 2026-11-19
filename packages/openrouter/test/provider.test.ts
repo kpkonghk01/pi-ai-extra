@@ -88,6 +88,11 @@ describe("createOpenRouterProvider", () => {
     );
     assert.ok((openrouter.getAllModels?.() ?? []).some((model) => model.type === "image"), "image models stay pi-ai's");
     assert.equal(fake.calls[0]?.headers.authorization, undefined, "the public list is read without the key");
+    // pi-ai 1.5's catalogue gives every OpenRouter Completions model supportsStrictMode, the one
+    // compat setting its runtime detection does not infer; a model new to the catalogue gets it too.
+    for (const model of openrouter.getModels()) {
+      assert.equal((model.compat as { supportsStrictMode?: boolean } | undefined)?.supportsStrictMode, true, model.id);
+    }
   });
 
   it("keeps the previous list and reports the error when a refresh fails", async () => {
