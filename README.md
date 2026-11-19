@@ -14,7 +14,7 @@ Each package has two entry points (OpenRouter's has only the second):
 | Import | Format | Contents | Needs pi-ai |
 | --- | --- | --- | --- |
 | `@hk01/pi-ai-extra-<provider>` | CommonJS **and** ESM | `generate<Provider>Image()`, model catalogue, task lookup, errors | No |
-| `@hk01/pi-ai-extra-<provider>/pi-ai` | ESM only | pi-ai `Provider` factory serving the chat and image models (Google's second factory, for Agent Platform, serves chat only) | Yes (`@earendil-works/pi-ai@1.2.0`, optional peer) |
+| `@hk01/pi-ai-extra-<provider>/pi-ai` | ESM only | pi-ai `Provider` factory serving the chat and image models (Google's second factory, for Agent Platform, serves chat only) | Yes (`@earendil-works/pi-ai@1.5.2`, optional peer) |
 
 The `/pi-ai` subpath is ESM-only because pi-ai itself is ESM-only; a CommonJS server that does not use pi-ai can `require()` the main entry. `@hk01/pi-ai-extra-openrouter` has only the `/pi-ai` entry, and needs pi-ai (a required, exact peer), because pi-ai already serves OpenRouter's images and there is no helper for a main entry to hold ([ADR 0004](docs/adr/0004-dual-format-helper-esm-pi-ai-subpath.md)).
 
@@ -41,7 +41,7 @@ pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/image-kit-v
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.4.1/hk01-pi-ai-extra-chat-kit-0.4.1.tgz     # optional, needs pi-ai and the providers you register
 ```
 
-npm works the same way (`npm install <url>`). Upgrade or roll back by changing the URL. `zod@4.6.5` is installed automatically; install `@earendil-works/pi-ai@1.2.0` only if you use the `/pi-ai` subpath.
+npm works the same way (`npm install <url>`). Upgrade or roll back by changing the URL. `zod@4.6.5` is installed automatically; install `@earendil-works/pi-ai@1.5.2` only if you use the `/pi-ai` subpath.
 
 ## Generate or edit an image
 
@@ -366,7 +366,7 @@ Pass `cacheRetention` explicitly: when it is omitted, pi-ai falls back to the `P
 
 ```sh
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.4.1/hk01-pi-ai-extra-chat-kit-0.4.1.tgz
-pnpm add @earendil-works/pi-ai@1.2.0   # peer
+pnpm add @earendil-works/pi-ai@1.5.2   # peer
 # and the provider packages you register (each its own release asset, see Install above):
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.8.0/hk01-pi-ai-extra-google-0.8.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.1.0/hk01-pi-ai-extra-openrouter-0.1.0.tgz

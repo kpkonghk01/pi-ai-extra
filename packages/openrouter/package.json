@@ -1,6 +1,6 @@
 {
   "name": "@hk01/pi-ai-extra-openrouter",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "pi-ai's OpenRouter provider with an explicit key, a live model list and the chat kit's traits",
   "license": "UNLICENSED",
   "type": "module",
@@ -28,10 +28,10 @@
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\""
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "1.2.0"
+    "@earendil-works/pi-ai": "1.5.2"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "1.2.0",
+    "@earendil-works/pi-ai": "1.5.2",
     "@hk01/pi-ai-extra-internal": "workspace:*"
   }
 }
