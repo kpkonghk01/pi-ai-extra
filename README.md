@@ -468,7 +468,7 @@ Each provider's live list is its own `refreshModels`, so `models.refresh()` read
 | Provider | Live list | Kept |
 | --- | --- | --- |
 | `openrouter` | Public `GET <root>/v1/models` (no key) | Every model that answers in text, tool support or not. The kit offers all but the [excluded models](#excluded-models) |
-| `google` | `models.list` (`GET <base>/models`) with the key | `generateContent` models, `models/` prefix stripped; narrowed to `modelIds` when set. The kit offers plain text chat models only: not embedding, Imagen, Veo, TTS, Live (`-live-`), computer use or Deep Research models, and not the [excluded models](#excluded-models) |
+| `google` | `models.list` (`GET <base>/models`) with the key | `generateContent` models, `models/` prefix stripped; narrowed to `modelIds` when set. The kit offers plain text chat models only: not embedding, Imagen, Veo, TTS, Live (`-live-`), computer use, Deep Research or Gemini Robotics models, and not the [excluded models](#excluded-models) |
 | `google-vertex` | None: an API key cannot list Agent Platform models | pi-ai's `google-vertex` catalogue plus `GEMINI_CHAT_MODELS`, narrowed to `modelIds` when set, always `source: "installed"`. The kit offers the same kinds of models as on `google` |
 | `kie` | `GET <responsesBaseUrl>/models` (Codex) and `GET <claudeBaseUrl>/v1/models` (Claude) with the key | Only ids with a package definition (`KIE_CHAT_MODELS`), matched across `.` and `-` spellings. The Gemini models are always offered: no KIE list names them |
 | `toapis` | `GET <host>/v1/models?type=text` with the key | Only ids with a package definition (`TOAPIS_CHAT_MODELS`) |
