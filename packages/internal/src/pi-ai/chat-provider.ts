@@ -118,7 +118,7 @@ export function buildChatModel(provider: string, baseUrl: string | undefined, de
     maxTokens: definition.maxTokens ?? builtin?.maxTokens ?? defaults.maxTokens,
     ...(thinkingLevelMap ? { thinkingLevelMap } : {}),
     ...(builtin?.inputLimits ? { inputLimits: builtin.inputLimits } : {}),
-    ...(builtin?.compat ? { compat: resellerCompat(builtin.compat, definition.protocol) as NonNullable<Model<ChatProtocol>["compat"]> } : {}),
+    ...(builtin?.compat ? { compat: resellerCompat(builtin.compat) as NonNullable<Model<ChatProtocol>["compat"]> } : {}),
   };
   return model;
 }
@@ -148,14 +148,23 @@ function findBuiltinModel(definition: ChatModelDefinition): Model<ChatProtocol> 
 
 /**
  * pi-ai's compat for a reseller's route. Anthropic's "allowed fallback models" go, because
- * fallback is prohibited. On OpenAI Responses, `supportsMidConvoEffort` goes too: pi-ai's openai
- * catalogue sets it on the GPT-6 models (since pi-ai 1.3) for OpenAI's own API, where pi-ai then
- * pins `reasoning.effort` to medium and sends the asked effort in `configuration_update` items. A
- * reseller's Responses route is not OpenAI's API, and pi-ai's own `openai-codex` catalogue
- * (ChatGPT-backed Codex, like KIE's) does not set it, so the effort stays in `reasoning.effort`.
+ * fallback is prohibited. `supportsMidConvoEffort` goes too: pi-ai sets it for the first-party
+ * APIs, where it changes the effort mid-conversation without losing the prompt cache, and a
+ * reseller's route is not that API.
+ *
+ * - OpenAI Responses: pi-ai's openai catalogue sets it on the GPT-6 models (since pi-ai 1.3), and
+ *   then pins `reasoning.effort` to medium and sends the asked effort in `configuration_update`
+ *   items. pi-ai's own `openai-codex` catalogue (ChatGPT-backed Codex, like KIE's) does not set it.
+ * - Anthropic Messages: on Claude 5.x pi-ai then sends effort markers (a mid-conversation system
+ *   message and `thinking.block_binding`). Live on 2026-11-19, KIE claude-haiku-5-5 with a reasoning
+ *   level answered HTTP 500 to that 2 of 2 times, and to plain adaptive thinking with
+ *   `output_config.effort` 2 of 2 times correctly. pi-ai's own OpenRouter catalogue drops it from
+ *   Claude models OpenRouter cannot take it on, for the same reason.
+ *
+ * Without it, the effort goes in `reasoning.effort` (Responses) or `output_config.effort`
+ * (Messages, adaptive thinking).
  */
-function resellerCompat(compat: object, protocol: ChatProtocol): object {
-  const { allowedFallbackModels: _fallbacks, ...rest } = compat as Record<string, unknown>;
-  if (protocol === "openai-responses") delete rest.supportsMidConvoEffort;
+function resellerCompat(compat: object): object {
+  const { allowedFallbackModels: _fallbacks, supportsMidConvoEffort: _midConvo, ...rest } = compat as Record<string, unknown>;
   return rest;
 }
