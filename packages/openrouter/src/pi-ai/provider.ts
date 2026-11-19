@@ -1,10 +1,11 @@
-import type { Provider, SimpleStreamOptions, StreamOptions, Usage } from "@earendil-works/pi-ai";
+import type { Provider, SimpleStreamOptions, StreamOptions } from "@earendil-works/pi-ai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { applyOpenRouterReportedCost, type OpenRouterUsageAccounting } from "@earendil-works/pi-ai/utils/openrouter-cost";
 import {
   catalogueRate,
   explicitApiKeyAuth,
   withLiveChatModels,
+  zeroUsage,
   type ChatProvider,
 } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { isRecord, withoutTrailingSlash } from "@hk01/pi-ai-extra-internal/util";
@@ -138,7 +139,7 @@ export function createOpenRouterProvider(options: OpenRouterProviderOptions): Ch
  * estimated.
  */
 function billedTotal(usage: Record<string, unknown>): number | undefined {
-  const probe = { cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } as Usage;
+  const probe = zeroUsage();
   applyOpenRouterReportedCost(probe, usage as unknown as OpenRouterUsageAccounting);
   return probe.cost.totalFromProvider === true ? probe.cost.total : undefined;
 }
