@@ -6,7 +6,7 @@ import type { ChatUsage } from "../types.ts";
 import { createUsageCapture, tokenCount, toChatUsage } from "../usage.ts";
 import { sanitizeSchemaForAnthropic } from "./anthropic-schema.ts";
 import { encodeDocument, placeByUrl, replaceDocumentMarker, textOfType, type DocumentEncoder } from "./document-parts.ts";
-import { withFileParser } from "./openrouter.ts";
+import { openRouterPlugins } from "./openrouter.ts";
 import type { BlockedTurn, PayloadPlan, SchemaRequest, StreamObserver, WireApi } from "./types.ts";
 
 type AnthropicBlock = Record<string, unknown>;
@@ -80,7 +80,7 @@ function thinkingEnabled(thinking: unknown): boolean {
  */
 export function transformAnthropicPayload(payload: unknown, plan: PayloadPlan): unknown {
   if (!isRecord(payload)) return payload;
-  const next: Record<string, unknown> = { ...payload, ...(plan.targetsOpenRouter ? { plugins: withFileParser(payload.plugins) } : {}) };
+  const next: Record<string, unknown> = { ...payload, ...openRouterPlugins(payload, plan) };
   if (plan.marker !== undefined) {
     const replacement = plan.documents.map((document) => encodeDocument(document, ANTHROPIC_BLOCKS));
     const cacheControl = findCacheControl(payload);

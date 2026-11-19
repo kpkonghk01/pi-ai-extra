@@ -9,8 +9,8 @@ export interface PayloadPlan {
   documents: readonly PreparedDocument[];
   responseSchema: ChatResponseSchema | undefined;
   /**
-   * The request goes to OpenRouter (`targetsOpenRouter()`), so Anthropic Messages pins its file
-   * parser to `native` too. OpenAI Completions, which only OpenRouter speaks here, always does.
+   * The request goes to OpenRouter (`targetsOpenRouter()`), so the payload transform pins its file
+   * parser to `native` (`openRouterPlugins`). KIE and ToAPIs, on the same wire APIs, get no `plugins`.
    */
   targetsOpenRouter: boolean;
   /**

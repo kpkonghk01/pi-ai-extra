@@ -4,7 +4,7 @@ import { isRecord } from "@hk01/pi-ai-extra-internal/util";
 import { createUsageCapture } from "../usage.ts";
 import { encodeDocument, placeByUrl, replaceDocumentMarker, textOfType, type DocumentEncoder } from "./document-parts.ts";
 import { COMPLETIONS_USAGE_FIELDS, CONTENT_FILTER_BLOCK, OPENAI_AMBIENT_HEADERS, openAIUsage } from "./openai.ts";
-import { withFileParser } from "./openrouter.ts";
+import { openRouterPlugins } from "./openrouter.ts";
 import type { BlockedTurn, PayloadPlan, StreamObserver, WireApi } from "./types.ts";
 
 type CompletionsPart = Record<string, unknown>;
@@ -28,7 +28,7 @@ const COMPLETIONS_PARTS: DocumentEncoder<CompletionsPart, string> = {
  */
 export function transformOpenAICompletionsPayload(payload: unknown, plan: PayloadPlan): unknown {
   if (!isRecord(payload)) return payload;
-  const next: Record<string, unknown> = { ...payload, ...(plan.targetsOpenRouter ? { plugins: withFileParser(payload.plugins) } : {}) };
+  const next: Record<string, unknown> = { ...payload, ...openRouterPlugins(payload, plan) };
   if (plan.marker !== undefined) {
     const replacement = plan.documents.map((document) => encodeDocument(document, COMPLETIONS_PARTS));
     next.messages = replaceDocumentMarker(payload.messages, plan.marker, replacement, { partsKey: "content", textOf: textOfType("text") });
