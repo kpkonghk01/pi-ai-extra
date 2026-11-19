@@ -90,11 +90,11 @@ export function createChatProvider(input: ChatProviderInput): Provider<ChatProto
 
 /**
  * Builds a pi-ai model at the definition's own base URL, else at `baseUrl`, the provider's for its
- * protocol; a model with neither is a `TypeError`. Capability metadata (reasoning, context window, thinking
- * levels, request compatibility) is copied from pi-ai's built-in catalogue when the
- * id (or `catalogueId`) matches, as a reseller's route takes it (`resellerCompat`). Prices are
- * never copied: `cost` is the period of `definition.rate` in force at `at` (default now), or pi-ai's required placeholder when the model has no rate. An
- * invalid rate schedule throws a `TypeError`.
+ * protocol; a model with neither is a `TypeError`. Capability metadata (reasoning, context window,
+ * thinking levels, request compatibility) is copied from pi-ai's built-in catalogue when the id (or
+ * `catalogueId`) matches, as a reseller's route takes it (`resellerCompat`). Prices are never
+ * copied: `cost` is the period of `definition.rate` in force at `at` (default now), or pi-ai's
+ * required placeholder when the model has no rate. An invalid rate schedule throws a `TypeError`.
  */
 export function buildChatModel(provider: string, baseUrl: string | undefined, definition: ChatModelDefinition, at: Date = new Date()): Model<ChatProtocol> {
   if (definition.rate !== undefined) assertModelRate(definition.rate, `${provider} chat model ${definition.id}`);
@@ -148,9 +148,10 @@ function findBuiltinModel(definition: ChatModelDefinition): Model<ChatProtocol> 
 
 /**
  * pi-ai's compat for a reseller's route. Anthropic's "allowed fallback models" go, because
- * fallback is prohibited. `supportsMidConvoEffort` goes too: pi-ai sets it for the first-party
- * APIs, where it changes the effort mid-conversation without losing the prompt cache, and a
- * reseller's route is not that API.
+ * fallback is prohibited. `supportsMidConvoEffort` goes too: pi-ai's catalogues set it where a route
+ * is known to take a mid-conversation effort change without losing the prompt cache (OpenAI's and
+ * Anthropic's own APIs, and on OpenRouter most Claude 5.x models), and a reseller's route is not
+ * known to.
  *
  * - OpenAI Responses: pi-ai's openai catalogue sets it on the GPT-6 models (since pi-ai 1.3), and
  *   then pins `reasoning.effort` to medium and sends the asked effort in `configuration_update`

@@ -23,7 +23,7 @@ Amended 2026-10-16 ([DATA-4567](https://hk01-digital.atlassian.net/browse/DATA-4
 
 Amended 2026-10-21 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4583)): `@hk01/pi-ai-extra-openrouter` ([ADR 0009](0009-chat-kit-contract-aligned-with-pi-ai.md)) is a second exception, to the first and third points. It has no main entry, only the ESM-only `/pi-ai` subpath, and pi-ai is a required exact peer (`1.2.0`). The package is only a pi-ai provider, since pi-ai already serves OpenRouter's images, so a main entry would have nothing to hold. Keeping the `/pi-ai` path gives every provider package the same import path. The chat kit's exception stands, and its provider-package peers become optional. The other provider packages keep the decision unchanged.
 
-Amended 2026-11-19: the exact pi-ai peer moved from `1.2.0` to `1.5.2` in every package that has one (chat kit 0.5.0, google 0.9.0, kie 0.9.0, toapis 0.8.0, openrouter 0.2.0). The chat kit's optional provider-package peers moved to those releases. pi-ai 1.5.2 is still ESM-only, so the decision stands.
+Amended 2026-11-19, for pi-ai 1.5.2: the exact pi-ai peer moved from `1.2.0` to `1.5.2` in every package that has one (chat kit 0.5.0, google 0.9.0, kie 0.9.0, toapis 0.8.0, openrouter 0.2.0). The chat kit's optional provider-package peers moved to those releases. pi-ai 1.5.2 is still ESM-only, so the decision stands.
 
 ## Consequences
 

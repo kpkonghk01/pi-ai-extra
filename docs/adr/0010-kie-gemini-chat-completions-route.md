@@ -54,4 +54,4 @@ The change is confined to the kie package and the internal chat provider. The ch
 
 Revisit the decision if pi-ai's Gemini adapter accepts a custom fetch, or if the Gemini SDK tolerates `data: [DONE]`: the native route would then work through the shared adapter.
 
-Amended 2026-11-19 (pi-ai 1.5.2): chat-kit 0.5.0 gates OpenRouter's file-parser `plugins` on `targetsOpenRouter` on Chat Completions too, so KIE's Gemini requests no longer carry them. Live on KIE gemini-3-8-flash, the same turn with and without the field, twice each, gave the same answers and timings.
+Amended 2026-11-19, for pi-ai 1.5.2: chat-kit 0.5.0 gates OpenRouter's file-parser `plugins` on `targetsOpenRouter` on Chat Completions too, so KIE's Gemini requests no longer carry them. Live on KIE gemini-3-8-flash, the same turn with and without the field, twice each, gave the same answers and timings.

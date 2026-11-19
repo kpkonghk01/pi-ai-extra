@@ -111,15 +111,16 @@ jobs:
             ls -l smoke-peers
           fi
 
-      # Installs the packed artifact exactly as a consumer would, with the pi-ai its manifest peers on,
-      # then loads it from CommonJS and ESM (the chat kit, like pi-ai, is ESM-only).
+      # Installs the packed artifact exactly as a consumer would, then loads it from CommonJS and ESM
+      # (the chat kit, like pi-ai, is ESM-only). A package that peers on pi-ai gets the exact pi-ai its
+      # manifest names; the image kit does not take pi-ai.
       - name: Smoke-test packed artifact
         env:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
           PACKAGE_DIRECTORY: ${{ steps.package.outputs.directory }}
         run: |
           tarball="$(ls "$PWD"/release-artifacts/*.tgz)"
-          pi_ai="@earendil-works/pi-ai@$(node -p "require('./$PACKAGE_DIRECTORY/package.json').peerDependencies?.['@earendil-works/pi-ai'] ?? ''")"
+          pi_ai="@earendil-works/pi-ai@$(node -p "require('./$PACKAGE_DIRECTORY/package.json').peerDependencies?.['@earendil-works/pi-ai']")"
           consumer="$RUNNER_TEMP/consumer"
           mkdir -p "$consumer"
           cd "$consumer"

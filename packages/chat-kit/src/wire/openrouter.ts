@@ -5,7 +5,7 @@ import { isRecord } from "@hk01/pi-ai-extra-internal/util";
  * OpenRouter's PDF parser pinned to the model's native file input. Without it, OpenRouter falls
  * back to its paid `mistral-ocr` engine for a model that cannot read files natively.
  */
-export const OPENROUTER_FILE_PARSER = { id: "file-parser", pdf: { engine: "native" } } as const;
+const OPENROUTER_FILE_PARSER = { id: "file-parser", pdf: { engine: "native" } } as const;
 
 /** The request's `plugins` with the file parser pinned to `native`, replacing any other file-parser setting. */
 function withFileParser(plugins: unknown): unknown[] {

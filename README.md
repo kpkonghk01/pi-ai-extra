@@ -291,6 +291,17 @@ createToapisProvider({
 });
 ```
 
+### Upgrading to pi-ai 1.5.2 (chat-kit 0.5, Google 0.9, KIE 0.9, ToAPIs 0.8, OpenRouter 0.2)
+
+Every package that peers on pi-ai now peers on `@earendil-works/pi-ai@1.5.2` exactly, and chat-kit 0.5 peers on these provider releases, so upgrade pi-ai and all of them together.
+
+- pi-ai 1.5 no longer re-exports TypeBox (`Type`, `Static`, `TSchema`). Pass tool parameters as JSON Schema objects, or build them with `@earendil-works/pi-schema`.
+- pi-ai 1.5's catalogue no longer has `gemini-3.1-flash-live-preview` or `gemini-3.1-flash-lite-image`, so naming either in `createGoogleProvider`'s `modelIds` throws a `TypeError`. The chat kit does not offer the catalogue's new `gemini-robotics-er-2-preview`.
+- KIE and ToAPIs send a reasoning level as `reasoning.effort` (OpenAI Responses) or as `output_config.effort` with adaptive thinking (Anthropic Messages), never as pi-ai's per-message effort, which KIE answered with HTTP 500 on Claude 5.x (2026-11-19). A Claude 5.x turn without a reasoning level sends no thinking settings, so the provider's default applies.
+- `message.usage.cost.total` carries a provider-reported charge, marked `cost.totalFromProvider: true`: OpenRouter's billed total, which pi-ai now reads with the upstream cost on a BYOK key, and, through the chat kit, KIE's credits. `chatKit.usage` is unchanged.
+- In the chat kit, a response schema on Claude Opus 5 or Haiku 5.5 without `reasoning` is a forced tool call with thinking off (pi-ai 1.3 lets them turn thinking off), a Gemini response schema's `const` goes as a one-value `enum`, which Gemini honours, and OpenRouter's `plugins` go to OpenRouter only.
+- pi-ai 1.5.1 no longer sends `"tools": []` on OpenAI Completions over a tool history with no declared tools; a proxy that needs it takes `compat.requiresToolsWithToolHistory`.
+
 ### Upgrading to KIE/ToAPIs 0.4 and Google 0.5
 
 | Before (KIE/ToAPIs 0.3, Google 0.4) | Now |
@@ -577,6 +588,10 @@ The cost comes from the first source that applies:
 1. **Provider-reported** (`costSource: "provider"`): OpenRouter's billed total as pi-ai reads it (`usage.cost`, plus the upstream cost on a BYOK key; accounting without `is_byok` is estimated), or KIE's `credits_consumed` × $0.005. KIE's cost always comes from its credits, because its token counts are unreliable (hidden prompt tokens, some zero input counts), so a KIE turn without credits has no cost. On KIE Codex (OpenAI Responses) the credits are read wherever the stream carries them: next to `type` on the `response.completed` event (where KIE documents them), on the response object, or in a usage object; `raw` keeps them at its top level.
 2. **Estimated** (`costSource: "estimated"`): the model's [rate](#chat-rates) in force when the turn started, priced with pi-ai's `calculateCost`. The large-prompt tier is chosen by the whole prompt (`input + cacheRead + cacheWrite`). Cached and cache-write tokens are charged at their rates, an unpublished one derived as described in [Chat rates](#chat-rates), cache writes as 5-minute writes, and the rest of the prompt at the input rate. `output`, reasoning included, is charged at the output rate. A count the provider did not report adds nothing. Rates come from the KIE and ToAPIs definitions, the Gemini rate table (`googleChatRate`) on AI Studio, the Gemini definitions on Agent Platform (else pi-ai's Vertex list price), and OpenRouter's live price (pi-ai's catalogue price while no live list could be read).
 3. **None**: no rate, or no counts to price. `costUsd` and `costSource` are absent, never `0`.
+
+### Upgrading to chat-kit 0.5
+
+See [Upgrading to pi-ai 1.5.2](#upgrading-to-pi-ai-152-chat-kit-05-google-09-kie-09-toapis-08-openrouter-02): chat-kit 0.5 needs pi-ai 1.5.2 and the matching provider releases.
 
 ### Upgrading to chat-kit 0.4 and Google 0.8
 
