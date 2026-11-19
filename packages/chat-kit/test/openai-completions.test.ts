@@ -51,7 +51,7 @@ function okStream() {
       prompt_tokens: 120,
       completion_tokens: 8,
       total_tokens: 128,
-      cost: 0.00042,
+      cost: 0.00042, is_byok: false, cost_details: null,
       prompt_tokens_details: { cached_tokens: 100 },
       completion_tokens_details: { reasoning_tokens: 3 },
     }),
@@ -100,7 +100,7 @@ describe("streamSimple on OpenAI Completions (OpenRouter)", () => {
             prompt_tokens: 120,
             completion_tokens: 8,
             total_tokens: 128,
-            cost: 0.00042,
+            cost: 0.00042, is_byok: false, cost_details: null,
             prompt_tokens_details: { cached_tokens: 100 },
             completion_tokens_details: { reasoning_tokens: 3 },
           },
@@ -146,7 +146,7 @@ describe("streamSimple on OpenAI Completions (OpenRouter)", () => {
   });
 
   it("keeps OpenRouter's reported cost when the answer count is missing", async () => {
-    const usage = { prompt_tokens: 10, cost: 0.0001 };
+    const usage = { prompt_tokens: 10, cost: 0.0001, is_byok: false, cost_details: null };
     const { chat } = kit([
       {
         method: "POST",
