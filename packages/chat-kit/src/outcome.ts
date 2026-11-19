@@ -32,14 +32,15 @@ export type ChatFinalEvent =
 
 /**
  * Classifies pi-ai's final event into the turn's final event: done, aborted, or an error with
- * the most specific code. `message.usage` stays pi-ai's; the provider's own counts and the cost
- * are in `chatKit.usage`.
+ * the most specific code. `message.usage` stays pi-ai's, except its cost total where the provider
+ * reported the charge (`withReportedTotal`); the provider's own counts and the cost are in
+ * `chatKit.usage`.
  */
 export function classifyOutcome(run: TurnRun, final: FinalStreamEvent, content: AssistantMessage["content"]): ChatFinalEvent {
   const { turn, observer, state } = run;
   // Read from the provider's raw usage, not pi-ai's `message.usage`, which reports an unreported count as zero.
   const usage = withCost(observer.usage(), turn.pricing);
-  const message: AssistantMessage = { ...(final.type === "done" ? final.message : final.error), content };
+  const message: AssistantMessage = withReportedTotal({ ...(final.type === "done" ? final.message : final.error), content }, usage);
   if (state.transformFailure) return failure(turn.target, message, state.transformFailure.code, state.transformFailure.message, { usage });
   if (final.type === "error" && (message.stopReason === "aborted" || run.signal.aborted)) {
     const aborted = { ...message, stopReason: "aborted" as const, errorMessage: prefixed(turn.target, ABORTED_TEXT) };
@@ -115,6 +116,18 @@ function failure(
       chatKit: { ...(extra.usage === undefined ? {} : { usage: extra.usage }), error },
     },
   };
+}
+
+/**
+ * pi-ai's usage with the provider-reported charge as its total, marked `totalFromProvider`, as
+ * pi-ai's own adapters do for OpenRouter (1.5): `cost.total` is the best total available. The
+ * per-count costs stay pi-ai's estimate. A total pi-ai already reports (OpenRouter's) is left as
+ * pi-ai set it, so the kit fills in only what pi-ai cannot read: KIE's credits.
+ */
+function withReportedTotal(message: AssistantMessage, usage: ChatUsage | undefined): AssistantMessage {
+  if (message.usage.cost.totalFromProvider === true) return message;
+  if (usage?.costSource !== "provider" || usage.costUsd === undefined) return message;
+  return { ...message, usage: { ...message.usage, cost: { ...message.usage.cost, total: usage.costUsd, totalFromProvider: true } } };
 }
 
 function withRecord(message: AssistantMessage, usage: ChatUsage | undefined): AssistantMessage & { chatKit: { usage?: ChatUsage } } {

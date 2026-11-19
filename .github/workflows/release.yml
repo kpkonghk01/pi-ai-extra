@@ -112,12 +112,15 @@ jobs:
           fi
 
       # Installs the packed artifact exactly as a consumer would, then loads it from CommonJS and ESM
-      # (the chat kit, like pi-ai, is ESM-only).
+      # (the chat kit, like pi-ai, is ESM-only). A package that peers on pi-ai gets the exact pi-ai its
+      # manifest names; the image kit does not take pi-ai.
       - name: Smoke-test packed artifact
         env:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
+          PACKAGE_DIRECTORY: ${{ steps.package.outputs.directory }}
         run: |
           tarball="$(ls "$PWD"/release-artifacts/*.tgz)"
+          pi_ai="@earendil-works/pi-ai@$(node -p "require('./$PACKAGE_DIRECTORY/package.json').peerDependencies?.['@earendil-works/pi-ai']")"
           consumer="$RUNNER_TEMP/consumer"
           mkdir -p "$consumer"
           cd "$consumer"
@@ -127,7 +130,7 @@ jobs:
             node -e 'const kit = require(process.env.PACKAGE_NAME); const server = require(`${process.env.PACKAGE_NAME}/server`); const react = require(`${process.env.PACKAGE_NAME}/react`); if (typeof kit.modelIssue !== "function" || typeof server.createImageClient !== "function" || typeof react.ImageModelSelector !== "function") throw new Error("CommonJS entries are broken");'
             node --input-type=module -e 'const name = process.env.PACKAGE_NAME; const kit = await import(name); const server = await import(`${name}/server`); const browser = await import(`${name}/browser`); const react = await import(`${name}/react`); const models = server.createImageClient({ app: "smoke", policy: { scopes: { smoke: {} } }, env: {} }).forScope("smoke").listModels(); if (typeof kit.modelIssue !== "function" || typeof browser.postImageRequest !== "function" || typeof react.ErrorPanel !== "function" || models[0]?.id !== "google:gemini-nano-banana-2.1" || models[0]?.unavailableReason !== "伺服器未設定 GEMINI_API_KEY") throw new Error("ESM entries are broken");'
           elif [ "$PACKAGE_NAME" = "@hk01/pi-ai-extra-chat-kit" ]; then
-            npm install --no-audit --no-fund "$tarball" "$GITHUB_WORKSPACE"/smoke-peers/*.tgz @earendil-works/pi-ai@1.2.0
+            npm install --no-audit --no-fund "$tarball" "$GITHUB_WORKSPACE"/smoke-peers/*.tgz "$pi_ai"
             node -e 'try { require(process.env.PACKAGE_NAME); } catch (error) { if (error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED") process.exit(0); throw error; } throw new Error("the chat kit must not load from CommonJS");'
             # Registers every chat provider with an offline fetch: no live list can be read, so every
             # provider uses its installed catalogue or definitions (google-vertex has no live list at
@@ -150,11 +153,11 @@ jobs:
           SMOKE
             node ./smoke.mjs
           elif [ "$PACKAGE_NAME" = "@hk01/pi-ai-extra-openrouter" ]; then
-            npm install --no-audit --no-fund "$tarball" @earendil-works/pi-ai@1.2.0
+            npm install --no-audit --no-fund "$tarball" "$pi_ai"
             node -e 'try { require(`${process.env.PACKAGE_NAME}/pi-ai`); } catch (error) { if (error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED") process.exit(0); throw error; } throw new Error("openrouter has no CommonJS entry");'
             node --input-type=module -e 'const { createOpenRouterProvider } = await import(`${process.env.PACKAGE_NAME}/pi-ai`); const provider = createOpenRouterProvider({ apiKey: "smoke" }); if (provider.id !== "openrouter" || provider.getModels().length === 0 || typeof provider.chatKit.offers !== "function") throw new Error("ESM entry is broken");'
           else
-            npm install --no-audit --no-fund "$tarball" @earendil-works/pi-ai@1.2.0
+            npm install --no-audit --no-fund "$tarball" "$pi_ai"
             node -e 'const entry = require(process.env.PACKAGE_NAME); if (typeof entry.isPiAiExtraError !== "function") throw new Error("CommonJS entry is broken");'
             node --input-type=module -e 'const entry = await import(process.env.PACKAGE_NAME); const piAi = await import(`${process.env.PACKAGE_NAME}/pi-ai`); if (typeof entry.isPiAiExtraError !== "function" || Object.keys(piAi).length === 0) throw new Error("ESM entries are broken");'
           fi

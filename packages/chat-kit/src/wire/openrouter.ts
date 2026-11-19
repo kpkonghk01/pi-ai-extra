@@ -5,12 +5,20 @@ import { isRecord } from "@hk01/pi-ai-extra-internal/util";
  * OpenRouter's PDF parser pinned to the model's native file input. Without it, OpenRouter falls
  * back to its paid `mistral-ocr` engine for a model that cannot read files natively.
  */
-export const OPENROUTER_FILE_PARSER = { id: "file-parser", pdf: { engine: "native" } } as const;
+const OPENROUTER_FILE_PARSER = { id: "file-parser", pdf: { engine: "native" } } as const;
 
 /** The request's `plugins` with the file parser pinned to `native`, replacing any other file-parser setting. */
-export function withFileParser(plugins: unknown): unknown[] {
+function withFileParser(plugins: unknown): unknown[] {
   const others = Array.isArray(plugins) ? plugins.filter((plugin) => !(isRecord(plugin) && plugin.id === "file-parser")) : [];
   return [...others, OPENROUTER_FILE_PARSER];
+}
+
+/**
+ * What a payload transform adds for OpenRouter: the request's `plugins` with the file parser pinned
+ * to `native`. Other providers on the same wire APIs (KIE, ToAPIs) get no `plugins`.
+ */
+export function openRouterPlugins(payload: Record<string, unknown>, plan: { targetsOpenRouter: boolean }): { plugins?: unknown[] } {
+  return plan.targetsOpenRouter ? { plugins: withFileParser(payload.plugins) } : {};
 }
 
 /** Whether a model's requests go to OpenRouter: its provider is `openrouter`, or its base URL is on `openrouter.ai`. */

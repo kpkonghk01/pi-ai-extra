@@ -2,9 +2,9 @@
 
 Server-only extension to `@earendil-works/pi-ai`: `createOpenRouterProvider({ apiKey, baseUrl?, fetch? })` extends pi-ai's built-in `openrouterProvider()` (its `openrouter` id, catalogue, OpenAI Completions and Anthropic Messages adapters, and image and classifier models) with an explicit key instead of `OPENROUTER_API_KEY` and OAuth, a live model list, and the traits the [chat kit](https://github.com/kpkonghk01/pi-ai-extra#chat-kit) needs.
 
-- `/pi-ai` subpath only (ESM only, needs `@earendil-works/pi-ai@1.2.0`): pi-ai already serves OpenRouter's image generation, so there is no main entry.
+- `/pi-ai` subpath only (ESM only, needs `@earendil-works/pi-ai@1.5.2`): pi-ai already serves OpenRouter's image generation, so there is no main entry.
 - `refreshModels` reads OpenRouter's public `GET <root>/v1/models` and replaces the chat models with every model that answers in text, so a model OpenRouter drops disappears.
-- `chatKit` marks what OpenRouter takes (PDF and image documents, tools, native structured output on its Anthropic Messages route), which models the chat kit offers (not `:free`, `:batch`, routers, `-latest` aliases or image-output models), what each model reads (`file` input and `tools` from the live list) and its price. A turn's cost is OpenRouter's own `usage.cost`, else estimated.
+- `chatKit` marks what OpenRouter takes (PDF and image documents, tools, native structured output on its Anthropic Messages route), which models the chat kit offers (not `:free`, `:batch`, routers, `-latest` aliases or image-output models), what each model reads (`file` input and `tools` from the live list) and its price. A turn's cost is OpenRouter's billed total as pi-ai reads it (`usage.cost`, plus the upstream cost on a BYOK key), else estimated.
 
 ```ts
 import { createModels } from "@earendil-works/pi-ai";

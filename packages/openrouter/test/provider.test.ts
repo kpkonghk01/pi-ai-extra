@@ -88,6 +88,11 @@ describe("createOpenRouterProvider", () => {
     );
     assert.ok((openrouter.getAllModels?.() ?? []).some((model) => model.type === "image"), "image models stay pi-ai's");
     assert.equal(fake.calls[0]?.headers.authorization, undefined, "the public list is read without the key");
+    // pi-ai 1.5's catalogue gives every OpenRouter Completions model supportsStrictMode, the one
+    // compat setting its runtime detection does not infer; a model new to the catalogue gets it too.
+    for (const model of openrouter.getModels()) {
+      assert.equal((model.compat as { supportsStrictMode?: boolean } | undefined)?.supportsStrictMode, true, model.id);
+    }
   });
 
   it("keeps the previous list and reports the error when a refresh fails", async () => {
@@ -176,11 +181,16 @@ describe("createOpenRouterProvider", () => {
     assert.ok(!offered.some((model) => model.id.startsWith("google/gemini-3-pro-image") || model.id.startsWith("openrouter/")));
   });
 
-  it("reads OpenRouter's own charge from usage.cost, and estimates a turn without one", () => {
+  it("reads OpenRouter's billed total as pi-ai does: usage.cost, plus the upstream cost on a BYOK key, and estimates a turn without complete accounting", () => {
     const { chatKit } = createOpenRouterProvider({ apiKey: "k" });
-    assert.equal(chatKit.reportedCostUsd({ usage: { cost: 0.0042 } }), 0.0042);
-    assert.equal(chatKit.reportedCostUsd({ usage: { cost: 0 } }), 0);
-    assert.equal(chatKit.reportedCostUsd({ usage: { cost: "n/a" } }), undefined);
+    assert.equal(chatKit.reportedCostUsd({ usage: { cost: 0.0042, is_byok: false, cost_details: null } }), 0.0042);
+    assert.equal(chatKit.reportedCostUsd({ usage: { cost: 0, is_byok: false, cost_details: null } }), 0);
+    const byok = { upstream_inference_cost: 0.02, upstream_inference_prompt_cost: 0.015, upstream_inference_completions_cost: 0.005 };
+    assert.equal(chatKit.reportedCostUsd({ usage: { cost: 0.001, is_byok: true, cost_details: byok } }), 0.021);
+    // Incomplete accounting is not a billed total (pi-ai's applyOpenRouterReportedCost).
+    assert.equal(chatKit.reportedCostUsd({ usage: { cost: 0.0042 } }), undefined);
+    assert.equal(chatKit.reportedCostUsd({ usage: { cost: 0.001, is_byok: true, cost_details: null } }), undefined);
+    assert.equal(chatKit.reportedCostUsd({ usage: { cost: "n/a", is_byok: false } }), undefined);
     assert.equal(chatKit.reportedCostUsd({}), undefined);
     assert.equal(chatKit.estimatesCost, true);
   });

@@ -566,7 +566,7 @@ describe("OpenRouter live list", () => {
         respond: () =>
           sseResponse([
             completionsChunk({ content: "Hi" }, "stop"),
-            completionsUsageChunk({ prompt_tokens: 10, completion_tokens: 2, cost: 0.00004 }),
+            completionsUsageChunk({ prompt_tokens: 10, completion_tokens: 2, cost: 0.00004, is_byok: false, cost_details: null }),
             "[DONE]",
           ]),
       },

@@ -24,10 +24,10 @@ const SONNET = { periods: [{ input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3
 
 describe("turn cost", () => {
   it("takes OpenRouter's reported usage.cost first, including a reported 0", () => {
-    const reported = withCost(usage({ input: 100, output: 10 }, { usage: { cost: 0.0042 } }), pricing("openrouter", SONNET));
+    const reported = withCost(usage({ input: 100, output: 10 }, { usage: { cost: 0.0042, is_byok: false, cost_details: null } }), pricing("openrouter", SONNET));
     assert.equal(reported?.costUsd, 0.0042);
     assert.equal(reported?.costSource, "provider");
-    const free = withCost(usage({ input: 100 }, { usage: { cost: 0 } }), pricing("openrouter", SONNET));
+    const free = withCost(usage({ input: 100 }, { usage: { cost: 0, is_byok: false, cost_details: null } }), pricing("openrouter", SONNET));
     assert.deepEqual([free?.costUsd, free?.costSource], [0, "provider"]);
   });
 

@@ -1,10 +1,11 @@
 import type { Provider, SimpleStreamOptions, StreamOptions } from "@earendil-works/pi-ai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
+import { applyOpenRouterReportedCost, type OpenRouterUsageAccounting } from "@earendil-works/pi-ai/utils/openrouter-cost";
 import {
   catalogueRate,
   explicitApiKeyAuth,
-  reportedAmount,
   withLiveChatModels,
+  zeroUsage,
   type ChatProvider,
 } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { isRecord, withoutTrailingSlash } from "@hk01/pi-ai-extra-internal/util";
@@ -124,12 +125,23 @@ export function createOpenRouterProvider(options: OpenRouterProviderOptions): Ch
         const rate = info === undefined ? catalogueRate(model.cost) : info.rate;
         return { fileInput: info?.fileInput ?? false, tools: info?.tools ?? true, ...(rate === undefined ? {} : { rate }) };
       },
-      // OpenRouter's own charge for the turn, `usage.cost`.
-      reportedCostUsd: (raw) => (isRecord(raw.usage) ? reportedAmount(raw.usage.cost) : undefined),
+      reportedCostUsd: (raw) => (isRecord(raw.usage) ? billedTotal(raw.usage) : undefined),
       estimatesCost: true,
       fetch: options.fetch,
     },
   };
+}
+
+/**
+ * OpenRouter's billed total for the turn, read as pi-ai reads it (`applyOpenRouterReportedCost`,
+ * pi-ai 1.5): `usage.cost`, plus the upstream provider's cost on a BYOK key. Accounting without
+ * `is_byok`, or a BYOK turn without the upstream cost, is not a billed total, so the turn is
+ * estimated.
+ */
+function billedTotal(usage: Record<string, unknown>): number | undefined {
+  const probe = zeroUsage();
+  applyOpenRouterReportedCost(probe, usage as unknown as OpenRouterUsageAccounting);
+  return probe.cost.totalFromProvider === true ? probe.cost.total : undefined;
 }
 
 /** The request's options with `fetch` as its fetch unless it brings its own. */

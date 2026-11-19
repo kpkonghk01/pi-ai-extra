@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { Type, type Context, type Tool } from "@earendil-works/pi-ai";
+import { type Context, type Tool } from "@earendil-works/pi-ai";
 import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { createFakeFetch, jsonResponse, type FakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import type { ChatKit } from "../src/index.ts";
@@ -328,7 +328,7 @@ describe("streamSimple on Gemini", () => {
 });
 
 const VERTEX_STREAM_URL = /^https:\/\/aiplatform\.googleapis\.com\/v1\/publishers\/google\/models\/gemini-3\.5-flash:streamGenerateContent\b/;
-const LOOKUP: Tool = { name: "lookup", description: "Looks something up.", parameters: Type.Object({ q: Type.String() }) };
+const LOOKUP: Tool = { name: "lookup", description: "Looks something up.", parameters: { type: "object", properties: { q: { type: "string" } }, required: ["q"] } };
 
 /**
  * Agent Platform (`google-vertex`, pi-ai's Vertex adapter) speaks the same `@google/genai` request

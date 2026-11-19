@@ -84,6 +84,8 @@ Amended 2026-10-21 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4
 
 The per-API features, documents, response schema, rates, live-list rules and exclusions stand.
 
+Amended 2026-11-19, for pi-ai 1.5.2: OpenRouter's provider-reported cost is read with pi-ai's `applyOpenRouterReportedCost`: `usage.cost`, plus the upstream provider's cost on a BYOK key. Accounting without `is_byok` is not a reported cost, so that turn is estimated.
+
 ## Considered options
 
 - **Fill the gaps inside each provider package.** Rejected: it duplicates per-API code, and `google` and `openrouter` have no package to hold it.

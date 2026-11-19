@@ -36,6 +36,8 @@ Amended 2026-10-16 ([DATA-4568](https://hk01-digital.atlassian.net/browse/DATA-4
 
 Amended 2026-11-11 ([DATA-4688](https://hk01-digital.atlassian.net/browse/DATA-4688)): KIE `costTime` is seconds. A live check found `recordInfo` reporting 23 and 13 for two Seedream 5.5 tasks that ran 22.9 s and 13.1 s from `createTime` to `completeTime`, and 26 for a Nano Banana 2.1 task that ran 25.6 s, as KIE's callback schema says, not the milliseconds of its Get Task Details reference. From kie 0.8.0, `providerDurationMs` is `costTime` × 1,000; records stored from earlier versions hold seconds. KIE has since corrected the Get Task Details reference to seconds as well.
 
+Amended 2026-11-19, for pi-ai 1.5.2: pi-ai 1.5 lets `usage.cost.total` carry a provider-reported charge, marked `totalFromProvider: true`, and does so itself for OpenRouter. The chat kit does the same for KIE's `credits_consumed` (ADR 0009). The per-count costs are still pi-ai's calculation from the published rates, as the chat-model point above says. Image usage is unchanged: pi-ai's own image adapter estimates too.
+
 ## Consequences
 
 Recorded spend matches what each provider settles, including refunds. Consumers must handle provider-specific units (KIE credits as numbers, ToAPIs credits/USD as decimal strings) and re-query pending ToAPIs billing later.

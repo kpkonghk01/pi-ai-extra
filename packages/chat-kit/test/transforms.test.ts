@@ -158,6 +158,38 @@ describe("sanitizeSchemaForGemini", () => {
     assert.equal(sanitizeSchemaForGemini(schema), sanitizeSchemaForGemini(schema), "cached by identity");
     assert.equal(schema.properties.minItems.maxItems, 5, "the input is not mutated");
   });
+
+  // Live on 2026-11-19 (gemini-3.8-flash, Agent Platform and AI Studio): a response schema's
+  // `const` was ignored 4 of 4 times, a one-value `enum` honoured 4 of 4. pi-ai 1.5 rewrites
+  // `const` the same way in tool schemas (`rewriteConstAsEnum`).
+  it("sends a string or number const as a one-value enum, in subschemas only, never in literal data", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        kind: { type: "string", const: "answer" },
+        version: { type: "integer", const: 2 },
+        flag: { type: "boolean", const: true },
+        picked: { type: "string", const: "a", enum: ["a", "b"] },
+        const: { type: "string" },
+        list: { type: "array", items: { anyOf: [{ const: "x" }, { const: 1 }] } },
+        note: { type: "object", default: { const: "kept" } },
+      },
+      required: ["kind"],
+    };
+    assert.deepEqual(sanitizeSchemaForGemini(schema), {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["answer"] },
+        version: { type: "integer", enum: [2] },
+        flag: { type: "boolean", const: true },
+        picked: { type: "string", const: "a", enum: ["a", "b"] },
+        const: { type: "string" },
+        list: { type: "array", items: { anyOf: [{ enum: ["x"] }, { enum: [1] }] } },
+        note: { type: "object", default: { const: "kept" } },
+      },
+      required: ["kind"],
+    });
+  });
 });
 
 describe("OpenAI Completions payload transform", () => {
@@ -178,12 +210,12 @@ describe("OpenAI Completions payload transform", () => {
     stream: true,
   });
 
-  it("replaces the marker with file, image_url and text parts and pins the native file parser", () => {
+  it("replaces the marker with file, image_url and text parts and pins the native file parser on OpenRouter", () => {
     const input = payload();
     const snapshot = structuredClone(input);
     const next = transformOpenAICompletionsPayload(
       input,
-      plan({ documents: [TEXT_DOC, PDF_BY_URL, PDF_INLINE, PNG_BY_URL, PNG_INLINE] }),
+      plan({ documents: [TEXT_DOC, PDF_BY_URL, PDF_INLINE, PNG_BY_URL, PNG_INLINE], targetsOpenRouter: true }),
     ) as Record<string, unknown> & {
       messages: { content: unknown }[];
     };
@@ -200,12 +232,14 @@ describe("OpenAI Completions payload transform", () => {
     assert.deepEqual(input, snapshot);
   });
 
-  it("always pins the native file parser, replacing a caller's file-parser setting", () => {
+  it("pins OpenRouter's native file parser on OpenRouter only, replacing a caller's file-parser setting", () => {
     const next = transformOpenAICompletionsPayload(
       { ...payload(), plugins: [{ id: "web" }, { id: "file-parser", pdf: { engine: "mistral-ocr" } }] },
-      plan({ marker: undefined, documents: [] }),
+      plan({ marker: undefined, documents: [], targetsOpenRouter: true }),
     ) as Record<string, unknown>;
     assert.deepEqual(next.plugins, [{ id: "web" }, { id: "file-parser", pdf: { engine: "native" } }]);
+    const kie = transformOpenAICompletionsPayload(payload(), plan({ documents: [PDF_BY_URL], targetsOpenRouter: false })) as Record<string, unknown>;
+    assert.ok(!("plugins" in kie), "KIE's Gemini models on Chat Completions never get OpenRouter's plugins");
   });
 
   it("adds a strict response_format, leaving the routing preferences to the model's compat", () => {
@@ -423,23 +457,26 @@ describe("targetsOpenRouter", () => {
 });
 
 describe("always-thinking Claude families", () => {
-  it("matches Opus 5, Fable 5 and the 5.5 family with or without a provider prefix, dotted or dashed", () => {
+  it("matches Fable 5, Opus 5.5 and Sonnet 5.5 with or without a provider prefix, dotted or dashed", () => {
     for (const id of [
-      "claude-opus-5",
-      "anthropic/claude-opus-5",
       "claude-fable-5",
       "anthropic/claude-fable-5.1",
-      "claude-opus-5-20261001",
+      "claude-fable-5-2-20261101",
       "anthropic/claude-sonnet-5.5",
-      "claude-haiku-5-5",
+      "claude-sonnet-5-5",
       "anthropic/claude-opus-5.5",
     ]) {
       assert.equal(isAlwaysThinkingClaude(id), true, id);
     }
   });
 
-  it("does not match models whose thinking can be turned off", () => {
+  it("does not match models whose thinking can be turned off, Opus 5 and Haiku 5.5 included (pi-ai 1.3.0)", () => {
     for (const id of [
+      "claude-opus-5",
+      "anthropic/claude-opus-5",
+      "claude-opus-5-20261001",
+      "claude-haiku-5-5",
+      "anthropic/claude-haiku-5.5",
       "claude-sonnet-5",
       "anthropic/claude-sonnet-5",
       "claude-opus-4-5",

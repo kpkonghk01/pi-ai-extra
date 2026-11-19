@@ -47,7 +47,8 @@ describe("toPiAiUsage", () => {
       cacheWrite: 0,
       reasoning: 50,
       totalTokens: 1050,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      // pi-ai's calculateCost marks a catalog-rate cost as an estimate (pi-ai 1.5).
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, totalFromProvider: false },
     });
   });
 

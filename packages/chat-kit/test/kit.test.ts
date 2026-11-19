@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { Type, type Context, type Tool, type TranscriptContext } from "@earendil-works/pi-ai";
+import { type Context, type Tool, type TranscriptContext } from "@earendil-works/pi-ai";
 import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { createOpenRouterProvider } from "@hk01/pi-ai-extra-openrouter/pi-ai";
 import { createFakeFetch, jsonResponse } from "@hk01/pi-ai-extra-internal/testing";
@@ -43,7 +43,7 @@ const TOOL_HISTORY: Context["messages"] = [
   { role: "toolResult", toolCallId: "t1", toolName: "lookup", content: [{ type: "text", text: "found" }], isError: false, timestamp: 3 },
 ];
 
-const LOOKUP: Tool = { name: "lookup", description: "Looks something up.", parameters: Type.Object({ q: Type.String() }) };
+const LOOKUP: Tool = { name: "lookup", description: "Looks something up.", parameters: { type: "object", properties: { q: { type: "string" } }, required: ["q"] } };
 
 /** A kit whose fetch fails the test if anything is sent. */
 function offlineKit() {
@@ -240,7 +240,7 @@ describe("a turn that fails before anything is sent", () => {
       "openai/gpt-4o-mini": (body) => {
         assert.deepEqual((body.response_format as { json_schema: { schema: unknown } }).json_schema.schema, schema, "the schema is in the request");
         assert.deepEqual((body.messages as { role: string }[]).map((entry) => entry.role), ["user", "assistant", "tool"], "so are the tool call and its result");
-        assert.deepEqual(body.tools, [], "pi-ai's Completions adapter adds an empty tools array, as the ADR says");
+        assert.equal(body.tools, undefined, "pi-ai's Completions adapter sends no tools field since pi-ai 1.5.1, as the ADR says");
       },
       "anthropic/claude-sonnet-4.6": (body) => {
         assert.deepEqual((body.tools as { name: string; input_schema: unknown }[]).map((tool) => [tool.name, tool.input_schema]), [["answer", schema]], "the schema is the forced tool call");

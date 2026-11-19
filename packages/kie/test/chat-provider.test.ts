@@ -74,6 +74,37 @@ describe("KIE chat provider", () => {
     assert.equal(fake.calls.length, 1);
   });
 
+  it("sends a Codex model's reasoning effort as reasoning.effort, with no configuration_update items", async () => {
+    const fake = createFakeFetch([
+      { method: "POST", url: /^https:\/\/api\.kie\.ai\/openai\/v1\/responses\b/, respond: () => jsonResponse({ code: 402, msg: "Insufficient credits" }) },
+    ]);
+    const kie = createKieProvider({ apiKey: "k", fetch: fake.fetch });
+    const models = collection();
+    models.setProvider(kie);
+    const model = kie.getModels().find((candidate) => candidate.id === "gpt-6-sol")!;
+    await models.completeSimple(model, { messages: [{ role: "user", content: "hi", timestamp: 1 }] }, { reasoning: "low", maxRetries: 0 });
+    const body = JSON.parse(String(fake.calls[0]?.body)) as { reasoning?: { effort?: string }; input: { type?: string }[] };
+    assert.equal(body.reasoning?.effort, "low");
+    assert.deepEqual(body.input.filter((item) => item.type === "configuration_update"), []);
+  });
+
+  it("sends a Claude 5.x reasoning level as plain adaptive effort, without pi-ai's per-message effort markers", async () => {
+    // Live on 2026-11-19, KIE claude-haiku-5-5 with reasoning low: pi-ai's per-message effort
+    // (block_binding and a mid-conversation system message) got HTTP 500 2 of 2 times; the same
+    // request with plain adaptive thinking and output_config.effort answered 2 of 2 times.
+    const fake = createFakeFetch([{ method: "POST", url: /^https:\/\/api\.kie\.ai\/anthropic\/v1\/messages\b/, respond: () => jsonResponse({ code: 402, msg: "Insufficient credits" }) }]);
+    const kie = createKieProvider({ apiKey: "k", fetch: fake.fetch });
+    const models = collection();
+    models.setProvider(kie);
+    const model = kie.getModels().find((candidate) => candidate.id === "claude-haiku-5-5")!;
+    await models.completeSimple(model, { messages: [{ role: "user", content: "hi", timestamp: 1 }] }, { reasoning: "low", maxRetries: 0 });
+    const body = JSON.parse(String(fake.calls[0]?.body)) as { thinking?: Record<string, unknown>; output_config?: { effort?: string }; messages: { role: string }[] };
+    assert.equal(body.thinking?.type, "adaptive");
+    assert.equal(body.thinking?.block_binding, undefined);
+    assert.equal(body.output_config?.effort, "low");
+    assert.deepEqual(body.messages.map((message) => message.role), ["user"]);
+  });
+
   it("offers KIE's Gemini models on OpenAI Chat Completions, each at its own base URL, reading images", () => {
     const models = createKieProvider({ apiKey: "k" }).getModels().filter((model) => model.api === "openai-completions");
     assert.deepEqual(models.map((model) => model.id), GEMINI_IDS);

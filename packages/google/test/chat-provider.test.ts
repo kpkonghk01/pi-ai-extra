@@ -70,8 +70,8 @@ describe("Google chat provider: chatKit traits", () => {
     assert.equal(chatKit.reportedCostUsd({ usageMetadata: { totalTokenCount: 5 } }), undefined);
   });
 
-  it("offers plain text chat models only: no image-output, Live, embedding or -latest ids", () => {
-    for (const id of ["gemini-3.1-flash-image", "gemini-3-pro-image", "gemini-nano-banana-2.1", "gemini-3.1-flash-live-preview", "gemini-3.1-flash-lite-image", "nano-banana-pro-preview", "gemini-flash-latest", "text-embedding-9"]) {
+  it("offers plain text chat models only: no image-output, Live, embedding, robotics or -latest ids", () => {
+    for (const id of ["gemini-3.1-flash-image", "gemini-3-pro-image", "gemini-nano-banana-2.1", "gemini-3.1-flash-live-preview", "gemini-3.1-flash-lite-image", "nano-banana-pro-preview", "gemini-flash-latest", "text-embedding-9", "gemini-robotics-er-2-preview"]) {
       assert.equal(isOfferedGeminiId(id), false, id);
     }
     assert.equal(isOfferedGeminiId("gemini-3.5-flash"), true);

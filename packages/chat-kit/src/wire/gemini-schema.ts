@@ -33,16 +33,66 @@ function stripUnsupported(schema: unknown): unknown {
   return out;
 }
 
+/** Keywords whose value is a map of names to subschemas (pi-ai 1.5's `JSON_SCHEMA_NAME_MAPS`). */
+const SUBSCHEMA_NAME_MAPS = new Set([...SCHEMA_NAME_MAPS, "dependentSchemas", "dependencies"]);
+
+/** Keywords whose value is a subschema or an array of them, not literal data (pi-ai 1.5's `JSON_SCHEMA_SUBSCHEMAS`). */
+const SUBSCHEMA_KEYS = new Set([
+  "additionalProperties",
+  "unevaluatedProperties",
+  "propertyNames",
+  "items",
+  "prefixItems",
+  "additionalItems",
+  "unevaluatedItems",
+  "contains",
+  "allOf",
+  "anyOf",
+  "oneOf",
+  "not",
+  "if",
+  "then",
+  "else",
+  "contentSchema",
+]);
+
+/**
+ * A string or number `const` as a one-value `enum`, walking subschemas only, so literal data such
+ * as a `default` is left alone. Gemini ignores `const` in `responseJsonSchema` but honours `enum`:
+ * live on 2026-11-19, gemini-3.8-flash on Agent Platform and AI Studio kept a value the schema's
+ * `const` forbade 4 of 4 times and a one-value `enum` 4 of 4 times. pi-ai 1.5 rewrites tool
+ * schemas the same way (`rewriteConstAsEnum` in its Google adapter, not exported).
+ */
+function rewriteConstAsEnum(schema: unknown, isNameMap = false): unknown {
+  if (Array.isArray(schema)) return schema.map((item) => rewriteConstAsEnum(item));
+  if (!schema || typeof schema !== "object") return schema;
+  const result: Record<string, unknown> = Object.fromEntries(
+    Object.entries(schema as Record<string, unknown>).map(([key, value]) => {
+      if (isNameMap || SUBSCHEMA_KEYS.has(key)) return [key, rewriteConstAsEnum(value)];
+      if (SUBSCHEMA_NAME_MAPS.has(key)) return [key, rewriteConstAsEnum(value, true)];
+      return [key, value];
+    }),
+  );
+  if (!isNameMap && "const" in result && result.enum === undefined && (typeof result.const === "string" || typeof result.const === "number")) {
+    const { const: value, ...rest } = result;
+    return { ...rest, enum: [value] };
+  }
+  return result;
+}
+
 // The sanitized form of a schema object never changes, and consumers usually pass the same
 // schema object on every turn, so cache by identity rather than re-walking the tree each time.
 const sanitizedCache = new WeakMap<object, unknown>();
 
-/** A copy of `schema` that Gemini's `responseJsonSchema` accepts (no `minItems` / `maxItems`). */
+/**
+ * A copy of `schema` that Gemini's `responseJsonSchema` accepts and honours: no `minItems` /
+ * `maxItems`, and a string or number `const` as a one-value `enum`.
+ */
 export function sanitizeSchemaForGemini(schema: unknown): unknown {
   if (!schema || typeof schema !== "object") return stripUnsupported(schema);
   const cached = sanitizedCache.get(schema);
   if (cached !== undefined) return cached;
-  const result = stripUnsupported(schema);
+  const result = rewriteConstAsEnum(stripUnsupported(schema));
   sanitizedCache.set(schema, result);
   return result;
 }
