@@ -74,6 +74,20 @@ describe("KIE chat provider", () => {
     assert.equal(fake.calls.length, 1);
   });
 
+  it("sends a Codex model's reasoning effort as reasoning.effort, with no configuration_update items", async () => {
+    const fake = createFakeFetch([
+      { method: "POST", url: /^https:\/\/api\.kie\.ai\/openai\/v1\/responses\b/, respond: () => jsonResponse({ code: 402, msg: "Insufficient credits" }) },
+    ]);
+    const kie = createKieProvider({ apiKey: "k", fetch: fake.fetch });
+    const models = collection();
+    models.setProvider(kie);
+    const model = kie.getModels().find((candidate) => candidate.id === "gpt-6-sol")!;
+    await models.completeSimple(model, { messages: [{ role: "user", content: "hi", timestamp: 1 }] }, { reasoning: "low", maxRetries: 0 });
+    const body = JSON.parse(String(fake.calls[0]?.body)) as { reasoning?: { effort?: string }; input: { type?: string }[] };
+    assert.equal(body.reasoning?.effort, "low");
+    assert.deepEqual(body.input.filter((item) => item.type === "configuration_update"), []);
+  });
+
   it("offers KIE's Gemini models on OpenAI Chat Completions, each at its own base URL, reading images", () => {
     const models = createKieProvider({ apiKey: "k" }).getModels().filter((model) => model.api === "openai-completions");
     assert.deepEqual(models.map((model) => model.id), GEMINI_IDS);
