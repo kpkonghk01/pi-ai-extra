@@ -316,6 +316,14 @@ describe("streamSimple on Anthropic Messages", () => {
     const request = { responseSchema: { name: "answer", schema: SCHEMA }, reasoning: undefined };
     assert.match(anthropicSchemaUnsupported(alwaysThinking, { ...request, nativeStructuredOutput: false }) ?? "", /always thinks/);
     assert.equal(anthropicSchemaUnsupported(alwaysThinking, { ...request, nativeStructuredOutput: true }), undefined);
+    // A catalogue entry decides when there is one: thinking that cannot be turned off always thinks,
+    // and Opus 5 and Haiku 5.5, whose thinking turns off since pi-ai 1.3.0, take the forced tool call.
+    const unmarkedAlwaysThinking = { id: "claude-custom", api: "anthropic-messages", thinkingLevelMap: { off: null } } as unknown as Model<Api>;
+    assert.match(anthropicSchemaUnsupported(unmarkedAlwaysThinking, { ...request, nativeStructuredOutput: false }) ?? "", /always thinks/);
+    for (const id of ["claude-opus-5", "claude-haiku-5-5"]) {
+      const offable = { id, api: "anthropic-messages", thinkingLevelMap: {}, compat: { supportsMidConvoEffort: true } } as unknown as Model<Api>;
+      assert.equal(anthropicSchemaUnsupported(offable, { ...request, nativeStructuredOutput: false }), undefined, id);
+    }
   });
 
   it("sends native structured output on KIE for the always-thinking claude-opus-5-5 and for a turn with reasoning", async () => {
@@ -338,7 +346,18 @@ describe("streamSimple on Anthropic Messages", () => {
     assert.equal(withReasoning.tool_choice, undefined);
   });
 
-  it("sends native structured output for OpenRouter's always-thinking anthropic/claude-opus-5 and streams the JSON text", async () => {
+  it("sends a forced tool call with thinking off for OpenRouter's anthropic/claude-opus-5, whose thinking turns off since pi-ai 1.3.0", async () => {
+    const respond = () =>
+      sseResponse(anthropicEvents({ blocks: [{ type: "tool_use", name: "answer", json: ['{"title":"Hi"}'] }], stopReason: "tool_use" }));
+    const { chat, fake } = kit([{ method: "POST", url: OPENROUTER_MESSAGES_URL, respond }]);
+    await runToEnd(chat, turn({ model: "anthropic/claude-opus-5", responseSchema: { name: "answer", schema: SCHEMA } }));
+    const body = jsonBody(fake.calls[0]?.body);
+    assert.deepEqual(body.thinking, { type: "disabled" });
+    assert.deepEqual(body.tool_choice, { type: "tool", name: "answer" });
+    assert.ok(!isNativeFormat(body.output_config));
+  });
+
+  it("sends native structured output for OpenRouter's always-thinking anthropic/claude-opus-5.5 and streams the JSON text", async () => {
     const { chat, fake } = kit([
       {
         method: "POST",
@@ -346,7 +365,7 @@ describe("streamSimple on Anthropic Messages", () => {
         respond: () => sseResponse(anthropicEvents({ blocks: [{ type: "text", text: '{"title":"Hi"}' }], stopReason: "end_turn" })),
       },
     ]);
-    const { events, message } = await runToEnd(chat, turn({ model: "anthropic/claude-opus-5", responseSchema: { name: "answer", schema: SCHEMA } }));
+    const { events, message } = await runToEnd(chat, turn({ model: "anthropic/claude-opus-5.5", responseSchema: { name: "answer", schema: SCHEMA } }));
     assert.equal(textOf(events), '{"title":"Hi"}');
     assert.equal(outcomeOf(message).type, "done");
     const body = jsonBody(fake.calls[0]?.body);

@@ -112,30 +112,28 @@ export function transformAnthropicPayload(payload: unknown, plan: PayloadPlan): 
 }
 
 /**
- * Claude families that always think: Opus 5, Fable 5 and every 5.5 model. A point release or dated
- * snapshot (`claude-fable-5.1`, `claude-opus-5-20261001`) belongs to its family.
+ * Claude families that always think, as pi-ai's catalogue marks them (thinking `off: null`): Fable 5,
+ * Opus 5.5 and Sonnet 5.5. Opus 5 and Haiku 5.5 turn thinking off since pi-ai 1.3.0. A point release
+ * or dated snapshot (`claude-fable-5.1`, `claude-fable-5-2-20261101`) belongs to its family.
  */
-const ALWAYS_THINKING_CLAUDE = /^claude-(?:(?:opus|fable)-5|[a-z]+-5-5)(?![0-9])/;
+const ALWAYS_THINKING_CLAUDE = /^claude-(?:fable-5|opus-5-5|sonnet-5-5)(?![0-9])/;
 
 /**
- * Whether a model id names an always-thinking Claude family, whatever its catalogue entry says
- * (OpenRouter's `anthropic/claude-opus-5` lists thinking as `off: "none"`). The id is matched
- * without a provider prefix such as `anthropic/`, and with `.` read as `-`, so KIE's
- * `claude-opus-5`, OpenRouter's `anthropic/claude-opus-5` and `anthropic/claude-sonnet-5.5` match.
+ * Whether a model id names an always-thinking Claude family. The id is matched without a provider
+ * prefix such as `anthropic/`, and with `.` read as `-`, so KIE's `claude-opus-5-5` and
+ * OpenRouter's `anthropic/claude-sonnet-5.5` match.
  */
 export function isAlwaysThinkingClaude(modelId: string): boolean {
   return ALWAYS_THINKING_CLAUDE.test(modelIdKey(modelId.slice(modelId.lastIndexOf("/") + 1)));
 }
 
 /**
- * Whether the model always thinks: by catalogue metadata, pi-ai's managed-effort models
- * (`supportsMidConvoEffort`) and models whose thinking cannot be turned off
- * (`thinkingLevelMap.off === null`); by model id, the always-thinking Claude families, which a
- * provider's catalogue may not mark.
+ * Whether the model always thinks, as pi-ai decides it: its thinking cannot be turned off
+ * (`thinkingLevelMap.off === null`), so pi-ai never sends `thinking: { type: "disabled" }`. A
+ * model with no thinking levels, which pi-ai's catalogue does not know, is judged by its id.
  */
 function alwaysThinks(model: Model<Api>): boolean {
-  const compat = (model as { compat?: { supportsMidConvoEffort?: boolean } }).compat;
-  return compat?.supportsMidConvoEffort === true || model.thinkingLevelMap?.off === null || isAlwaysThinkingClaude(model.id);
+  return model.thinkingLevelMap ? model.thinkingLevelMap.off === null : isAlwaysThinkingClaude(model.id);
 }
 
 /**

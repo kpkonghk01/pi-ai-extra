@@ -423,23 +423,26 @@ describe("targetsOpenRouter", () => {
 });
 
 describe("always-thinking Claude families", () => {
-  it("matches Opus 5, Fable 5 and the 5.5 family with or without a provider prefix, dotted or dashed", () => {
+  it("matches Fable 5, Opus 5.5 and Sonnet 5.5 with or without a provider prefix, dotted or dashed", () => {
     for (const id of [
-      "claude-opus-5",
-      "anthropic/claude-opus-5",
       "claude-fable-5",
       "anthropic/claude-fable-5.1",
-      "claude-opus-5-20261001",
+      "claude-fable-5-2-20261101",
       "anthropic/claude-sonnet-5.5",
-      "claude-haiku-5-5",
+      "claude-sonnet-5-5",
       "anthropic/claude-opus-5.5",
     ]) {
       assert.equal(isAlwaysThinkingClaude(id), true, id);
     }
   });
 
-  it("does not match models whose thinking can be turned off", () => {
+  it("does not match models whose thinking can be turned off, Opus 5 and Haiku 5.5 included (pi-ai 1.3.0)", () => {
     for (const id of [
+      "claude-opus-5",
+      "anthropic/claude-opus-5",
+      "claude-opus-5-20261001",
+      "claude-haiku-5-5",
+      "anthropic/claude-haiku-5.5",
       "claude-sonnet-5",
       "anthropic/claude-sonnet-5",
       "claude-opus-4-5",
