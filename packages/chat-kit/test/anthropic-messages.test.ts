@@ -357,6 +357,31 @@ describe("streamSimple on Anthropic Messages", () => {
     assert.ok(!isNativeFormat(body.output_config));
   });
 
+  it("keeps pi-ai's OpenRouter billed total on Messages, standard and BYOK, and reports the same cost in chatKit.usage", async () => {
+    // OpenRouter sends its accounting on message_delta only: pi-ai 1.5.2 captured these fields from
+    // a production stream and applies them there ("uses the total reported by OpenRouter's
+    // Anthropic Messages endpoint").
+    const delta = (accounting: Record<string, unknown>) => () =>
+      sseResponse(anthropicEvents({ blocks: [{ type: "text", text: "Hi" }], stopReason: "end_turn", deltaUsage: { output_tokens: 9, ...accounting } }));
+    const { chat } = kit([
+      {
+        method: "POST",
+        url: OPENROUTER_MESSAGES_URL,
+        respond: [
+          delta({ cost: 0.004, is_byok: false, cost_details: { upstream_inference_cost: 0.003 } }),
+          delta({ cost: 0.001, is_byok: true, cost_details: { upstream_inference_cost: 0.02, upstream_inference_prompt_cost: 0.015, upstream_inference_completions_cost: 0.005 } }),
+        ],
+      },
+    ]);
+    for (const expected of [0.004, 0.021]) {
+      const { message } = await runToEnd(chat, turn({ model: "anthropic/claude-sonnet-4.6" }));
+      assert.equal(message.usage.cost.total, expected);
+      assert.equal(message.usage.cost.totalFromProvider, true);
+      assert.equal(message.chatKit.usage?.costUsd, expected);
+      assert.equal(message.chatKit.usage?.costSource, "provider");
+    }
+  });
+
   it("sends native structured output for OpenRouter's always-thinking anthropic/claude-opus-5.5 and streams the JSON text", async () => {
     const { chat, fake } = kit([
       {

@@ -121,10 +121,11 @@ function failure(
 /**
  * pi-ai's usage with the provider-reported charge as its total, marked `totalFromProvider`, as
  * pi-ai's own adapters do for OpenRouter (1.5): `cost.total` is the best total available. The
- * per-count costs stay pi-ai's estimate. Applies to KIE's credits; OpenRouter's total is pi-ai's
- * already.
+ * per-count costs stay pi-ai's estimate. A total pi-ai already reports (OpenRouter's) is left as
+ * pi-ai set it, so the kit fills in only what pi-ai cannot read: KIE's credits.
  */
 function withReportedTotal(message: AssistantMessage, usage: ChatUsage | undefined): AssistantMessage {
+  if (message.usage.cost.totalFromProvider === true) return message;
   if (usage?.costSource !== "provider" || usage.costUsd === undefined) return message;
   return { ...message, usage: { ...message.usage, cost: { ...message.usage.cost, total: usage.costUsd, totalFromProvider: true } } };
 }
