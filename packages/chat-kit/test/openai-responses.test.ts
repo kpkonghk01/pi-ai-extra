@@ -127,6 +127,27 @@ describe("streamSimple on OpenAI Responses (KIE Codex)", () => {
     });
   });
 
+  it("puts KIE's credit charge in message.usage.cost.total as the provider-reported total, as pi-ai does for OpenRouter", async () => {
+    const completed = (credits: Record<string, unknown>) => ({
+      type: "response.completed",
+      response: { id: "resp_1", status: "completed", output: [], usage: { input_tokens: 30, output_tokens: 4, total_tokens: 34 }, ...credits },
+    });
+    const { chat } = kit([
+      {
+        method: "POST",
+        url: KIE_RESPONSES_URL,
+        respond: [() => responsesStream(["ok"], completed({ credits_consumed: 0.48 })), () => responsesStream(["ok"], completed({}))],
+      },
+    ]);
+    const charged = (await runToEnd(chat, turn({ provider: "kie", model: "gpt-5-6-sol" }))).message;
+    assert.equal(charged.usage.cost.total, 0.0024);
+    assert.equal(charged.usage.cost.totalFromProvider, true);
+    // Without credits KIE has no cost, and pi-ai's own estimate stays as it was.
+    const uncharged = (await runToEnd(chat, turn({ provider: "kie", model: "gpt-5-6-sol" }))).message;
+    assert.equal(uncharged.chatKit.usage?.costSource, undefined);
+    assert.notEqual(uncharged.usage.cost.totalFromProvider, true);
+  });
+
   it("prices a KIE Codex turn from credits_consumed wherever the terminal event carries it, never from its zero prompt count", async () => {
     // A live gpt-6-sol turn on 2026-10-16 reported input_tokens 0 and credits only in the raw stream events.
     const usage = { input_tokens: 0, output_tokens: 5, total_tokens: 5 };
