@@ -158,6 +158,38 @@ describe("sanitizeSchemaForGemini", () => {
     assert.equal(sanitizeSchemaForGemini(schema), sanitizeSchemaForGemini(schema), "cached by identity");
     assert.equal(schema.properties.minItems.maxItems, 5, "the input is not mutated");
   });
+
+  // Live on 2026-11-19 (gemini-3.8-flash, Agent Platform and AI Studio): a response schema's
+  // `const` was ignored 4 of 4 times, a one-value `enum` honoured 4 of 4. pi-ai 1.5 rewrites
+  // `const` the same way in tool schemas (`rewriteConstAsEnum`).
+  it("sends a string or number const as a one-value enum, in subschemas only, never in literal data", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        kind: { type: "string", const: "answer" },
+        version: { type: "integer", const: 2 },
+        flag: { type: "boolean", const: true },
+        picked: { type: "string", const: "a", enum: ["a", "b"] },
+        const: { type: "string" },
+        list: { type: "array", items: { anyOf: [{ const: "x" }, { const: 1 }] } },
+        note: { type: "object", default: { const: "kept" } },
+      },
+      required: ["kind"],
+    };
+    assert.deepEqual(sanitizeSchemaForGemini(schema), {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["answer"] },
+        version: { type: "integer", enum: [2] },
+        flag: { type: "boolean", const: true },
+        picked: { type: "string", const: "a", enum: ["a", "b"] },
+        const: { type: "string" },
+        list: { type: "array", items: { anyOf: [{ enum: ["x"] }, { enum: [1] }] } },
+        note: { type: "object", default: { const: "kept" } },
+      },
+      required: ["kind"],
+    });
+  });
 });
 
 describe("OpenAI Completions payload transform", () => {

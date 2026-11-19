@@ -524,7 +524,7 @@ The request is ordered: system prompt, documents, the rest of the conversation. 
 
 | API | Sent as |
 | --- | --- |
-| Gemini | `responseMimeType: "application/json"` and `responseJsonSchema`, without `minItems` / `maxItems` (which Gemini rejects) |
+| Gemini | `responseMimeType: "application/json"` and `responseJsonSchema`, without `minItems` / `maxItems` (which Gemini rejects), and with a string or number `const` as a one-value `enum` (Gemini ignores `const`) |
 | OpenAI Completions | strict `response_format` (`json_schema`), with the turn's model carrying `compat.openRouterRouting.require_parameters` so OpenRouter routes only to endpoints that honour it. KIE's Gemini models take the schema's shape but do not enforce it: in a live check on 2026-11-03, Gemini 3.8 Flash and 4 Argon answered JSON with the schema's keys and a value outside its `enum`, so validate the answer |
 | OpenAI Responses | strict `text.format` (`json_schema`) |
 | Anthropic Messages | a forced call of one tool whose `input_schema` is the schema; its argument deltas stream as `text_*` events. When the turn thinks, on OpenRouter and KIE: native structured output, `output_config.format` (`json_schema`), streamed as `text_*` events |
