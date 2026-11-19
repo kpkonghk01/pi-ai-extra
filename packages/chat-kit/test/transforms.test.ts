@@ -178,12 +178,12 @@ describe("OpenAI Completions payload transform", () => {
     stream: true,
   });
 
-  it("replaces the marker with file, image_url and text parts and pins the native file parser", () => {
+  it("replaces the marker with file, image_url and text parts and pins the native file parser on OpenRouter", () => {
     const input = payload();
     const snapshot = structuredClone(input);
     const next = transformOpenAICompletionsPayload(
       input,
-      plan({ documents: [TEXT_DOC, PDF_BY_URL, PDF_INLINE, PNG_BY_URL, PNG_INLINE] }),
+      plan({ documents: [TEXT_DOC, PDF_BY_URL, PDF_INLINE, PNG_BY_URL, PNG_INLINE], targetsOpenRouter: true }),
     ) as Record<string, unknown> & {
       messages: { content: unknown }[];
     };
@@ -200,12 +200,14 @@ describe("OpenAI Completions payload transform", () => {
     assert.deepEqual(input, snapshot);
   });
 
-  it("always pins the native file parser, replacing a caller's file-parser setting", () => {
+  it("pins OpenRouter's native file parser on OpenRouter only, replacing a caller's file-parser setting", () => {
     const next = transformOpenAICompletionsPayload(
       { ...payload(), plugins: [{ id: "web" }, { id: "file-parser", pdf: { engine: "mistral-ocr" } }] },
-      plan({ marker: undefined, documents: [] }),
+      plan({ marker: undefined, documents: [], targetsOpenRouter: true }),
     ) as Record<string, unknown>;
     assert.deepEqual(next.plugins, [{ id: "web" }, { id: "file-parser", pdf: { engine: "native" } }]);
+    const kie = transformOpenAICompletionsPayload(payload(), plan({ documents: [PDF_BY_URL], targetsOpenRouter: false })) as Record<string, unknown>;
+    assert.ok(!("plugins" in kie), "KIE's Gemini models on Chat Completions never get OpenRouter's plugins");
   });
 
   it("adds a strict response_format, leaving the routing preferences to the model's compat", () => {

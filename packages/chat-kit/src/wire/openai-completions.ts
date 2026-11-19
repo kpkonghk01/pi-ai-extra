@@ -19,15 +19,16 @@ const COMPLETIONS_PARTS: DocumentEncoder<CompletionsPart, string> = {
 };
 
 /**
- * OpenAI Chat Completions (OpenRouter, the only provider of the kit on this API): documents replace
- * the marker part (`file` for PDFs, `image_url` for images), the file-parser plugin is always
- * pinned to `native`, and the response schema becomes a strict `response_format`. With a schema,
- * OpenRouter is asked to route only to endpoints that honour it: the turn's model carries
- * `compat.openRouterRouting.require_parameters` (`prepareTurn`), which pi-ai sends as `provider`.
+ * OpenAI Chat Completions (OpenRouter, and KIE's Gemini models): documents replace the marker part
+ * (`file` for PDFs, `image_url` for images), and the response schema becomes a strict
+ * `response_format`. On OpenRouter only, the file-parser plugin is pinned to `native`; KIE gets no
+ * `plugins`. With a schema, OpenRouter is asked to route only to endpoints that honour it: the
+ * turn's model carries `compat.openRouterRouting.require_parameters` (`prepareTurn`), which pi-ai
+ * sends as `provider`.
  */
 export function transformOpenAICompletionsPayload(payload: unknown, plan: PayloadPlan): unknown {
   if (!isRecord(payload)) return payload;
-  const next: Record<string, unknown> = { ...payload, plugins: withFileParser(payload.plugins) };
+  const next: Record<string, unknown> = { ...payload, ...(plan.targetsOpenRouter ? { plugins: withFileParser(payload.plugins) } : {}) };
   if (plan.marker !== undefined) {
     const replacement = plan.documents.map((document) => encodeDocument(document, COMPLETIONS_PARTS));
     next.messages = replaceDocumentMarker(payload.messages, plan.marker, replacement, { partsKey: "content", textOf: textOfType("text") });
