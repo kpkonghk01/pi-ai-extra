@@ -39,3 +39,5 @@ Amended 2026-11-11 ([DATA-4688](https://hk01-digital.atlassian.net/browse/DATA-4
 ## Consequences
 
 Recorded spend matches what each provider settles, including refunds. Consumers must handle provider-specific units (KIE credits as numbers, ToAPIs credits/USD as decimal strings) and re-query pending ToAPIs billing later.
+
+Amended 2026-11-19 (pi-ai 1.5.2): pi-ai 1.5 lets `usage.cost.total` carry a provider-reported charge, marked `totalFromProvider: true`, and does so itself for OpenRouter. The chat kit does the same for KIE's `credits_consumed` (ADR 0009). The per-count costs are still pi-ai's calculation from the published rates, as the chat-model point above says. Image usage is unchanged: pi-ai's own image adapter estimates too.

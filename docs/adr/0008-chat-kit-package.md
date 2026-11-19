@@ -96,3 +96,5 @@ The per-API features, documents, response schema, rates, live-list rules and exc
 - The kit depends on the provider SDK request shapes that pi-ai hands to `onPayload`. pi-ai is pinned exactly, and each API has contract tests.
 - Chat model rates are now package data. An image cost estimate stays app-owned. A price change needs a release; changes announced ahead of time are published in advance with their effective date.
 - Document support for each reseller model starts disabled. It is enabled after a live smoke test, because KIE and ToAPIs do not document it.
+
+Amended 2026-11-19 (pi-ai 1.5.2): OpenRouter's provider-reported cost is read with pi-ai's `applyOpenRouterReportedCost`: `usage.cost`, plus the upstream provider's cost on a BYOK key. Accounting without `is_byok` is not a reported cost, so that turn is estimated.
