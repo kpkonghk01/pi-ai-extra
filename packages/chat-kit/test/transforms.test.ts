@@ -251,6 +251,29 @@ describe("OpenAI Completions payload transform", () => {
     assert.deepEqual(next.provider, { order: ["openai"] });
   });
 
+  it("sends a Gemini model only the schema Gemini's own API takes, on any Completions host, and any other model the schema as given", () => {
+    const schema = {
+      type: "object",
+      properties: { tags: { type: "array", items: { type: "string" }, minItems: 5, maxItems: 5 }, kind: { type: "string", const: "scan" } },
+      required: ["tags", "kind"],
+    };
+    const sent = (model: string) =>
+      (
+        transformOpenAICompletionsPayload({ ...payload(), model }, plan({ marker: undefined, documents: [], responseSchema: { name: "scan", schema } })) as {
+          response_format: { json_schema: { schema: unknown } };
+        }
+      ).response_format.json_schema.schema;
+    const forGemini = {
+      type: "object",
+      properties: { tags: { type: "array", items: { type: "string" } }, kind: { type: "string", enum: ["scan"] } },
+      required: ["tags", "kind"],
+    };
+    assert.deepEqual(sent("gemini-4-argon-official"), forGemini);
+    assert.deepEqual(sent("gemini-3-8-flash"), forGemini);
+    assert.deepEqual(sent("google/gemini-3.8-flash"), forGemini);
+    assert.deepEqual(sent("gpt-6-sol"), schema);
+  });
+
   it("fails when the marker is missing or merged into a plain-text message", () => {
     expectMarkerFailure(
       () => transformOpenAICompletionsPayload({ messages: [{ role: "user", content: [{ type: "text", text: "Q" }] }] }, plan()),
