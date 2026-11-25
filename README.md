@@ -34,11 +34,11 @@ Install the exact release asset on the server (build) side and pin the full URL:
 
 ```sh
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.10.0/hk01-pi-ai-extra-kie-0.10.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.8.0/hk01-pi-ai-extra-toapis-0.8.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.9.0/hk01-pi-ai-extra-toapis-0.9.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.9.0/hk01-pi-ai-extra-google-0.9.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.2.0/hk01-pi-ai-extra-openrouter-0.2.0.tgz   # optional, chat only, needs pi-ai
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/image-kit-v0.2.1/hk01-pi-ai-extra-image-kit-0.2.1.tgz   # optional, needs all three
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.5.0/hk01-pi-ai-extra-chat-kit-0.5.0.tgz     # optional, needs pi-ai and the providers you register
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.5.1/hk01-pi-ai-extra-chat-kit-0.5.1.tgz     # optional, needs pi-ai and the providers you register
 ```
 
 npm works the same way (`npm install <url>`). Upgrade or roll back by changing the URL. `zod@4.6.5` is installed automatically; install `@earendil-works/pi-ai@1.5.2` only if you use the `/pi-ai` subpath.
@@ -228,7 +228,7 @@ const rate: ModelRate = {
 - pi-ai's `Model.cost` is required, so each provider fills it from the period in force when the provider is created, with the derived cache rates and the large-prompt tier as a pi-ai cost tier. pi-ai's `message.usage.cost` is pi-ai's calculation from token counts and that period, except where a provider reports the charge: pi-ai reads OpenRouter's billed total itself since pi-ai 1.5, and the chat kit sets KIE's credits in the same way (`cost.totalFromProvider: true`). A model with no rate carries zeros in `Model.cost`, which are not a rate. The [chat kit](#usage-and-cost) prices each turn from the schedule itself, at call time.
 - An invalid schedule (no period, a later period without `from`, dates out of order, a negative rate) throws a `TypeError` when the provider is created.
 
-`KIE_CHAT_MODELS` and `TOAPIS_CHAT_MODELS` carry each model's `rate` as one period: neither provider publishes dates, except for KIE's Gemini discounts (‡). Rates as of 2026-10-16, KIE Gemini as of 2026-11-25:
+`KIE_CHAT_MODELS` and `TOAPIS_CHAT_MODELS` carry each model's `rate` as one period: neither provider publishes dates, except for KIE's Gemini discounts (‡). Rates as of 2026-10-16, KIE and ToAPIs Gemini as of 2026-11-25:
 
 | Provider | Model | Input | Output | Cache read | Cache write |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -255,9 +255,12 @@ const rate: ModelRate = {
 | ToAPIs | `claude-opus-4-6` | 1.50 | 7.50 | 1.50* | 1.875† |
 | ToAPIs | `claude-sonnet-4-6` | 0.90 | 4.50 | 0.90* | 1.125† |
 | ToAPIs | `claude-haiku-4-5` | 0.30 | 1.50 | 0.30* | 0.375† |
+| ToAPIs | `gemini-3.8-flash-official` | 1.20 | 6.00 | 0.12 | 1.50† |
+| ToAPIs | `gemini-4-argon-official`, `gemini-4-carbon-official` | 1.60 | 8.00 | 0.08 | 2.00† |
+| ToAPIs | `gemini-4-hydrogen-official` | 1.20 | 6.00 | 1.20* | 1.50† |
 
 - **KIE**: [kie.ai/pricing](https://kie.ai/pricing), read from `POST https://api.kie.ai/client/v1/model-pricing/page` with `{"pageNum":1,"pageSize":100,"interfaceType":"chat"}`. KIE prices chat in credits per 1M tokens, and 1 credit is $0.005, exported as `KIE_USD_PER_CREDIT` (for example `claude-sonnet-4-6`: 170 credits in, 855 out).
-- **ToAPIs**: `GET https://toapis.com/api/pricing`. Input is 2 × `model_ratio` and output is 2 × `model_ratio` × `completion_ratio` (every group ratio is 1).
+- **ToAPIs**: `GET https://toapis.com/api/pricing`. Input is 2 × `model_ratio` and output is 2 × `model_ratio` × `completion_ratio` (every group ratio is 1). For the Gemini models, a cache read is `cache_ratio` × input; ToAPIs lists no `cache_ratio` for `gemini-4-hydrogen-official`.
 - \* Cache read and † cache write not published: derived as described above.
 - ‡ A limited-time price. Gemini 3.8 and 3.6 Flash: "50% OFF until Dec 31, 2026 at 06:00 UTC (prices shown are discounted)", so the regular 0.45 / 2.25 is a second period from 2026-12-31. Gemini 4 Argon and Carbon: "valid until Nov 30, 2026", and KIE publishes no later price, so each schedule is one period until it does. Gemini 4 Neon and Hydrogen are "60% below official pricing" with no end date. A turn's cost is KIE's `credits_consumed` either way.
 
@@ -293,9 +296,13 @@ createToapisProvider({
 });
 ```
 
-### Upgrading to KIE 0.10
+### Upgrading to KIE 0.10, ToAPIs 0.9 and chat-kit 0.5.1
 
 KIE 0.10.0 is additive: it adds `gemini-4-neon`, `gemini-4-hydrogen` and `gemini-4-carbon` on KIE's OpenAI Chat Completions route, beside `gemini-4-argon`, with KIE's published rates (see [Chat rates](#chat-rates)). Neon and Hydrogen take `reasoning_effort` `low`, `medium`, `high` and `xhigh`, and Carbon `low`, `medium` and `high`, as KIE documents them; 3.8 and 3.6 Flash and 4 Argon still take `low` and `high`. KIE now publishes Gemini 4's cached-input price, so 4 Argon's estimated cache-read rate drops from its input rate (0.80) to 0.04 per 1M tokens. A turn's cost is still KIE's `credits_consumed`. The chat kit 0.5.0 needs no change: the new models take 4 Argon's route and protocol.
+
+ToAPIs 0.9.0 adds Gemini on ToAPIs' OpenAI Chat Completions route (`<host>/v1/chat/completions`): `gemini-3.8-flash-official`, `gemini-4-argon-official`, `gemini-4-carbon-official` and `gemini-4-hydrogen-official`, with ToAPIs' published rates ([ADR 0011](docs/adr/0011-toapis-gemini-official-chat-completions.md)). Only the `-official` ids are offered: the cheaper ids of the same models ignored the system prompt or a response schema in a 2026-11-25 check. The live list keeps only the ids the key may use. A turn's `reasoning` goes as `reasoning_effort` `low`, `medium` or `high`, and its instructions as a `system` message, because ToAPIs fails a Gemini request that sends them as `developer`. Documents are not taken yet, as for every ToAPIs model, and a turn's cost is estimated from the rate.
+
+Chat kit 0.5.1 is a fix: on OpenAI Chat Completions, a Gemini model's response schema is reduced as on the Gemini API (no `minItems` / `maxItems`, a `const` as a one-value `enum`). ToAPIs failed a Gemini request whose schema has `minItems` and `maxItems` without it (2026-11-25). Other models get the schema as before.
 
 ### Upgrading to pi-ai 1.5.2 (chat-kit 0.5, Google 0.9, KIE 0.9, ToAPIs 0.8, OpenRouter 0.2)
 
@@ -382,13 +389,13 @@ Pass `cacheRetention` explicitly: when it is omitted, pi-ai falls back to the `P
 ### Install
 
 ```sh
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.5.0/hk01-pi-ai-extra-chat-kit-0.5.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.5.1/hk01-pi-ai-extra-chat-kit-0.5.1.tgz
 pnpm add @earendil-works/pi-ai@1.5.2   # peer
 # and the provider packages you register (each its own release asset, see Install above):
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.9.0/hk01-pi-ai-extra-google-0.9.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.2.0/hk01-pi-ai-extra-openrouter-0.2.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.10.0/hk01-pi-ai-extra-kie-0.10.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.8.0/hk01-pi-ai-extra-toapis-0.8.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.9.0/hk01-pi-ai-extra-toapis-0.9.0.tgz
 ```
 
 The chat kit and the provider `/pi-ai` entries are ESM-only. A TypeScript project that resolves with `module: NodeNext` needs `"type": "module"` in its `package.json` to import them (with `moduleResolution: Bundler`, as Next.js projects use, nothing is needed). A project with `moduleResolution: node10` cannot resolve the `/pi-ai` subpaths at all. `require()` of any of them fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
@@ -542,7 +549,7 @@ The request is ordered: system prompt, documents, the rest of the conversation. 
 | API | Sent as |
 | --- | --- |
 | Gemini | `responseMimeType: "application/json"` and `responseJsonSchema`, without `minItems` / `maxItems` (which Gemini rejects), and with a string or number `const` as a one-value `enum` (Gemini ignores `const`) |
-| OpenAI Completions | strict `response_format` (`json_schema`), with the turn's model carrying `compat.openRouterRouting.require_parameters` so OpenRouter routes only to endpoints that honour it. KIE's Gemini models take the schema's shape but do not enforce it: in a live check on 2026-11-03, Gemini 3.8 Flash and 4 Argon answered JSON with the schema's keys and a value outside its `enum`, so validate the answer |
+| OpenAI Completions | strict `response_format` (`json_schema`), with the turn's model carrying `compat.openRouterRouting.require_parameters` so OpenRouter routes only to endpoints that honour it. A Gemini model (`gemini-…`, or `google/gemini-…`) gets the schema reduced as in the Gemini row: ToAPIs failed a schema with `minItems` (2026-11-25). Gemini follows the schema's shape but not every constraint: KIE's Gemini 3.8 Flash and 4 Argon answered a value outside an `enum` (2026-11-03), and ToAPIs' Gemini 4 answered strings over a `maxLength` and arrays of the wrong length (2026-11-25), so validate the answer. KIE refuses a schema with a property named `type` (HTTP 422, reported to KIE on 2026-11-25) |
 | OpenAI Responses | strict `text.format` (`json_schema`) |
 | Anthropic Messages | a forced call of one tool whose `input_schema` is the schema; its argument deltas stream as `text_*` events. When the turn thinks, on OpenRouter and KIE: native structured output, `output_config.format` (`json_schema`), streamed as `text_*` events |
 
