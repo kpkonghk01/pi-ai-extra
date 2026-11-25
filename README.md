@@ -5,7 +5,7 @@ Server-only extensions to [`@earendil-works/pi-ai`](https://www.npmjs.com/packag
 | Package | Image models | Chat (pi-ai `Models`) |
 | --- | --- | --- |
 | `@hk01/pi-ai-extra-kie` | Grok Imagine Image 2.0 (text-to-image, image edit), GPT Image 2 (text-to-image, image-to-image), Nano Banana 2.1, Seedream 5.5 (text-to-image, image-to-image) | Codex (OpenAI Responses), Claude (Anthropic Messages), Gemini (OpenAI Chat Completions) |
-| `@hk01/pi-ai-extra-toapis` | Gemini Nano Banana 2.1, GPT Image 2, GPT Image 2.5 Flare / Sunburst, GPT Image 2.6 Flare / Sunburst, Seedream 5.0 Pro, Seedream 5.5 | Codex (OpenAI Responses), Claude (Anthropic Messages) |
+| `@hk01/pi-ai-extra-toapis` | Gemini Nano Banana 2.1, GPT Image 2, GPT Image 2.5 Flare / Sunburst, GPT Image 2.6 Flare / Sunburst, Seedream 5.0 Pro, Seedream 5.5 | Codex (OpenAI Responses), Claude (Anthropic Messages), Gemini `-official` (OpenAI Chat Completions) |
 | `@hk01/pi-ai-extra-google` | Nano Banana 2.1, Gemini 3 Pro Image | Gemini on Google AI Studio (pi-ai's Gemini adapter and catalogue, explicit key, live model list) and on Google Agent Platform (pi-ai's Vertex adapter, express-mode key) |
 | `@hk01/pi-ai-extra-openrouter` | None (pi-ai already serves OpenRouter's image generation) | OpenAI Completions, Anthropic Messages (pi-ai's OpenRouter provider, explicit key, live model list) |
 
@@ -162,7 +162,7 @@ import { createGoogleProvider } from "@hk01/pi-ai-extra-google/pi-ai";
 
 const models = createModels();
 models.setProvider(createKieProvider({ apiKey: kieKey }));       // Codex on https://api.kie.ai/openai/v1, Claude on https://api.kie.ai/anthropic (Bearer), Gemini on https://api.kie.ai/<id>-openai/v1
-models.setProvider(createToapisProvider({ apiKey: toapisKey })); // Codex on https://api.toapis.com/v1, Claude on https://api.toapis.com
+models.setProvider(createToapisProvider({ apiKey: toapisKey })); // Codex and Gemini on https://api.toapis.com/v1, Claude on https://api.toapis.com
 models.setProvider(createGoogleProvider({ apiKey: geminiKey }));  // Gemini chat; never reads GEMINI_API_KEY
 
 const chat = models.getModel("toapis", "claude-sonnet-4-6")!;        // chat models only

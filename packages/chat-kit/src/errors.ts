@@ -15,9 +15,9 @@ export class TurnFailure extends Error {
 }
 
 /**
- * Best-effort HTTP status from a pi-ai error message, for adapters where the kit cannot observe
- * the response itself (Gemini): `400 {...}` (OpenAI/Anthropic SDKs), `got status: 400`, or a
- * JSON error body's `"code": 400` (Gemini SDK).
+ * Best-effort HTTP status from a pi-ai error message, for a failure the kit saw no HTTP error
+ * response for (the turn's fetch records the status of any it sees): `400 {...}` (OpenAI/Anthropic
+ * SDKs), `got status: 400`, or a JSON error body's `"code": 400` (Gemini SDK).
  */
 export function statusFromMessage(message: string | undefined): number | undefined {
   if (!message) return undefined;

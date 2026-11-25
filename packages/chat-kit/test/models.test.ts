@@ -800,7 +800,7 @@ describe("Gemini chat-only filter", () => {
     assert.equal(fake.calls.length, 1, "no turn was sent: only the list was read");
   });
 
-  it("filters the installed catalogue the same way when models.list fails (a region block, for example)", async (t) => {
+  it("filters the installed catalogue the same way when models.list fails (a region block, for example)", async () => {
     const fake = createFakeFetch([
       {
         method: "GET",
@@ -816,13 +816,11 @@ describe("Gemini chat-only filter", () => {
     const listedIds = entry.models.map((model) => model.id);
     assert.ok(listedIds.includes("gemini-3.8-flash"));
     for (const id of [...NOT_CHAT, ...ALIASES]) assert.ok(!listedIds.includes(id), id);
-    const sent = t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 500 }));
     for (const model of ["gemini-3.1-flash-live-preview", "gemini-flash-latest", "gemini-3.1-flash-lite-image", "nano-banana-pro-preview"]) {
       const turnResult = await outcome(chat, turn({ provider: "google", model }));
       assert.equal(turnResult.type === "failed" && turnResult.error.code, "UNKNOWN_MODEL", `${model}: turns resolve against the filtered list`);
     }
-    assert.equal(sent.mock.callCount(), 0, "no turn was sent");
-    assert.equal(fake.calls.length, 1, "only the list was read; a failed read is not retried within a minute");
+    assert.equal(fake.calls.length, 1, "no turn was sent: only the list was read, and a failed read is not retried within a minute");
   });
 });
 

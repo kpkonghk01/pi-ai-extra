@@ -106,7 +106,10 @@ describe("Google chat provider: chatKit traits", () => {
     }
   });
 
-  it("sends a chat request through its fetch, and gives the chat kit the same fetch (pi-ai 1.6's Gemini adapter takes one)", async () => {
+  it("sends a chat request through its fetch, and gives the chat kit the same fetch (pi-ai 1.6's Gemini adapter takes one)", async (t) => {
+    t.mock.method(globalThis, "fetch", async () => {
+      throw new Error("A chat request bypassed the provider's fetch");
+    });
     const fake = createFakeFetch([
       { method: "POST", url: /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-3\.5-flash:streamGenerateContent\?alt=sse$/, respond: geminiAnswer },
     ]);

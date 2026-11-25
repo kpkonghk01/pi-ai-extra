@@ -155,7 +155,8 @@ function findBuiltinModel(definition: ChatModelDefinition): Model<ChatProtocol> 
  *
  * - OpenAI Responses: pi-ai's openai catalogue sets it on the GPT-6 models (since pi-ai 1.3), and
  *   then pins `reasoning.effort` to medium and sends the asked effort in `configuration_update`
- *   items. pi-ai's own `openai-codex` catalogue (ChatGPT-backed Codex, like KIE's) does not set it.
+ *   items. Since pi-ai 1.6 its `openai-codex` catalogue (ChatGPT-backed Codex) sets it too; KIE's and
+ *   ToAPIs' Responses routes are not known to take it.
  * - Anthropic Messages: on Claude 5.x pi-ai then sends effort markers (a mid-conversation system
  *   message and `thinking.block_binding`). Live on 2026-11-19, KIE claude-haiku-5-5 with a reasoning
  *   level answered HTTP 500 to that 2 of 2 times, and to plain adaptive thinking with

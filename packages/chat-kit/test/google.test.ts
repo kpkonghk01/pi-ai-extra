@@ -14,23 +14,32 @@ const SCHEMA = { type: "object", properties: { tags: { type: "array", items: { t
 /** A PDF the kit sends by URL (`fileData`): its URL is set and its size is within Gemini's limit. */
 const pdfByUrl = () => testDocument("brief.pdf", "application/pdf", "%PDF-1.7", { url: "https://cdn.example.com/brief.pdf", size: 1_000 });
 
-/** The global fetch while these tests run: a request that reaches it bypassed the kit's fetch. */
-const BYPASSED: typeof globalThis.fetch = async (input) => {
-  throw new Error(`A request bypassed the kit's fetch: ${input instanceof Request ? input.url : String(input)}`);
-};
-
-/** The kit's fetch serves the model list and the turn; the global fetch fails if a request reaches it. */
-describe("streamSimple on Gemini", () => {
+/**
+ * For the enclosing describe: the global fetch throws, so a request that bypasses the kit's and the
+ * provider's fetch fails the test instead of reaching the network.
+ */
+function failOnGlobalFetch(): void {
   let realFetch: typeof globalThis.fetch;
-  let savedKey: string | undefined;
   beforeEach(() => {
     realFetch = globalThis.fetch;
-    globalThis.fetch = BYPASSED;
+    globalThis.fetch = async (input) => {
+      throw new Error(`A request bypassed the kit's and the provider's fetch: ${input instanceof Request ? input.url : String(input)}`);
+    };
+  });
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+}
+
+/** `testKit` hands one fetch to the provider (the model list) and the kit (the turn). */
+describe("streamSimple on Gemini", () => {
+  failOnGlobalFetch();
+  let savedKey: string | undefined;
+  beforeEach(() => {
     savedKey = process.env.GEMINI_API_KEY;
     process.env.GEMINI_API_KEY = "env-key-must-not-be-used";
   });
   afterEach(() => {
-    globalThis.fetch = realFetch;
     if (savedKey === undefined) delete process.env.GEMINI_API_KEY;
     else process.env.GEMINI_API_KEY = savedKey;
   });
@@ -330,6 +339,12 @@ describe("streamSimple on Gemini", () => {
 });
 
 const VERTEX_STREAM_URL = /^https:\/\/aiplatform\.googleapis\.com\/v1\/publishers\/google\/models\/gemini-3\.5-flash:streamGenerateContent\b/;
+/** A fake that answers a turn on AI Studio or Agent Platform with `answer`. */
+const geminiRoutes = (answer: () => Response): FakeFetch =>
+  createFakeFetch([
+    { method: "POST", url: STREAM_URL, respond: answer },
+    { method: "POST", url: VERTEX_STREAM_URL, respond: answer },
+  ]);
 const LOOKUP: Tool = { name: "lookup", description: "Looks something up.", parameters: { type: "object", properties: { q: { type: "string" } }, required: ["q"] } };
 
 /**
@@ -338,21 +353,11 @@ const LOOKUP: Tool = { name: "lookup", description: "Looks something up.", param
  * same answer, must come out the same on both.
  */
 describe("streamSimple on Agent Platform (google-vertex)", () => {
-  let realFetch: typeof globalThis.fetch;
-  beforeEach(() => {
-    realFetch = globalThis.fetch;
-    globalThis.fetch = BYPASSED;
-  });
-  afterEach(() => {
-    globalThis.fetch = realFetch;
-  });
+  failOnGlobalFetch();
 
   /** Runs the turn on `provider`, against `answer` from either endpoint; returns what the kit made of it and what it sent. */
   async function runOn(provider: "google" | "google-vertex", input: Partial<TestTurn>, answer: () => Response) {
-    const fake = createFakeFetch([
-      { method: "POST", url: STREAM_URL, respond: answer },
-      { method: "POST", url: VERTEX_STREAM_URL, respond: answer },
-    ]);
+    const fake = geminiRoutes(answer);
     const chat = testKit([provider], wireFetch(fake), { grounding: true });
     const { events, message } = await runToEnd(chat, turn({ provider, model: "gemini-3.5-flash", ...input }));
     const post = fake.calls.find((call) => call.method === "POST");
@@ -523,34 +528,24 @@ describe("streamSimple on Agent Platform (google-vertex)", () => {
 });
 
 describe("a Gemini turn's fetch: the kit's, else the provider's", () => {
-  let realFetch: typeof globalThis.fetch;
-  beforeEach(() => {
-    realFetch = globalThis.fetch;
-    globalThis.fetch = BYPASSED;
-  });
-  afterEach(() => {
-    globalThis.fetch = realFetch;
-  });
-
+  failOnGlobalFetch();
   const answer = () => sseResponse([JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "Hi." }] }, finishReason: "STOP" }] })]);
-  const spy = () =>
-    createFakeFetch([
-      { method: "POST", url: STREAM_URL, respond: answer },
-      { method: "POST", url: VERTEX_STREAM_URL, respond: answer },
-    ]);
+  const spy = () => geminiRoutes(answer);
   const posts = (fake: FakeFetch) => fake.calls.filter((call) => call.method === "POST").length;
 
-  it("sends an AI Studio or Agent Platform turn through the kit's fetch, before the provider's", async () => {
-    for (const provider of ["google", "google-vertex"] as const) {
-      const kitSpy = spy();
-      const providerSpy = spy();
-      const providers = [
-        provider === "google" ? createGoogleProvider({ apiKey: "g-key", fetch: wireFetch(providerSpy) }) : createGoogleVertexProvider({ apiKey: "gv-key" }),
-      ];
-      const chat = createChatKit({ providers, fetch: wireFetch(kitSpy) });
-      assert.equal((await outcome(chat, turn({ provider, model: "gemini-3.5-flash" }))).type, "done", provider);
-      assert.deepEqual([posts(kitSpy), posts(providerSpy)], [1, 0], provider);
-    }
+  it("sends an AI Studio turn through the kit's fetch, not the provider's", async () => {
+    const kitSpy = spy();
+    const providerSpy = spy();
+    const chat = createChatKit({ providers: [createGoogleProvider({ apiKey: "g-key", fetch: wireFetch(providerSpy) })], fetch: wireFetch(kitSpy) });
+    assert.equal((await outcome(chat, turn({ provider: "google", model: "gemini-3.5-flash" }))).type, "done");
+    assert.deepEqual([posts(kitSpy), posts(providerSpy)], [1, 0]);
+  });
+
+  it("sends an Agent Platform turn through the kit's fetch (the Vertex factory takes none)", async () => {
+    const kitSpy = spy();
+    const chat = createChatKit({ providers: [createGoogleVertexProvider({ apiKey: "gv-key" })], fetch: wireFetch(kitSpy) });
+    assert.equal((await outcome(chat, turn({ provider: "google-vertex", model: "gemini-3.5-flash" }))).type, "done");
+    assert.equal(posts(kitSpy), 1);
   });
 
   it("sends an AI Studio turn through the provider's fetch when the kit has none", async () => {
