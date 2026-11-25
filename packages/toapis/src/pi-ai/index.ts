@@ -47,10 +47,9 @@ function ratioRate(modelRatio: number, completionRatio: number, cacheRatio?: num
  * Gemini and took every value tried on 2026-11-25 (`minimal` to `xhigh`, and `none`) without
  * telling them apart, so the definitions mark the levels Gemini 4 and 3.8 Flash share, `low`,
  * `medium` and `high`; pi-ai sends the nearest of them for any other level (`minimal` as `low`,
- * `xhigh` and `max` as `high`), and none when the turn sets no level. The instructions go as a
- * `system` message: pi-ai sends a reasoning model's as `developer` to a standard OpenAI host, and
- * ToAPIs failed every such Gemini request on 2026-11-25 (400 "生成失敗", or 403 on 3.8 Flash), while
- * the same body with `system` answered.
+ * `xhigh` and `max` as `high`), and none when the turn sets no level. pi-ai (1.6) sends the
+ * instructions as a `system` message to any host but `api.openai.com`; ToAPIs fails a Gemini request
+ * that sends them as `developer` (ADR 0011).
  */
 function gemini(id: string, name: string, rate: ModelRate): ChatModelDefinition {
   return {
@@ -62,7 +61,6 @@ function gemini(id: string, name: string, rate: ModelRate): ChatModelDefinition 
     input: ["text", "image"],
     contextWindow: 1_048_576,
     maxTokens: 65_536,
-    compat: { supportsDeveloperRole: false },
     rate,
   };
 }

@@ -55,3 +55,5 @@ The article-scan turn as a consumer sends it (a 1,600-character Chinese system p
 Gemini follows a schema's shape but not every constraint, and the reduced schema has no `minItems` or `maxItems` to follow, so a consumer validates the answer.
 
 A key without chat permission for an id gets 403 "沒有執行此請求的權限". The live list leaves such ids out.
+
+Amended 2026-11-25, for pi-ai 1.6.0 (toapis 0.9.0): pi-ai 1.6 sends a reasoning model's instructions on OpenAI Completions as `system` to every host but `api.openai.com`, so the definitions no longer set `compat.supportsDeveloperRole: false`, and `ChatModelDefinition` loses the `compat` field it was added for. A test still checks that ToAPIs' Gemini gets `system`.

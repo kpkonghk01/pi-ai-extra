@@ -56,7 +56,8 @@ describe("ToAPIs chat provider", () => {
     }
     assert.deepEqual(sent.map((body) => body.model), Array(4).fill("gemini-4-argon-official"));
     assert.deepEqual(sent.map((body) => body.reasoning_effort), [undefined, "medium", "high", "low"]);
-    // ToAPIs fails a Gemini request whose instructions come as a developer message (2026-11-25).
+    // ToAPIs fails a Gemini request whose instructions come as a developer message (2026-11-25);
+    // pi-ai 1.6 sends system to any host but api.openai.com.
     assert.deepEqual(sent.map((body) => body.messages[0]?.role), Array(4).fill("system"));
   });
 
