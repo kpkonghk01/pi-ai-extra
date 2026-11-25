@@ -14,7 +14,7 @@ Each package has two entry points (OpenRouter's has only the second):
 | Import | Format | Contents | Needs pi-ai |
 | --- | --- | --- | --- |
 | `@hk01/pi-ai-extra-<provider>` | CommonJS **and** ESM | `generate<Provider>Image()`, model catalogue, task lookup, errors | No |
-| `@hk01/pi-ai-extra-<provider>/pi-ai` | ESM only | pi-ai `Provider` factory serving the chat and image models (Google's second factory, for Agent Platform, serves chat only) | Yes (`@earendil-works/pi-ai@1.5.2`, optional peer) |
+| `@hk01/pi-ai-extra-<provider>/pi-ai` | ESM only | pi-ai `Provider` factory serving the chat and image models (Google's second factory, for Agent Platform, serves chat only) | Yes (`@earendil-works/pi-ai@1.6.0`, optional peer) |
 
 The `/pi-ai` subpath is ESM-only because pi-ai itself is ESM-only; a CommonJS server that does not use pi-ai can `require()` the main entry. `@hk01/pi-ai-extra-openrouter` has only the `/pi-ai` entry, and needs pi-ai (a required, exact peer), because pi-ai already serves OpenRouter's images and there is no helper for a main entry to hold ([ADR 0004](docs/adr/0004-dual-format-helper-esm-pi-ai-subpath.md)).
 
@@ -35,13 +35,13 @@ Install the exact release asset on the server (build) side and pin the full URL:
 ```sh
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.10.0/hk01-pi-ai-extra-kie-0.10.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.9.0/hk01-pi-ai-extra-toapis-0.9.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.9.0/hk01-pi-ai-extra-google-0.9.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.2.0/hk01-pi-ai-extra-openrouter-0.2.0.tgz   # optional, chat only, needs pi-ai
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.10.0/hk01-pi-ai-extra-google-0.10.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.3.0/hk01-pi-ai-extra-openrouter-0.3.0.tgz   # optional, chat only, needs pi-ai
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/image-kit-v0.2.1/hk01-pi-ai-extra-image-kit-0.2.1.tgz   # optional, needs all three
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.5.1/hk01-pi-ai-extra-chat-kit-0.5.1.tgz     # optional, needs pi-ai and the providers you register
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.6.0/hk01-pi-ai-extra-chat-kit-0.6.0.tgz     # optional, needs pi-ai and the providers you register
 ```
 
-npm works the same way (`npm install <url>`). Upgrade or roll back by changing the URL. `zod@4.6.5` is installed automatically; install `@earendil-works/pi-ai@1.5.2` only if you use the `/pi-ai` subpath.
+npm works the same way (`npm install <url>`). Upgrade or roll back by changing the URL. `zod@4.6.5` is installed automatically; install `@earendil-works/pi-ai@1.6.0` only if you use the `/pi-ai` subpath.
 
 ## Generate or edit an image
 
@@ -296,13 +296,24 @@ createToapisProvider({
 });
 ```
 
-### Upgrading to KIE 0.10, ToAPIs 0.9 and chat-kit 0.5.1
+### Upgrading to pi-ai 1.6.0 (chat-kit 0.6, Google 0.10, KIE 0.10, ToAPIs 0.9, OpenRouter 0.3)
+
+Every package that peers on pi-ai now peers on `@earendil-works/pi-ai@1.6.0` exactly, and chat-kit 0.6 peers on these provider releases, so upgrade pi-ai and all of them together. pi-ai 1.6.0 moves `@google/genai` to 2.32.0, the version Gemini 4 needs.
+
+- Gemini turns (`google`, `google-vertex`) now take a custom fetch: the chat kit's `fetch` option, else `createGoogleProvider`'s, which also serves its chat requests outside the chat kit. Before, they always used the global fetch. The Vertex factory has no `fetch` option.
+- A Gemini answer that `@google/genai` would have continued (`CONTINUATION`) now ends as `length`, as pi-ai 1.6 turns the SDK's automatic continuation off; a response-schema turn that ends so fails with `PROVIDER_ERROR`, like any cut-off schema answer.
+- On OpenAI Chat Completions, pi-ai 1.6 sends a reasoning model's instructions as `system` to every host but `api.openai.com` (`developer` before), which ToAPIs' Gemini needs, so the toapis package no longer sets it itself.
+- pi-ai 1.6's catalogues add Gemini 4 Carbon, Hydrogen and Neon. `createGoogleProvider` offers them when the key's live list names them, at pi-ai's list price until `GEMINI_CHAT_RATES` has them.
+
+The KIE, ToAPIs and chat-kit changes below were first released with pi-ai 1.6.0; chat-kit 0.5.1 was never released, and its fix ships in 0.6.0.
+
+#### KIE 0.10, ToAPIs 0.9 and the chat kit's Gemini schema
 
 KIE 0.10.0 is additive: it adds `gemini-4-neon`, `gemini-4-hydrogen` and `gemini-4-carbon` on KIE's OpenAI Chat Completions route, beside `gemini-4-argon`, with KIE's published rates (see [Chat rates](#chat-rates)). Neon and Hydrogen take `reasoning_effort` `low`, `medium`, `high` and `xhigh`, and Carbon `low`, `medium` and `high`, as KIE documents them; 3.8 and 3.6 Flash and 4 Argon still take `low` and `high`. KIE now publishes Gemini 4's cached-input price, so 4 Argon's estimated cache-read rate drops from its input rate (0.80) to 0.04 per 1M tokens. A turn's cost is still KIE's `credits_consumed`. The chat kit 0.5.0 needs no change: the new models take 4 Argon's route and protocol.
 
-ToAPIs 0.9.0 adds Gemini on ToAPIs' OpenAI Chat Completions route (`<host>/v1/chat/completions`): `gemini-3.8-flash-official`, `gemini-4-argon-official`, `gemini-4-carbon-official` and `gemini-4-hydrogen-official`, with ToAPIs' published rates ([ADR 0011](docs/adr/0011-toapis-gemini-official-chat-completions.md)). Only the `-official` ids are offered: the cheaper ids of the same models ignored the system prompt or a response schema in a 2026-11-25 check. The live list keeps only the ids the key may use. A turn's `reasoning` goes as `reasoning_effort` `low`, `medium` or `high`, and its instructions as a `system` message, because ToAPIs fails a Gemini request that sends them as `developer`. Documents are not taken yet, as for every ToAPIs model, and a turn's cost is estimated from the rate.
+ToAPIs 0.9.0 adds Gemini on ToAPIs' OpenAI Chat Completions route (`<host>/v1/chat/completions`): `gemini-3.8-flash-official`, `gemini-4-argon-official`, `gemini-4-carbon-official` and `gemini-4-hydrogen-official`, with ToAPIs' published rates ([ADR 0011](docs/adr/0011-toapis-gemini-official-chat-completions.md)). Only the `-official` ids are offered: the cheaper ids of the same models ignored the system prompt or a response schema in a 2026-11-25 check. The live list keeps only the ids the key may use. A turn's `reasoning` goes as `reasoning_effort` `low`, `medium` or `high`, and its instructions as a `system` message (pi-ai 1.6's default for this host), because ToAPIs fails a Gemini request that sends them as `developer`. Documents are not taken yet, as for every ToAPIs model, and a turn's cost is estimated from the rate.
 
-Chat kit 0.5.1 is a fix: on OpenAI Chat Completions, a Gemini model's response schema is reduced as on the Gemini API (no `minItems` / `maxItems`, a `const` as a one-value `enum`). ToAPIs failed a Gemini request whose schema has `minItems` and `maxItems` without it (2026-11-25). Other models get the schema as before.
+The chat kit (0.6.0) fixes one thing on OpenAI Chat Completions: a Gemini model's response schema is reduced as on the Gemini API (no `minItems` / `maxItems`, a `const` as a one-value `enum`). ToAPIs failed a Gemini request whose schema has `minItems` and `maxItems` without it (2026-11-25). Other models get the schema as before.
 
 ### Upgrading to pi-ai 1.5.2 (chat-kit 0.5, Google 0.9, KIE 0.9, ToAPIs 0.8, OpenRouter 0.2)
 
@@ -389,11 +400,11 @@ Pass `cacheRetention` explicitly: when it is omitted, pi-ai falls back to the `P
 ### Install
 
 ```sh
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.5.1/hk01-pi-ai-extra-chat-kit-0.5.1.tgz
-pnpm add @earendil-works/pi-ai@1.5.2   # peer
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/chat-kit-v0.6.0/hk01-pi-ai-extra-chat-kit-0.6.0.tgz
+pnpm add @earendil-works/pi-ai@1.6.0   # peer
 # and the provider packages you register (each its own release asset, see Install above):
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.9.0/hk01-pi-ai-extra-google-0.9.0.tgz
-pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.2.0/hk01-pi-ai-extra-openrouter-0.2.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/google-v0.10.0/hk01-pi-ai-extra-google-0.10.0.tgz
+pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/openrouter-v0.3.0/hk01-pi-ai-extra-openrouter-0.3.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/kie-v0.10.0/hk01-pi-ai-extra-kie-0.10.0.tgz
 pnpm add https://github.com/kpkonghk01/pi-ai-extra/releases/download/toapis-v0.9.0/hk01-pi-ai-extra-toapis-0.9.0.tgz
 ```
@@ -436,7 +447,7 @@ const chat = createChatKit({
   - Node's own settings apply to every request, as in any Node process: `NODE_USE_ENV_PROXY=1` sends requests through `HTTPS_PROXY`, except to hosts in `NO_PROXY`; `NODE_EXTRA_CA_CERTS` and `NODE_TLS_REJECT_UNAUTHORIZED` change TLS. Set them on purpose only.
 - **One kit per tenant.** A chat provider binds one key, so two keys for the same provider are two kits. A multi-tenant service creates a kit per tenant; a kit has no timers of its own between calls, so it needs no `dispose()`. After a call it may leave a model-list read running: the background refresh of a stale list (up to 15 s), or a first read whose caller stopped waiting (up to 5 s). Each runs under a deadline timer that is unref'd, so the timer alone never keeps a process alive; the list request in flight does, as any request does. During a call, pi-ai and the SDKs use their own retry and timeout timers.
 - `createChatKit` throws a `TypeError` for a value that is not a chat provider (no `chatKit` traits, for example a provider from an older package), for two providers with the same id, and for an invalid `fetch`.
-- `fetch` (optional) is for tests or instrumentation: every turn's requests use it instead of the provider's own, except Gemini's (`google` and `google-vertex`), whose pi-ai adapters reject a custom fetch. Model lists use each factory's `fetch` option.
+- `fetch` (optional) is for tests or instrumentation: every turn's requests use it instead of the provider's own. Model lists use each factory's `fetch` option.
 
 ### Turns: `streamSimple` and `completeSimple`
 
@@ -601,6 +612,10 @@ The cost comes from the first source that applies:
 1. **Provider-reported** (`costSource: "provider"`): OpenRouter's billed total as pi-ai reads it (`usage.cost`, plus the upstream cost on a BYOK key; accounting without `is_byok` is estimated), or KIE's `credits_consumed` × $0.005. KIE's cost always comes from its credits, because its token counts are unreliable (hidden prompt tokens, some zero input counts), so a KIE turn without credits has no cost. On KIE Codex (OpenAI Responses) the credits are read wherever the stream carries them: next to `type` on the `response.completed` event (where KIE documents them), on the response object, or in a usage object; `raw` keeps them at its top level.
 2. **Estimated** (`costSource: "estimated"`): the model's [rate](#chat-rates) in force when the turn started, priced with pi-ai's `calculateCost`. The large-prompt tier is chosen by the whole prompt (`input + cacheRead + cacheWrite`). Cached and cache-write tokens are charged at their rates, an unpublished one derived as described in [Chat rates](#chat-rates), cache writes as 5-minute writes, and the rest of the prompt at the input rate. `output`, reasoning included, is charged at the output rate. A count the provider did not report adds nothing. Rates come from the KIE and ToAPIs definitions, the Gemini rate table (`googleChatRate`) on AI Studio, the Gemini definitions on Agent Platform (else pi-ai's Vertex list price), and OpenRouter's live price (pi-ai's catalogue price while no live list could be read).
 3. **None**: no rate, or no counts to price. `costUsd` and `costSource` are absent, never `0`.
+
+### Upgrading to chat-kit 0.6
+
+See [Upgrading to pi-ai 1.6.0](#upgrading-to-pi-ai-160-chat-kit-06-google-010-kie-010-toapis-09-openrouter-03): chat-kit 0.6 needs pi-ai 1.6.0 and the matching provider releases.
 
 ### Upgrading to chat-kit 0.5
 

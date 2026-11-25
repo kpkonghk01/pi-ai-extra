@@ -13,7 +13,7 @@ type GoogleChatModel = Model<"google-generative-ai">;
  * image-output models, by `-image` (`gemini-3.1-flash-lite-image`, `gemini-3-pro-image-preview`)
  * or by their Nano Banana name (`nano-banana-pro-preview`, `gemini-nano-banana-2.1`); the Deep
  * Research agents (`deep-research-preview-04-2026`); and the Gemini Robotics models
- * (`gemini-robotics-er-2-preview`, in pi-ai 1.5's Google catalogue). pi-ai 1.5.2's catalogues name
+ * (`gemini-robotics-er-2-preview`, in pi-ai 1.6's Google Vertex catalogue). pi-ai 1.6.0's catalogues name
  * no Gemini image-output id these rules miss: its Google chat catalogue has none, and every
  * `google/*` id of its OpenRouter image catalogue is an `-image` id (`gemini-2.5-flash-image`,
  * `gemini-3-pro-image`, `gemini-3.1-flash-image-preview`, …) or `gemini-nano-banana-2.1`.
