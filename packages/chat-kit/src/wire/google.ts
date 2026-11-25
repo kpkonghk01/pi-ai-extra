@@ -153,10 +153,9 @@ function classifyGoogleFailure(failure: ProviderFailure, plan: PayloadPlan): Cla
   return { code: "DOCUMENT_FETCH_FAILED", account: "The provider could not fetch a document from its URL" };
 }
 
-/** Gemini on Google AI Studio: pi-ai's Gemini adapter, which takes a custom fetch since pi-ai 1.6. */
+/** Gemini on Google AI Studio: pi-ai's Gemini adapter. */
 export const GOOGLE_WIRE_API: WireApi = {
   api: "google-generative-ai",
-  acceptsFetch: true,
   schemaAsToolCall: () => false,
   placeDocument: placeGoogleDocument,
   unsupported: () => undefined,
@@ -167,7 +166,6 @@ export const GOOGLE_WIRE_API: WireApi = {
 
 /**
  * Gemini on Google Agent Platform: pi-ai's Vertex adapter builds the same `@google/genai` request
- * and reads the same stream as its Gemini adapter, and takes a custom fetch too, so the kit
- * handles it the same way.
+ * and reads the same stream as its Gemini adapter, so the kit handles it the same way.
  */
 export const GOOGLE_VERTEX_WIRE_API: WireApi = { ...GOOGLE_WIRE_API, api: "google-vertex" };

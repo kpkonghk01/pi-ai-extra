@@ -5,6 +5,7 @@ import { zeroUsage } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { createFakeFetch, jsonResponse } from "@hk01/pi-ai-extra-internal/testing";
 import { createGoogleProvider } from "../src/pi-ai/index.ts";
 import { isOfferedGeminiId } from "../src/pi-ai/live-models.ts";
+import { geminiAnswer } from "./helpers.ts";
 import { GEMINI_SAFETY_OFF, googleChatStreams, withGroundingTools, withSafetyOff } from "../src/pi-ai/streams.ts";
 
 const MODELS_URL = /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\?pageSize=1000/;
@@ -106,13 +107,8 @@ describe("Google chat provider: chatKit traits", () => {
   });
 
   it("sends a chat request through its fetch, and gives the chat kit the same fetch (pi-ai 1.6's Gemini adapter takes one)", async () => {
-    const answer = () =>
-      new Response(
-        `data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "Hi." }] }, finishReason: "STOP" }] })}\n\n`,
-        { headers: { "content-type": "text/event-stream" } },
-      );
     const fake = createFakeFetch([
-      { method: "POST", url: /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-3\.5-flash:streamGenerateContent\?alt=sse$/, respond: answer },
+      { method: "POST", url: /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-3\.5-flash:streamGenerateContent\?alt=sse$/, respond: geminiAnswer },
     ]);
     const google = createGoogleProvider({ apiKey: "k", fetch: fake.fetch });
     assert.equal(google.chatKit.fetch, fake.fetch);

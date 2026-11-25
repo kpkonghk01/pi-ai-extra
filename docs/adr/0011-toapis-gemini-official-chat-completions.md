@@ -28,9 +28,9 @@ Live checks on 2026-11-25, with a key allowed all eight ids, one tiny turn per c
 The toapis package offers `gemini-3.8-flash-official`, `gemini-4-argon-official`, `gemini-4-carbon-official` and `gemini-4-hydrogen-official` on Chat Completions (`<host>/v1`). They use pi-ai's OpenAI Completions adapter, as KIE's Gemini models do (ADR 0010).
 
 - **Rates** are ToAPIs' published ratios: input = 2 × `model_ratio`, output = input × `completion_ratio`, and a cache read = input × `cache_ratio` where ToAPIs lists one. ToAPIs reports no charge, so a turn's cost is estimated.
-- **Instructions** go as a `system` message (`compat.supportsDeveloperRole: false`). pi-ai sends a reasoning model's instructions as `developer` to a standard OpenAI host, and ToAPIs failed every such Gemini request: 400 "生成失敗: 工作處理失敗", or 403 on 3.8 Flash. The same body with `system` answered.
+- **Instructions** go as a `system` message. ToAPIs failed every Gemini request that sent them as `developer`, as pi-ai 1.5 did to any standard OpenAI-compatible host: 400 "生成失敗: 工作處理失敗", or 403 on 3.8 Flash. The same body with `system` answered. pi-ai 1.6 sends `developer` only to OpenAI itself, so the definitions set nothing for it; a test checks that ToAPIs' Gemini gets `system`.
 - **Reasoning:** `reasoning_effort` is `low`, `medium` or `high`. ToAPIs took every value tried, from `minimal` to `xhigh` and `none`, and the thought counts did not tell them apart, so the definitions mark only the levels Gemini 3.8 Flash and 4 share.
-- **Response schema:** the chat kit (0.5.1) sends a Gemini model on Chat Completions the schema reduced as on Gemini's own API (`sanitizeSchemaForGemini`). ToAPIs failed the article-scan schema, which has `minItems` and `maxItems`, until it was reduced.
+- **Response schema:** the chat kit (0.6.0) sends a Gemini model on Chat Completions the schema reduced as on Gemini's own API (`sanitizeSchemaForGemini`). ToAPIs failed the article-scan schema, which has `minItems` and `maxItems`, until it was reduced.
 - **Documents** stay off for ToAPIs (`takes.fileDocuments: false`). It is a provider-wide trait, and ToAPIs' Codex and Claude are still unchecked.
 
 ## Considered options
@@ -55,5 +55,3 @@ The article-scan turn as a consumer sends it (a 1,600-character Chinese system p
 Gemini follows a schema's shape but not every constraint, and the reduced schema has no `minItems` or `maxItems` to follow, so a consumer validates the answer.
 
 A key without chat permission for an id gets 403 "沒有執行此請求的權限". The live list leaves such ids out.
-
-Amended 2026-11-25, for pi-ai 1.6.0 (toapis 0.9.0): pi-ai 1.6 sends a reasoning model's instructions on OpenAI Completions as `system` to every host but `api.openai.com`, so the definitions no longer set `compat.supportsDeveloperRole: false`, and `ChatModelDefinition` loses the `compat` field it was added for. A test still checks that ToAPIs' Gemini gets `system`.

@@ -139,7 +139,7 @@ async function streamTurn(
     },
     onProviderStreamEvent: (event) => run.observer.observe(event),
     ...(turn.wire.suppressedHeaders === undefined ? {} : { headers: { ...turn.wire.suppressedHeaders } }),
-    ...(turn.wire.acceptsFetch ? { fetch: statusRecordingFetch(kitFetch ?? turn.providerFetch, run.state) } : {}),
+    fetch: statusRecordingFetch(kitFetch ?? turn.providerFetch, run.state),
   };
 
   // With a forced tool call the answer is the tool's arguments: they become text events.

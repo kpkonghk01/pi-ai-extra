@@ -211,7 +211,6 @@ export function createAnthropicObserver(): StreamObserver {
 
 export const ANTHROPIC_MESSAGES_WIRE_API: WireApi = {
   api: "anthropic-messages",
-  acceptsFetch: true,
   schemaAsToolCall: anthropicSchemaAsToolCall,
   placeDocument: placeByUrl,
   unsupported: anthropicSchemaUnsupported,
