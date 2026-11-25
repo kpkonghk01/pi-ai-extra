@@ -128,13 +128,15 @@ describe("KIE chat provider", () => {
   });
 
   it("maps a reasoning level to the reasoning_effort values KIE documents for each Gemini model", () => {
-    const levels = (id: string) => {
-      const map = createKieProvider({ apiKey: "k" }).getModels().find((model) => model.id === id)?.thinkingLevelMap;
-      return (["low", "medium", "high", "xhigh"] as const).filter((level) => map?.[level] != null);
-    };
-    for (const id of ["gemini-3-8-flash", "gemini-3-6-flash", "gemini-4-argon"]) assert.deepEqual(levels(id), ["low", "high"], id);
-    assert.deepEqual(levels("gemini-4-carbon"), ["low", "medium", "high"]);
-    for (const id of ["gemini-4-neon", "gemini-4-hydrogen"]) assert.deepEqual(levels(id), ["low", "medium", "high", "xhigh"], id);
+    const levelMap = (id: string) => createKieProvider({ apiKey: "k" }).getModels().find((model) => model.id === id)?.thinkingLevelMap;
+    const none = { off: null, minimal: null, max: null };
+    for (const id of ["gemini-3-8-flash", "gemini-3-6-flash", "gemini-4-argon"]) {
+      assert.deepEqual(levelMap(id), { ...none, low: "low", medium: null, high: "high", xhigh: null }, id);
+    }
+    assert.deepEqual(levelMap("gemini-4-carbon"), { ...none, low: "low", medium: "medium", high: "high", xhigh: null });
+    for (const id of ["gemini-4-neon", "gemini-4-hydrogen"]) {
+      assert.deepEqual(levelMap(id), { ...none, low: "low", medium: "medium", high: "high", xhigh: "xhigh" }, id);
+    }
   });
 
   it("serves a Gemini definition at its own base URL, and refuses one on Chat Completions without a base URL", () => {
