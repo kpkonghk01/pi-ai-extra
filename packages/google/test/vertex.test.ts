@@ -23,8 +23,8 @@ const answer = () =>
   ]);
 
 /**
- * pi-ai's Vertex adapter rejects a custom fetch, so these tests replace the global fetch the
- * Google GenAI SDK calls, and restore it afterwards.
+ * The Vertex factory takes no fetch, so these tests replace the global fetch the Google GenAI SDK
+ * calls, and restore it afterwards.
  */
 describe("createGoogleVertexProvider: requests", () => {
   let realFetch: typeof globalThis.fetch;

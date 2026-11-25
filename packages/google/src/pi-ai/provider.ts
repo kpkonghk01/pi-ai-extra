@@ -2,7 +2,7 @@ import { createProvider, type Model } from "@earendil-works/pi-ai";
 import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generative-ai.lazy";
 import { GOOGLE_MODELS } from "@earendil-works/pi-ai/providers/google.models";
 import { withoutTrailingSlash } from "@hk01/pi-ai-extra-internal";
-import { explicitApiKeyAuth, helperImages, modelCostAt, withLiveChatModels, type ChatProvider } from "@hk01/pi-ai-extra-internal/pi-ai";
+import { explicitApiKeyAuth, helperImages, modelCostAt, withDefaultFetch, withLiveChatModels, type ChatProvider } from "@hk01/pi-ai-extra-internal/pi-ai";
 import { GOOGLE_BASE_URL, GOOGLE_IMAGES_API, GOOGLE_PROVIDER_ID, GOOGLE_PROVIDER_NAME } from "../constants.ts";
 import { generateGoogleImage, type GoogleImageRequest, type GoogleImageSettings } from "../generate.ts";
 import { GOOGLE_IMAGE_MODELS } from "../models.ts";
@@ -36,10 +36,7 @@ export interface GoogleProviderOptions {
   imageSettings?: GoogleImageSettings | undefined;
   /** Ground chat answers with Google Search and URL context: both tools go on every chat request. Default `false`. */
   grounding?: boolean | undefined;
-  /**
-   * Custom fetch for the live model list (`refreshModels`), for tests or instrumentation. pi-ai's
-   * Gemini adapter rejects a custom fetch, so chat requests always use the global one.
-   */
+  /** Custom fetch for chat requests and the live model list (`refreshModels`), for tests or instrumentation. A request's own `fetch` wins. */
   fetch?: typeof globalThis.fetch | undefined;
 }
 
@@ -83,7 +80,7 @@ export function createGoogleProvider(options: GoogleProviderOptions): ChatProvid
     baseUrl: baseUrl ?? GOOGLE_BASE_URL,
     auth: explicitApiKeyAuth(GOOGLE_PROVIDER_NAME, options.apiKey),
     models: [...installed, ...images.models],
-    api: googleChatStreams(googleGenerativeAIApi(), options.grounding === true),
+    api: withDefaultFetch(googleChatStreams(googleGenerativeAIApi(), options.grounding === true), options.fetch),
     images: images.images,
   });
   const provider = withLiveChatModels(base, (signal) =>
@@ -96,7 +93,7 @@ export function createGoogleProvider(options: GoogleProviderOptions): ChatProvid
       signal,
     }),
   );
-  return { ...provider, chatKit: geminiChatTraits(googleChatRate) };
+  return { ...provider, chatKit: { ...geminiChatTraits(googleChatRate), fetch: options.fetch } };
 }
 
 function selectModels(modelIds: readonly string[] | undefined): readonly GoogleChatModel[] {

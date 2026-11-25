@@ -14,8 +14,8 @@ const SCHEMA = { type: "object", properties: { tags: { type: "array", items: { t
 const pdfByUrl = () => testDocument("brief.pdf", "application/pdf", "%PDF-1.7", { url: "https://cdn.example.com/brief.pdf", size: 1_000 });
 
 /**
- * pi-ai's Gemini adapter rejects a custom fetch, so these tests replace the global fetch the
- * Gemini SDK calls, and restore it afterwards.
+ * These tests replace the global fetch, which the kit hands a Gemini turn when neither it nor the
+ * provider has a fetch of its own, and restore it afterwards.
  */
 describe("streamSimple on Gemini", () => {
   let realFetch: typeof globalThis.fetch;

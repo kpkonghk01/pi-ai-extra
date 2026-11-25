@@ -105,9 +105,23 @@ describe("Google chat provider: chatKit traits", () => {
     }
   });
 
-  it("sets no fetch trait: pi-ai's Gemini adapter rejects a custom fetch, so a turn cannot use one", () => {
-    const { chatKit } = createGoogleProvider({ apiKey: "k", fetch: async () => new Response("{}") });
-    assert.equal("fetch" in chatKit, false);
+  it("sends a chat request through its fetch, and gives the chat kit the same fetch (pi-ai 1.6's Gemini adapter takes one)", async () => {
+    const answer = () =>
+      new Response(
+        `data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "Hi." }] }, finishReason: "STOP" }] })}\n\n`,
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    const fake = createFakeFetch([
+      { method: "POST", url: /^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-3\.5-flash:streamGenerateContent\?alt=sse$/, respond: answer },
+    ]);
+    const google = createGoogleProvider({ apiKey: "k", fetch: fake.fetch });
+    assert.equal(google.chatKit.fetch, fake.fetch);
+    const collection = models();
+    collection.setProvider(google);
+    const message = await collection.completeSimple(collection.getModel("google", "gemini-3.5-flash")!, { messages: [{ role: "user", content: "Hello", timestamp: 1 }] });
+    assert.equal(message.stopReason, "stop");
+    assert.equal(fake.calls.length, 1);
+    assert.equal(fake.calls[0]?.headers["x-goog-api-key"], "k");
   });
 });
 
