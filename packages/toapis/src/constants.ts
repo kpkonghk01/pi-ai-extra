@@ -6,7 +6,7 @@ export const TOAPIS_BASE_URL = "https://api.toapis.com";
 
 export const TOAPIS_IMAGES_API = "pi-ai-extra-toapis-images";
 
-/** OpenAI Responses parent path under a ToAPIs host; pi-ai appends `/responses`. */
-export function toapisResponsesBaseUrl(host: string): string {
+/** The OpenAI-compatible parent path under a ToAPIs host; pi-ai appends `/responses` or `/chat/completions`. */
+export function toapisOpenAIBaseUrl(host: string): string {
   return `${host}/v1`;
 }

@@ -42,17 +42,19 @@ export type {
  * schedules is one period. An unpublished cache rate is left out; pricing derives it
  * (`toModelCost`).
  *
- * The Gemini rates are as of 2026-11-03, from the same listing (`interfaceType` `chat`) and the
- * model pages (kie.ai/gemini-3-8-flash, /gemini-3-6-flash, /gemini-4-argon). Each is a
- * limited-time price:
+ * The Gemini rates are as of 2026-11-25, from the same listing (`interfaceType` `chat`) and the
+ * model pages (kie.ai/gemini-3-8-flash, /gemini-3-6-flash, /gemini-4-argon, /gemini-4-neon,
+ * /gemini-4-hydrogen, /gemini-4-carbon), in credits per 1M input / output / cached-input tokens:
  *
- * - Gemini 3.8 and 3.6 Flash: 45 / 225 credits per 1M input / output tokens, "50% OFF until Dec
- *   31, 2026 at 06:00 UTC (prices shown are discounted)", so the published regular price is
- *   90 / 450, a second period. A period starts at 00:00 UTC, so it starts on 2026-12-31, six hours
- *   before the discount ends.
- * - Gemini 4 Argon: 160 / 800 credits, which "follow Google's promotional pricing and are valid
- *   until Nov 30, 2026". KIE publishes no later price, so the schedule is one period; when KIE
- *   publishes the price from 2026-12-01, a patch release adds it.
+ * - Gemini 3.8 and 3.6 Flash: 45 / 225, "50% OFF until Dec 31, 2026 at 06:00 UTC (prices shown
+ *   are discounted)", so the published regular price is 90 / 450, a second period. A period starts
+ *   at 00:00 UTC, so it starts on 2026-12-31, six hours before the discount ends. No cached-input
+ *   price is published.
+ * - Gemini 4 Argon and Carbon: 160 / 800 / 8, which "follow Google's promotional pricing and are
+ *   valid until Nov 30, 2026". KIE publishes no later price, so each schedule is one period; when
+ *   KIE publishes the price from 2026-12-01, a patch release adds it.
+ * - Gemini 4 Neon: 240 / 1200 / 12, and Gemini 4 Hydrogen: 120 / 600 / 6, "60% below official
+ *   pricing" with no end date.
  *
  * A turn's cost is KIE's own charge either way (`reportedCostUsd`).
  */
@@ -101,30 +103,42 @@ interface CreditPeriod {
   from?: string;
   input: number;
   output: number;
+  /** Cached input, where KIE publishes it. */
+  cacheRead?: number;
 }
+
+/** The `reasoning_effort` values a KIE Gemini model takes. */
+type GeminiEffort = "low" | "medium" | "high" | "xhigh";
 
 /**
  * A Gemini model on OpenAI Chat Completions, not on KIE's Gemini-native route (ADR 0010). KIE names
  * the model in the URL path (`/<id>-openai/v1/chat/completions`), so each definition carries its
  * own base URL (`/<id>-openai/v1`). Limits are pi-ai's Gemini catalogue values for 3.8 and 3.6
  * Flash (1,048,576 context, 65,536 output); KIE publishes a 1M budget for 4 Argon and no output
- * limit, so it takes the Flash value. KIE's `reasoning_effort` takes `low` and `high` only: pi-ai
- * sends the nearest of them (`minimal` and an explicit `off` as `low`; `medium`, `xhigh` and `max`
- * as `high`), and none when the turn sets no level.
+ * limit, so it takes the Flash value; Neon, Hydrogen and Carbon document the same limits.
+ * `efforts` are the `reasoning_effort` values KIE documents for the model (`low` and `high` for 3.8
+ * Flash and 4 Argon). pi-ai sends the nearest of them for any other level (`minimal` and an
+ * explicit `off` as `low`, `max` as the highest), and none when the turn sets no level.
  */
-function gemini(id: string, name: string, periods: readonly CreditPeriod[]): ChatModelDefinition {
+function gemini(id: string, name: string, periods: readonly CreditPeriod[], efforts: readonly GeminiEffort[] = ["low", "high"]): ChatModelDefinition {
+  const effort = (level: GeminiEffort) => (efforts.includes(level) ? level : null);
   return {
     id,
     name,
     protocol: "openai-completions",
     baseUrl: `${KIE_API_BASE_URL}/${id}-openai/v1`,
     reasoning: true,
-    thinkingLevelMap: { off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: null },
+    thinkingLevelMap: { off: null, minimal: null, low: effort("low"), medium: effort("medium"), high: effort("high"), xhigh: effort("xhigh"), max: null },
     input: ["text", "image"],
     contextWindow: 1_048_576,
     maxTokens: 65_536,
     rate: {
-      periods: periods.map(({ from, input, output }) => ({ ...(from === undefined ? {} : { from }), input: usd(input), output: usd(output) })),
+      periods: periods.map(({ from, input, output, cacheRead }) => ({
+        ...(from === undefined ? {} : { from }),
+        input: usd(input),
+        output: usd(output),
+        ...(cacheRead === undefined ? {} : { cacheRead: usd(cacheRead) }),
+      })),
     },
   };
 }
@@ -168,7 +182,10 @@ const CLAUDE_MODELS: readonly ChatModelDefinition[] = [
 const GEMINI_MODELS: readonly ChatModelDefinition[] = [
   gemini("gemini-3-8-flash", "Gemini 3.8 Flash", [{ input: 45, output: 225 }, { from: "2026-12-31", input: 90, output: 450 }]),
   gemini("gemini-3-6-flash", "Gemini 3.6 Flash", [{ input: 45, output: 225 }, { from: "2026-12-31", input: 90, output: 450 }]),
-  gemini("gemini-4-argon", "Gemini 4 Argon", [{ input: 160, output: 800 }]),
+  gemini("gemini-4-argon", "Gemini 4 Argon", [{ input: 160, output: 800, cacheRead: 8 }]),
+  gemini("gemini-4-neon", "Gemini 4 Neon", [{ input: 240, output: 1200, cacheRead: 12 }], ["low", "medium", "high", "xhigh"]),
+  gemini("gemini-4-hydrogen", "Gemini 4 Hydrogen", [{ input: 120, output: 600, cacheRead: 6 }], ["low", "medium", "high", "xhigh"]),
+  gemini("gemini-4-carbon", "Gemini 4 Carbon", [{ input: 160, output: 800, cacheRead: 8 }], ["low", "medium", "high"]),
 ];
 
 /**

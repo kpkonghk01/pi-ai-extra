@@ -253,26 +253,44 @@ describe("ToAPIs catalogue and pi-ai adapters", () => {
     assert.equal(result.responseId, "tsk_1");
   });
 
-  it("registers Codex on Responses (host/v1) and Claude on Messages (host)", () => {
+  it("registers Codex on Responses and Gemini on Chat Completions (host/v1), and Claude on Messages (host)", () => {
     const provider = createToapisProvider({ apiKey: "toapis-key" });
     const byId = new Map(provider.getModels().map((model) => [model.id, model]));
     assert.equal(byId.get("gpt-5.3-codex-official")?.baseUrl, "https://api.toapis.com/v1");
     assert.equal(byId.get("claude-sonnet-4-6")?.baseUrl, "https://api.toapis.com");
     assert.equal(byId.get("claude-sonnet-4-6")?.api, "anthropic-messages");
+    assert.equal(byId.get("gemini-4-argon-official")?.baseUrl, "https://api.toapis.com/v1");
+    assert.equal(byId.get("gemini-4-argon-official")?.api, "openai-completions");
     assert.deepEqual(
       provider.getModels().map((model) => model.id),
-      ["gpt-5.3-codex-official", "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"],
+      [
+        "gpt-5.3-codex-official",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5",
+        "gemini-3.8-flash-official",
+        "gemini-4-argon-official",
+        "gemini-4-carbon-official",
+        "gemini-4-hydrogen-official",
+      ],
     );
+    const cn = createToapisProvider({ apiKey: "toapis-key", baseUrl: "https://api.toapis.cn" });
+    assert.equal(cn.getModels().find((model) => model.id === "gemini-4-argon-official")?.baseUrl, "https://api.toapis.cn/v1");
   });
 
   it("prices chat models from the pricing API ratios", () => {
     assertRateTable(createToapisProvider({ apiKey: "toapis-key" }).getModels(), {
-      // id: [input, output, cacheRead, cacheWrite] in USD per 1M tokens. Cache rates are not
-      // published; they are derived by the cache fill-in rule (see toModelCost).
+      // id: [input, output, cacheRead, cacheWrite] in USD per 1M tokens. A Gemini cache read is
+      // cache_ratio × input where ToAPIs publishes it; every other cache rate is derived by the
+      // cache fill-in rule (see toModelCost).
       "gpt-5.3-codex-official": [1.4, 11.2, 1.4, 1.75],
       "claude-opus-4-6": [1.5, 7.5, 1.5, 1.875],
       "claude-sonnet-4-6": [0.9, 4.5, 0.9, 1.125],
       "claude-haiku-4-5": [0.3, 1.5, 0.3, 0.375],
+      "gemini-3.8-flash-official": [1.2, 6, 0.12, 1.5],
+      "gemini-4-argon-official": [1.6, 8, 0.08, 2],
+      "gemini-4-carbon-official": [1.6, 8, 0.08, 2],
+      "gemini-4-hydrogen-official": [1.2, 6, 1.2, 1.5],
     });
   });
 

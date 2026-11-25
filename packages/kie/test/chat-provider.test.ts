@@ -6,7 +6,7 @@ import { createKieProvider, KIE_CHAT_MODELS } from "../src/pi-ai/index.ts";
 
 const CODEX_URL = "https://api.kie.ai/openai/v1/models";
 const CLAUDE_URL = "https://api.kie.ai/anthropic/v1/models";
-const GEMINI_IDS = ["gemini-3-8-flash", "gemini-3-6-flash", "gemini-4-argon"];
+const GEMINI_IDS = ["gemini-3-8-flash", "gemini-3-6-flash", "gemini-4-argon", "gemini-4-neon", "gemini-4-hydrogen", "gemini-4-carbon"];
 const GEMINI_URL = (id: string) => `https://api.kie.ai/${id}-openai/v1/chat/completions`;
 /** KIE's real stream shape: content, an empty chunk, a usage chunk with credits_consumed, [DONE]; no finish_reason. */
 const KIE_GEMINI_SSE =
@@ -116,12 +116,27 @@ describe("KIE chat provider", () => {
     }
   });
 
-  it("prices 3.8 and 3.6 Flash at KIE's discount, then at its published regular price, and 4 Argon at its one published price", () => {
+  it("prices 3.8 and 3.6 Flash at KIE's discount, then at its published regular price, and each Gemini 4 at its one published price, cached input included", () => {
     const periods = (id: string) => KIE_CHAT_MODELS.find((model) => model.id === id)?.rate?.periods;
     for (const id of ["gemini-3-8-flash", "gemini-3-6-flash"]) {
       assert.deepEqual(periods(id), [{ input: 0.225, output: 1.125 }, { from: "2026-12-31", input: 0.45, output: 2.25 }], id);
     }
-    assert.deepEqual(periods("gemini-4-argon"), [{ input: 0.8, output: 4 }]);
+    assert.deepEqual(periods("gemini-4-argon"), [{ input: 0.8, output: 4, cacheRead: 0.04 }]);
+    assert.deepEqual(periods("gemini-4-carbon"), [{ input: 0.8, output: 4, cacheRead: 0.04 }]);
+    assert.deepEqual(periods("gemini-4-hydrogen"), [{ input: 0.6, output: 3, cacheRead: 0.03 }]);
+    assert.deepEqual(periods("gemini-4-neon"), [{ input: 1.2, output: 6, cacheRead: 0.06 }]);
+  });
+
+  it("maps a reasoning level to the reasoning_effort values KIE documents for each Gemini model", () => {
+    const levelMap = (id: string) => createKieProvider({ apiKey: "k" }).getModels().find((model) => model.id === id)?.thinkingLevelMap;
+    const none = { off: null, minimal: null, max: null };
+    for (const id of ["gemini-3-8-flash", "gemini-3-6-flash", "gemini-4-argon"]) {
+      assert.deepEqual(levelMap(id), { ...none, low: "low", medium: null, high: "high", xhigh: null }, id);
+    }
+    assert.deepEqual(levelMap("gemini-4-carbon"), { ...none, low: "low", medium: "medium", high: "high", xhigh: null });
+    for (const id of ["gemini-4-neon", "gemini-4-hydrogen"]) {
+      assert.deepEqual(levelMap(id), { ...none, low: "low", medium: "medium", high: "high", xhigh: "xhigh" }, id);
+    }
   });
 
   it("serves a Gemini definition at its own base URL, and refuses one on Chat Completions without a base URL", () => {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createFakeFetch, hangingResponse, jsonResponse, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { KIE_CHAT_MODELS } from "@hk01/pi-ai-extra-kie/pi-ai";
 import { createOpenRouterProvider } from "@hk01/pi-ai-extra-openrouter/pi-ai";
 import { createChatKit } from "../src/index.ts";
 import { TurnFailure } from "../src/errors.ts";
@@ -28,6 +29,8 @@ const GEMINI_MODELS_URL = /^https:\/\/generativelanguage\.googleapis\.com\/v1bet
 const KIE_CODEX_MODELS_URL = "https://api.kie.ai/openai/v1/models";
 const KIE_CLAUDE_MODELS_URL = "https://api.kie.ai/anthropic/v1/models";
 const TOAPIS_MODELS_URL = "https://api.toapis.com/v1/models?type=text";
+/** KIE's Gemini models: no KIE list names them, so the provider always offers them. */
+const KIE_GEMINI_IDS = KIE_CHAT_MODELS.filter((model) => model.protocol === "openai-completions").map((model) => model.id);
 
 function listed(id: string): Model<Api> {
   return { id } as Model<Api>;
@@ -274,7 +277,7 @@ describe("turns resolve against the live list", () => {
     const snapshot = await registry.providers.get("kie")!.models.read();
     assert.deepEqual(
       [snapshot.source, snapshot.refreshError, ids(snapshot.models)],
-      ["live", "the model list was not read within 15 s", ["gpt-5-6-sol", "claude-haiku-4-5", "gemini-3-8-flash", "gemini-3-6-flash", "gemini-4-argon"]],
+      ["live", "the model list was not read within 15 s", ["gpt-5-6-sol", "claude-haiku-4-5", ...KIE_GEMINI_IDS]],
       "the last good list stays in use",
     );
   });
@@ -317,7 +320,7 @@ describe("turns resolve against the live list", () => {
     t.mock.timers.tick(10_000 - LIST_READ_TIMEOUT_MS.cold);
     await settle();
     const snapshot = await registry.providers.get("kie")!.models.read();
-    assert.deepEqual([snapshot.refreshError, ids(snapshot.models)], [undefined, ["gpt-5-6-sol", "claude-opus-5-5", "gemini-3-8-flash", "gemini-3-6-flash", "gemini-4-argon"]], "the 10 s answer replaced the list");
+    assert.deepEqual([snapshot.refreshError, ids(snapshot.models)], [undefined, ["gpt-5-6-sol", "claude-opus-5-5", ...KIE_GEMINI_IDS]], "the 10 s answer replaced the list");
     await assert.rejects(prepare(), (error: unknown) => error instanceof TurnFailure && error.code === "UNKNOWN_MODEL");
   });
 });
@@ -834,7 +837,7 @@ describe("KIE and ToAPIs live lists", () => {
     ]);
     const chat = testKit(["kie"], fake.fetch);
     const models = byId((await chat.listModels())[0]);
-    assert.deepEqual([...models.keys()], ["gpt-5-6-sol", "claude-opus-5-5", "claude-sonnet-4-6", "gemini-3-8-flash", "gemini-3-6-flash", "gemini-4-argon"]);
+    assert.deepEqual([...models.keys()], ["gpt-5-6-sol", "claude-opus-5-5", "claude-sonnet-4-6", ...KIE_GEMINI_IDS]);
     assert.deepEqual(
       fake.calls.map((call) => call.headers.authorization),
       ["Bearer kie-key", "Bearer kie-key"],

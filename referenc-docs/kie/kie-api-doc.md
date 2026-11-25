@@ -154,6 +154,11 @@
 - Image    Models > 4o Image API [Generate 4o Image](https://docs.kie.ai/4o-image-api/generate-4-o-image.md): :::warning
 - Image    Models > Flux Kontext API [Generate or Edit Image](https://docs.kie.ai/flux-kontext-api/generate-or-edit-image.md): :::warning
 - Image    Models > Kie [Kie - Image Upscale](https://docs.kie.ai/market/kie/image-upscale.md): Upscale an image by `1x`, `2x`, `4x`, or `8x` while keeping the original aspect ratio. Detail is restored generatively, and text regions are upscaled with a fidelity pass so the text is never rewritten.
+- Image    Models > Kie [KIE NSFW Moderation](https://docs.kie.ai/market/kie/nsfw-moderation.md): Check text, one image, or both in a single request with KIE NSFW Moderation and get a `pass` or `block` verdict for sexual content at the `adult`, `social` or `strict` level. Every result also includes the NSFW level and separate details for the text and the image. The model uses the parameter `model=kie/nsfw-moderation`. Try it online and see pricing on the [KIE NSFW Moderation API page](https://kie.ai/nsfw-moderation).
+- Image    Models > MiniMax H3 [MiniMax H3 Text-to-Image](https://docs.kie.ai/market/minimax-h3/text-to-image.md): Generate an image from a text prompt with MiniMax-H3-Image.
+- Image    Models > MiniMax H3 [MiniMax H3 Image Editing](https://docs.kie.ai/market/minimax-h3/image-edit.md): Edit or compose images from 1–16 reference images with MiniMax-H3-Image. Refer to the images in the prompt as `<Picture 1>`, `<Picture 2>`, … in upload order.
+- Image    Models > Kling [Kling 4.0 Image](https://docs.kie.ai/market/kling-4-0/image.md): Generate images with Kling Image 4.0. One endpoint covers both text-to-image and image-to-image: omit `image_urls` for pure text-to-image, or provide reference images and mention them in `prompt` as `@image_1`, `@image_2` …. Use `mode=series` to generate a coherent set of images.
+- Image    Models > Kling [Kling 4.0 Long Image](https://docs.kie.ai/market/kling-4-0/long-image.md): Generate one complete long image with Kling Image 4.0. Each task produces exactly one long image; the number of images cannot be set.
 - Video Models > Grok Imagine [Grok Imagine Text to Video](https://docs.kie.ai/market/grok-imagine/text-to-video.md): Output is an MP4 video with an audio track generated together with the video (dialogue written in the prompt is spoken). Audio cannot be turned off.
 - Video Models > Grok Imagine [Grok Imagine Image to Video](https://docs.kie.ai/market/grok-imagine/image-to-video.md): Output is an MP4 video with an audio track generated together with the video (dialogue written in the prompt is spoken). Audio cannot be turned off.
 - Video Models > Grok Imagine [Grok Imagine - Video Upscale](https://docs.kie.ai/market/grok-imagine/upscale.md): Output is an MP4 video with an audio track generated together with the video (dialogue written in the prompt is spoken). Audio cannot be turned off.
@@ -165,8 +170,8 @@
 - Video Models > Kling [Kling - V2.5 Turbo Text to Video Pro](https://docs.kie.ai/market/kling/v25-turbo-text-to-video-pro.md): ## Overview
 - Video Models > Kling [Kling AI Avatar Standard](https://docs.kie.ai/market/kling/ai-avatar-standard.md): ## Overview
 - Video Models > Kling [Kling AI Avatar Pro](https://docs.kie.ai/market/kling/ai-avatar-pro.md): ## Overview
-- Video Models > Kling [Kling V2.1 Master Image to Video](https://docs.kie.ai/market/kling/v2-1-master-image-to-video.md): ## Query Task Status
-- Video Models > Kling [Kling V2.1 Master Text to Video](https://docs.kie.ai/market/kling/v2-1-master-text-to-video.md): ## Query Task Status
+- Video Models > Kling [Kling V2.1 Master Image to Video](https://docs.kie.ai/market/kling/v2-1-master-image-to-video.md): :::warning
+- Video Models > Kling [Kling V2.1 Master Text to Video](https://docs.kie.ai/market/kling/v2-1-master-text-to-video.md): :::warning
 - Video Models > Kling [Kling V2.1 Pro](https://docs.kie.ai/market/kling/v2-1-pro.md): ## Query Task Status
 - Video Models > Kling [Kling V2.1 Standard](https://docs.kie.ai/market/kling/v2-1-standard.md): ## Query Task Status
 - Video Models > Kling [Kling 2.6 motion-control](https://docs.kie.ai/market/kling/motion-control.md): ## Overview
@@ -187,6 +192,7 @@
 - Video Models > Bytedance [Bytedance Seedance 2.0 Mini](https://docs.kie.ai/market/bytedance/seedance-2-mini.md): ## Query Task Status
 - Video Models > Bytedance [Bytedance Seedance 2.5](https://docs.kie.ai/market/bytedance/seedance-2-5.md): ## Query Task Status
 - Video Models > Bytedance [Bytedance Seedance 2.5 Draft](https://docs.kie.ai/market/bytedance/seedance-2-5-draft.md): ## Query Task Status
+- Video Models > Bytedance [Bytedance Seedance 2.5 Flash](https://docs.kie.ai/market/bytedance/seedance-2-5-flash.md): ## Query Task Status
 - Video Models > Bytedance [Bytedance V1 Pro Fast Image to Video](https://docs.kie.ai/market/bytedance/v1-pro-fast-image-to-video.md): ## Query Task Status
 - Video Models > Bytedance [Bytedance V1 Pro Image to Video](https://docs.kie.ai/market/bytedance/v1-pro-image-to-video.md): Content generation using bytedance/v1-pro-image-to-video
 - Video Models > Bytedance [Bytedance - V1 Pro Text to Video](https://docs.kie.ai/market/bytedance/v1-pro-text-to-video.md): Content generation using bytedance/v1-pro-text-to-video
@@ -239,7 +245,8 @@
 - Video Models > HappyHorse [HappyHorse-1-1 text-to-video](https://docs.kie.ai/market/happyhorse-1-1/text-to-video.md): 
 - Video Models > HappyHorse [HappyHorse-1-1 reference-to-video](https://docs.kie.ai/market/happyhorse-1-1/reference-to-video.md): 
 - Video Models > Gemini Omni [Gemini Omni 1.1 Flash](https://docs.kie.ai/market/google/gemini-omni-flash-1-1.md): ## Create Task
-- Video Models > Gemini Omni [Gemini Omni 1.2 Flash](https://docs.kie.ai/market/google/gemini-omni-flash-1-2.md): ## Create Task
+- Video Models > Gemini Omni [Gemini Omni 1.2 Flash](https://docs.kie.ai/market/google/gemini-omni-flash-1-2.md): ### Create Task
+- Video Models > Gemini Omni [Gemini Omni Flash 1.2 Extend](https://docs.kie.ai/market/google/gemini-omni-flash-1-2-extend.md): ### Create Task
 - Video Models > Gemini Omni [Gemini Omni Video](https://docs.kie.ai/market/gemini-omni-video.md): ## Create Task
 - Video Models > Gemini Omni [Gemini Omni Audio](https://docs.kie.ai/market/gemini-omni-audio.md): Synchronous. Registers a voice preset and returns data.audioId immediately; no audio file is generated. Pass audioId in audio_ids of the video and character endpoints.
 - Video Models > Gemini Omni [Gemini Omni Character](https://docs.kie.ai/market/gemini-omni-character.md): - image_urls supports 1–2 images (index 0 portrait, index 1 optional full-body), each up to 20MB.
@@ -255,6 +262,11 @@
 - Video Models > Vidu [Vidu Q4 Image To Video](https://docs.kie.ai/market/vidu-q4/image-to-video.md): 
 - Video Models > Vidu [Vidu Q4 Reference To Video](https://docs.kie.ai/market/vidu-q4/reference-to-video.md): 
 - Video Models > Kie [Kie - Video Upscale](https://docs.kie.ai/market/kie/video-upscale.md): Upscale a source video to `1080P`, `2K`, or `4K` while keeping the original aspect ratio, frame rate, frame count, and audio.
+- Video Models > LTX [LTX 2.5 Fast Text-to-Video](https://docs.kie.ai/market/ltx/2-5-fast-text-to-video.md): Generate a video with synchronized native audio — dialogue, sound effects and ambience — from a text prompt, in a single pass. 720p–1440p, 24–50 fps, 6–20 seconds, with multi-shot prompting.
+- Video Models > LTX [LTX 2.5 Fast Image-to-Video](https://docs.kie.ai/market/ltx/2-5-fast-image-to-video.md): Animate an image into a video with synchronized native audio. The image is used as the first frame and sets the aspect ratio of the output.
+- Video Models > LTX [LTX 2.5 Fast Audio-to-Video](https://docs.kie.ai/market/ltx/2-5-fast-audio-to-video.md): Generate a video that follows an input audio clip — speech, singing or music. Lips and motion follow the sound, and the input audio is kept as the soundtrack. Optionally give a first-frame image (for example a portrait for a talking video).
+- Video Models > LTX [LTX 2.5 Pro Text-to-Video](https://docs.kie.ai/market/ltx/2-5-pro-text-to-video.md): LTX 2.5 Pro generates a video with synchronized native audio — dialogue, sound effects and ambience — from a text prompt, with finer faces, textures and on-screen text than LTX 2.5 Fast. 720p or 1080p, 24–50 fps, 6–10 seconds.
+- Video Models > LTX [LTX 2.5 Pro Image-to-Video](https://docs.kie.ai/market/ltx/2-5-pro-image-to-video.md): LTX 2.5 Pro animates an image into a video with synchronized native audio, with finer detail than LTX 2.5 Fast. The image is used as the first frame and sets the aspect ratio of the output.
 - Music Models > ElevenLabs [elevenlabs/audio-isolation](https://docs.kie.ai/market/elevenlabs/audio-isolation.md): :::warning
 - Music Models > ElevenLabs [elevenlabs/text-to-dialogue-v3](https://docs.kie.ai/market/elevenlabs/text-to-dialogue-v3.md): Dialogue text-to-speech generation using elevenlabs/text-to-dialogue-v3
 - Music Models > ElevenLabs [elevenlabs/text-to-speech-multilingual-v2](https://docs.kie.ai/market/elevenlabs/text-to-speech-multilingual-v2.md): Content generation using elevenlabs/text-to-speech-multilingual-v2
@@ -286,14 +298,17 @@
 - Music Models > Suno > Vocal Removal [Vocal & Instrument Stem Separation](https://docs.kie.ai/suno-api/separate-vocals.md): :::warning Document updated
 - Music Models > Suno > Vocal Removal [Generate MIDI from Audio](https://docs.kie.ai/suno-api/generate-midi.md): :::warning Document updated
 - Music Models > Suno > Sounds Generation [Generate sounds](https://docs.kie.ai/suno-api/generate-sounds.md): :::warning Document updated
+- Music Models > Suno > Speech Generation [Generate Speech](https://docs.kie.ai/suno-api/generate-speech.md): Create a Suno Speech generation task. Supports **Simple** and **Advanced** modes, switched by `customMode`. The two modes have mutually exclusive fields — do not mix them.
 - Music Models > NVIDIA [Nemotron 3.5 Transcribe](https://docs.kie.ai/market/nvidia/nemotron-3-5-transcribe.md): Transcribe speech to text with Nemotron 3.5 Transcribe, KIE hosted. Send a public audio URL, or a video with an audio track, and get the transcript; the spoken language is detected automatically. Optionally add word-level timestamps with speaker labels, or translate the speech instead. The model uses the parameter `model=nvidia/nemotron-3-5-transcribe`. Try it online and see pricing on the [Nemotron 3.5 Transcribe API page](https://kie.ai/nemotron-3-5-transcribe).
 - Chat  Models > GPT [GPT 5.2](https://docs.kie.ai/market/chat/gpt-5-2.md): :::warning
-- Chat  Models > GPT [GPT 5.5 (response)](https://docs.kie.ai/market/chat/gpt-5-5.md): > GPT-5.5 uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
+- Chat  Models > GPT [GPT 5.5 (response)](https://docs.kie.ai/market/chat/gpt-5-5.md): :::warning
 - Chat  Models > GPT [GPT 5.6 Luna](https://docs.kie.ai/market/chat/gpt-5-6-luna.md): > GPT 5.6 Luna uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
 - Chat  Models > GPT [Gpt 6 Astra](https://docs.kie.ai/market/chat/gpt-6-astra.md): > GPT 6 Astra uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
-- Chat  Models > GPT [GPT 6 Luna](https://docs.kie.ai/market/chat/gpt-6-luna.md): > GPT 6 Luna uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
+- Chat  Models > GPT [GPT 6 Luna](https://docs.kie.ai/market/chat/gpt-6-luna.md): :::warning
 - Chat  Models > GPT [GPT 6 Sol](https://docs.kie.ai/market/chat/gpt-6-sol.md): > GPT 6 Sol uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
 - Chat  Models > GPT [GPT 6.1 Terra](https://docs.kie.ai/market/chat/gpt-6-1-terra.md): > GPT 6.1 Terra uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events). Try it online and see pricing on the [GPT-6.1 Terra API page](https://kie.ai/gpt-6-1-terra).
+- Chat  Models > GPT [GPT 6.2 Sol](https://docs.kie.ai/market/chat/gpt-6-2-sol.md): > GPT 6.2 Sol uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events). Try it online and see pricing on the [GPT-6.2 Sol API page](https://kie.ai/gpt-6-2-sol).
+- Chat  Models > GPT [GPT 6.2 Astra](https://docs.kie.ai/market/chat/gpt-6-2-astra.md): > GPT 6.2 Astra uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events). Try it online and see pricing on the [GPT-6.2 Astra API page](https://kie.ai/gpt-6-2-astra).
 - Chat  Models > GPT [GPT 5.6 Terra](https://docs.kie.ai/market/chat/gpt-5-6-terra.md): > GPT 5.6 Terra uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
 - Chat  Models > GPT [GPT 5.6 Sol](https://docs.kie.ai/market/chat/gpt-5-6-sol.md): > GPT 5.6 Sol uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
 - Chat  Models > GPT [GPT 6.1 Sol](https://docs.kie.ai/market/chat/gpt-6-1-sol.md): > GPT 6.1 Sol uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
@@ -324,10 +339,12 @@
 - Chat  Models > Gemini [Gemini 3.8 Flash (openai)](https://docs.kie.ai/market/gemini/gemini-3-8-flash-openai.md): :::warning
 - Chat  Models > Gemini [Gemini 4 Argon](https://docs.kie.ai/market/gemini/gemini-4-argon.md): :::warning
 - Chat  Models > Gemini [Gemini 4 Argon (openai)](https://docs.kie.ai/market/gemini/gemini-4-argon-openai.md): :::warning
-- Chat  Models > Gemini [Gemini 4 Carbon](https://docs.kie.ai/46858082e0.md): :::warning
-- Chat  Models > Gemini [Gemini 4 Carbon (openai)](https://docs.kie.ai/46858085e0.md): :::warning
 - Chat  Models > Gemini [Gemini 4 Carbon](https://docs.kie.ai/market/gemini/gemini-4-carbon.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Hydrogen](https://docs.kie.ai/market/gemini/gemini-4-hydrogen.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Hydrogen (openai)](https://docs.kie.ai/market/gemini/gemini-4-hydrogen-openai.md): :::warning
 - Chat  Models > Gemini [Gemini 4 Carbon (openai)](https://docs.kie.ai/market/gemini/gemini-4-carbon-openai.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Neon](https://docs.kie.ai/market/gemini/gemini-4-neon.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Neon (openai)](https://docs.kie.ai/market/gemini/gemini-4-neon-openai.md): :::warning
 - Chat  Models > Grok [Grok 4.7](https://docs.kie.ai/market/grok/grok-4-7.md): > Grok 4.7 uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
 - Chat  Models > Grok [Grok 4.3](https://docs.kie.ai/market/grok/grok-4-3.md): > Grok 4.3 uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
 - Chat  Models > Grok [Grok 4.5](https://docs.kie.ai/market/grok/grok-4-5.md): > Grok 4.5 uses an OpenAI Responses–compatible endpoint (input/output items and response.* streaming events).
@@ -418,6 +435,11 @@
 - Image    Models > Wan [Wan 2.7 Image](https://docs.kie.ai/cn/market/wan/2-7-image.md): 基于 wan/2-7-image 实现图像生成与编辑
 - Image    Models > Wan [Wan 2.7 Image Pro](https://docs.kie.ai/cn/market/wan/2-7-image-pro.md): 基于 wan/2-7-image-pro 实现图像生成与编辑
 - Image    Models > Kie [Kie - 图片放大](https://docs.kie.ai/cn/market/kie/image-upscale.md): 将图片按 `1x`、`2x`、`4x` 或 `8x` 放大，并保持原画面比例。采用生成式放大补充细节，文字区域单独做保真放大，**不会改写文字**。
+- Image    Models > Kie [KIE NSFW Moderation 内容审核](https://docs.kie.ai/cn/market/kie/nsfw-moderation.md): 使用 KIE NSFW Moderation 在一次请求中审核文字、一张图片或两者一起，按 `adult`、`social` 或 `strict` 档位得到针对性内容的 `pass` / `block` 结论；每个结果还会给出 NSFW 等级以及文字、图片的分项明细。调用时参数 `model=kie/nsfw-moderation`。可以在 [KIE NSFW Moderation API 页面](https://kie.ai/nsfw-moderation) 在线试用并查看价格。
+- Image    Models > MiniMax H3 [MiniMax H3 文生图](https://docs.kie.ai/cn/market/minimax-h3/text-to-image.md): 使用 MiniMax-H3-Image 根据文本提示词生成图片。
+- Image    Models > MiniMax H3 [MiniMax H3 图片编辑](https://docs.kie.ai/cn/market/minimax-h3/image-edit.md): 使用 MiniMax-H3-Image 基于 1–16 张参考图进行编辑或合成。在提示词里按上传顺序用 `<Picture 1>`、`<Picture 2>`…（或"第一张图"）指代参考图。
+- Image    Models > Kling [Kling 4.0 Image](https://docs.kie.ai/cn/market/kling-4-0/image.md): 使用 Kling Image 4.0 生成图片。文生图和图生图共用这一个接口：不传 `image_urls` 即为纯文生图；传入参考图后，在 `prompt` 中用 `@image_1`、`@image_2` … 引用。设置 `mode=series` 可生成一组前后连贯的图片。
+- Image    Models > Kling [Kling 4.0 Long Image](https://docs.kie.ai/cn/market/kling-4-0/long-image.md): 使用 Kling Image 4.0 生成一张完整的长图。每个任务只生成一张长图，不能指定张数。
 - Video Models > Grok Imagine [Grok Imagine 文生视频](https://docs.kie.ai/cn/market/grok-imagine/text-to-video.md): 输出为 MP4 视频，带与画面同步生成的音轨（prompt 中的台词会被念出）。音频无法关闭。
 - Video Models > Grok Imagine [Grok Imagine 图生视频](https://docs.kie.ai/cn/market/grok-imagine/image-to-video.md): 输出为 MP4 视频，带与画面同步生成的音轨（prompt 中的台词会被念出）。音频无法关闭。
 - Video Models > Grok Imagine [放大 Grok Imagine 视频](https://docs.kie.ai/cn/market/grok-imagine/upscale.md): 输出为 MP4 视频，带与画面同步生成的音轨（prompt 中的台词会被念出）。音频无法关闭。
@@ -429,8 +451,8 @@
 - Video Models > Kling [Kling V2.5 Turbo Pro 文生视频](https://docs.kie.ai/cn/market/kling/v25-turbo-text-to-video-pro.md): ## 概述
 - Video Models > Kling [Kling AI Avatar Standard](https://docs.kie.ai/cn/market/kling/ai-avatar-standard.md): ## 概述
 - Video Models > Kling [Kling AI Avatar Pro](https://docs.kie.ai/cn/market/kling/ai-avatar-pro.md): ## 概述
-- Video Models > Kling [Kling V2.1 Master 图生视频](https://docs.kie.ai/cn/market/kling/v2-1-master-image-to-video.md): ## 查询任务状态
-- Video Models > Kling [Kling V2.1 Master 文生视频](https://docs.kie.ai/cn/market/kling/v2-1-master-text-to-video.md): ## 查询任务状态
+- Video Models > Kling [Kling V2.1 Master 图生视频](https://docs.kie.ai/cn/market/kling/v2-1-master-image-to-video.md): :::warning
+- Video Models > Kling [Kling V2.1 Master 文生视频](https://docs.kie.ai/cn/market/kling/v2-1-master-text-to-video.md): :::warning
 - Video Models > Kling [Kling V2.1 Pro](https://docs.kie.ai/cn/market/kling/v2-1-pro.md): ## 查询任务状态
 - Video Models > Kling [Kling V2.1 Standard](https://docs.kie.ai/cn/market/kling/v2-1-standard.md): ## 查询任务状态
 - Video Models > Kling [Kling-2.6 motion-control](https://docs.kie.ai/cn/market/kling/motion-control.md): ## 概述
@@ -451,6 +473,7 @@
 - Video Models > Bytedance [Bytedance Seedance 2.0 Mini](https://docs.kie.ai/cn/market/bytedance/seedance-2-mini.md): ## 查询任务状态
 - Video Models > Bytedance [Bytedance Seedance 2.5](https://docs.kie.ai/cn/market/bytedance/seedance-2-5.md): ## 查询任务状态
 - Video Models > Bytedance [Bytedance Seedance 2.5 Draft](https://docs.kie.ai/cn/market/bytedance/seedance-2-5-draft.md): ## 查询任务状态
+- Video Models > Bytedance [Bytedance Seedance 2.5 Flash](https://docs.kie.ai/cn/market/bytedance/seedance-2-5-flash.md): ## 查询任务状态
 - Video Models > Bytedance [Bytedance V1 Pro Fast 图生视频](https://docs.kie.ai/cn/market/bytedance/v1-pro-fast-image-to-video.md): ## 查询任务状态
 - Video Models > Bytedance [Bytedance V1 Pro 图生视频](https://docs.kie.ai/cn/market/bytedance/v1-pro-image-to-video.md): ## 查询任务状态
 - Video Models > Bytedance [Bytedance V1 Pro 文生视频](https://docs.kie.ai/cn/market/bytedance/v1-pro-text-to-video.md): ## 查询任务状态
@@ -490,7 +513,8 @@
 - Video Models > HappyHorse [HappyHorse 1.1 文生视频](https://docs.kie.ai/cn/market/happyhorse-1-1/text-to-video.md): 
 - Video Models > HappyHorse [HappyHorse 1.1 参考图生成视频](https://docs.kie.ai/cn/market/happyhorse-1-1/reference-to-video.md): 
 - Video Models > Gemini Omni [Gemini Omni 1.1 Flash](https://docs.kie.ai/cn/market/google/gemini-omni-flash-1-1.md): ## 创建任务
-- Video Models > Gemini Omni [Gemini Omni 1.2 Flash](https://docs.kie.ai/cn/market/google/gemini-omni-flash-1-2.md): ## 创建任务
+- Video Models > Gemini Omni [Gemini Omni 1.2 Flash](https://docs.kie.ai/cn/market/google/gemini-omni-flash-1-2.md): ### 创建任务
+- Video Models > Gemini Omni [Gemini Omni Flash 1.2 视频延长](https://docs.kie.ai/cn/market/google/gemini-omni-flash-1-2-extend.md): ### 创建任务
 - Video Models > Gemini Omni [Gemini Omni 生视频](https://docs.kie.ai/cn/market/gemini-omni-video.md): ## 创建任务
 - Video Models > Gemini Omni [Gemini Omni Audio 生语音](https://docs.kie.ai/cn/market/gemini-omni-audio.md): 同步接口。登记一个音色配置并立即返回 data.audioId，不生成音频文件。将 audioId 填入视频、角色接口的 audio_ids 使用。
 - Video Models > Gemini Omni [Gemini Omni Character 生角色](https://docs.kie.ai/cn/market/gemini-omni-character.md): - image_urls 支持 1–2 张（索引 0 为肖像，索引 1 为可选全身图），单张不超过 20MB。
@@ -519,7 +543,12 @@
 - Video Models > Vidu [Vidu Q4 图生视频](https://docs.kie.ai/cn/market/vidu-q4/image-to-video.md): ## 查询任务状态
 - Video Models > Vidu [Vidu Q4 参考生视频](https://docs.kie.ai/cn/market/vidu-q4/reference-to-video.md): ## 查询任务状态
 - Video Models > Kie [Kie - 视频放大](https://docs.kie.ai/cn/market/kie/video-upscale.md): 将源视频放大到 `1080P`、`2K` 或 `4K`，并保持原画面比例、原帧率、原帧数；原片有声音则带回声音。
-- Music Models > ElevenLabs [ElevenLabs对话文生语音V3](https://docs.kie.ai/cn/market/elevenlabs/text-to-dialogue-v3.md): ## 查询任务状态
+- Video Models > LTX [LTX 2.5 Fast 文生视频](https://docs.kie.ai/cn/market/ltx/2-5-fast-text-to-video.md): 根据文本提示词生成视频，画面与原生声音（对白、音效、环境声）一次生成。720p–1440p，24–50 fps，6–20 秒，支持在一条提示词里写多个镜头。
+- Video Models > LTX [LTX 2.5 Fast 图生视频](https://docs.kie.ai/cn/market/ltx/2-5-fast-image-to-video.md): 把一张图片生成视频，并同步生成原生声音。图片作为第一帧，输出画面比例跟随这张图。
+- Video Models > LTX [LTX 2.5 Fast 音频转视频](https://docs.kie.ai/cn/market/ltx/2-5-fast-audio-to-video.md): 根据输入的一段音频（说话、唱歌或音乐）生成视频：口型和动作跟着声音走，成片音轨就是输入的音频。可以再给一张图作为第一帧（例如一张人像 + 一段语音 → 说话视频）。
+- Video Models > LTX [LTX 2.5 Pro 文生视频](https://docs.kie.ai/cn/market/ltx/2-5-pro-text-to-video.md): LTX 2.5 Pro 根据文本提示词生成视频，画面与原生声音（对白、音效、环境声）一次生成；人脸、纹理和画面文字比 LTX 2.5 Fast 更细。720p 或 1080p，24–50 fps，6–10 秒。
+- Video Models > LTX [LTX 2.5 Pro 图生视频](https://docs.kie.ai/cn/market/ltx/2-5-pro-image-to-video.md): LTX 2.5 Pro 把一张图片生成视频，并同步生成原生声音，细节比 LTX 2.5 Fast 更好。图片作为第一帧，输出画面比例跟随这张图。
+- Music Models > ElevenLabs [ElevenLabs对话文生语音V3](https://docs.kie.ai/cn/market/elevenlabs/text-to-dialogue-v3.md): ## 支持的音色
 - Music Models > ElevenLabs [ElevenLabs Turbo 2.5文生语音](https://docs.kie.ai/cn/market/elevenlabs/text-to-speech-turbo-2-5.md): ## 查询任务状态
 - Music Models > ElevenLabs [ElevenLabs文生语音 多语言V2](https://docs.kie.ai/cn/market/elevenlabs/text-to-speech-multilingual-v2.md): ## 查询任务状态
 - Music Models > ElevenLabs [ElevenLabs音频分离](https://docs.kie.ai/cn/market/elevenlabs/audio-isolation.md): :::warning
@@ -550,14 +579,17 @@
 - Music Models > Suno > voice [Suno Voice 重新生成验证短句](https://docs.kie.ai/cn/suno-api/suno-voice-regenerate.md): :::warning 文档已更新
 - Music Models > Suno > voice [Suno Voice检查是否可用接口](https://docs.kie.ai/cn/suno-api/suno-voice-check-voice.md): :::warning 文档已更新
 - Music Models > Suno > Sounds Generation [生成声音](https://docs.kie.ai/cn/suno-api/generate-sounds.md): :::warning 文档已更新
+- Music Models > Suno > Speech Generation [生成语音](https://docs.kie.ai/cn/suno-api/generate-speech.md): 用于创建 Suno Speech 语音生成任务。支持 **Simple** 与 **Advanced** 两种模式，由 `customMode` 切换。两种模式字段互斥，不要混传。
 - Music Models > NVIDIA [Nemotron 3.5 Transcribe 语音转文字](https://docs.kie.ai/cn/market/nvidia/nemotron-3-5-transcribe.md): 使用 Nemotron 3.5 Transcribe 将语音转为文字（KIE hosted）。提交一个公网音频地址（也可以是带音轨的视频）即可拿到转写文本，语种自动识别；可选加上词级时间戳与说话人标签，或改为翻译。调用时参数 `model=nvidia/nemotron-3-5-transcribe`。 可以在 [Nemotron 3.5 Transcribe API 页面](https://kie.ai/nemotron-3-5-transcribe) 在线试用并查看价格。
 - Chat  Models > GPT [GPT 5.2](https://docs.kie.ai/cn/market/chat/gpt-5-2.md): :::warning
-- Chat  Models > GPT [GPT 5.5 (response)](https://docs.kie.ai/cn/market/chat/gpt-5-5.md): # GPT-5-5
+- Chat  Models > GPT [GPT 5.5 (response)](https://docs.kie.ai/cn/market/chat/gpt-5-5.md): :::warning
 - Chat  Models > GPT [GPT 5.6 Luna](https://docs.kie.ai/cn/market/chat/gpt-5-6-luna.md): # GPT 5.6 Luna
 - Chat  Models > GPT [Gpt 6 Astra](https://docs.kie.ai/cn/market/chat/gpt-6-astra.md): # Gpt 6 Astra
-- Chat  Models > GPT [GPT 6 Luna](https://docs.kie.ai/cn/market/chat/gpt-6-luna.md): # GPT 6 Luna
+- Chat  Models > GPT [GPT 6 Luna](https://docs.kie.ai/cn/market/chat/gpt-6-luna.md): :::warning
 - Chat  Models > GPT [ GPT 6 Sol](https://docs.kie.ai/cn/market/chat/gpt-6-sol.md): # GPT 6 Sol
 - Chat  Models > GPT [GPT 6.1 Terra](https://docs.kie.ai/cn/market/chat/gpt-6-1-terra.md): > GPT 6.1 Terra 通过兼容 OpenAI Responses 协议的端点提供（input/output 结构，流式为 response.* 事件）。 可以在 [GPT-6.1 Terra API 页面](https://kie.ai/gpt-6-1-terra) 在线试用并查看价格。
+- Chat  Models > GPT [GPT 6.2 Sol](https://docs.kie.ai/cn/market/chat/gpt-6-2-sol.md): > GPT 6.2 Sol 通过兼容 OpenAI Responses 协议的端点提供（input/output 结构，流式为 response.* 事件）。可以在 [GPT-6.2 Sol API 页面](https://kie.ai/gpt-6-2-sol) 在线试用并查看价格。
+- Chat  Models > GPT [GPT 6.2 Astra](https://docs.kie.ai/cn/market/chat/gpt-6-2-astra.md): # GPT 6.2 Astra
 - Chat  Models > GPT [GPT 5.6 Terra](https://docs.kie.ai/cn/market/chat/gpt-5-6-terra.md): # GPT 5.6 Terra
 - Chat  Models > GPT [GPT 5.6 Sol](https://docs.kie.ai/cn/market/chat/gpt-5-6-sol.md): # GPT 5.6 Sol
 - Chat  Models > GPT [GPT 6.1 Sol ](https://docs.kie.ai/cn/market/chat/gpt-6-1-sol.md): > GPT 6.1 Sol 通过兼容 OpenAI Responses 协议的端点提供（input/output 结构，流式为 response.* 事件）。
@@ -588,7 +620,11 @@
 - Chat  Models > Gemini [Gemini 4 Argon](https://docs.kie.ai/cn/market/gemini/gemini-4-argon.md): :::warning
 - Chat  Models > Gemini [Gemini 4 Argon (openai)](https://docs.kie.ai/cn/market/gemini/gemini-4-argon-openai.md): :::warning
 - Chat  Models > Gemini [Gemini 4 Carbon](https://docs.kie.ai/cn/market/gemini/gemini-4-carbon.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Hydrogen](https://docs.kie.ai/cn/market/gemini/gemini-4-hydrogen.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Hydrogen (openai)](https://docs.kie.ai/cn/market/gemini/gemini-4-hydrogen-openai.md): :::warning
 - Chat  Models > Gemini [Gemini 4 Carbon (openai)](https://docs.kie.ai/cn/market/gemini/gemini-4-carbon-openai.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Neon](https://docs.kie.ai/cn/market/gemini/gemini-4-neon.md): :::warning
+- Chat  Models > Gemini [Gemini 4 Neon (openai)](https://docs.kie.ai/cn/market/gemini/gemini-4-neon-openai.md): :::warning
 - Chat  Models > Codex [Codex API(Responses)](https://docs.kie.ai/cn/market/codex/gpt-codex.md): # Codex API
 - Chat  Models > Grok [Grok 4.7](https://docs.kie.ai/cn/market/grok/grok-4-7.md): 
 - Chat  Models > Grok [Grok 4.3](https://docs.kie.ai/cn/market/grok/grok-4-3.md): # Grok 4.3

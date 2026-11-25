@@ -151,6 +151,14 @@ describe("chat provider helpers", () => {
     assert.equal(resolved?.auth.apiKey, "k-1");
   });
 
+  it("lays a definition's own compat over the built-in one", () => {
+    const own = buildChatModel("toapis", "https://api.toapis.com/v1", { id: "gemini-9-official", protocol: "openai-completions", compat: { supportsDeveloperRole: false } });
+    assert.deepEqual(own.compat, { supportsDeveloperRole: false });
+    const merged = buildChatModel("kie", "https://api.kie.ai/anthropic", { id: "claude-fable-5", protocol: "anthropic-messages", compat: { supportsEagerToolInputStreaming: false } });
+    const builtin = buildChatModel("kie", "https://api.kie.ai/anthropic", { id: "claude-fable-5", protocol: "anthropic-messages" });
+    assert.deepEqual(merged.compat, { ...builtin.compat, supportsEagerToolInputStreaming: false });
+  });
+
   it("copies built-in capability metadata but strips Anthropic fallback models", () => {
     const model = buildChatModel("kie", "https://api.kie.ai/anthropic", { id: "claude-fable-5", protocol: "anthropic-messages" });
     assert.equal(model.provider, "kie");
