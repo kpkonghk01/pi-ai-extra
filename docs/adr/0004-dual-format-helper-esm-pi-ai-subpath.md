@@ -25,7 +25,7 @@ Amended 2026-10-21 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4
 
 Amended 2026-11-19, for pi-ai 1.5.2: the exact pi-ai peer moved from `1.2.0` to `1.5.2` in every package that has one (chat kit 0.5.0, google 0.9.0, kie 0.9.0, toapis 0.8.0, openrouter 0.2.0). The chat kit's optional provider-package peers moved to those releases. pi-ai 1.5.2 is still ESM-only, so the decision stands.
 
-Amended 2026-11-25, for pi-ai 1.6.0: the exact pi-ai peer moved from `1.5.2` to `1.6.0` in every package that has one (chat kit 0.6.0, google 0.10.0, kie 0.10.0, toapis 0.9.0, openrouter 0.3.0), and the chat kit's optional provider-package peers moved to those releases. pi-ai 1.6.0 is still ESM-only, so the decision stands.
+Amended 2026-11-25, for pi-ai 1.6.0: the exact pi-ai peer moved from `1.5.2` to `1.6.0` in every package that has one (chat kit 0.6.0, google 0.10.0, kie 0.10.0, toapis 0.9.0, openrouter 0.3.0), and the chat kit's optional provider-package peers moved to those releases. pi-ai 1.6.0 is still ESM-only, so the decision stands. As with each earlier pi-ai move, the Context's version list and the Decision's "currently" peer were changed in place.
 
 ## Consequences
 
