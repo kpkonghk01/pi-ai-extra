@@ -767,7 +767,7 @@ describe("Gemini chat-only filter", () => {
   /** pi-ai's Gemini catalogue's moving aliases, which Google can point at another model. */
   const ALIASES = ["gemini-flash-latest", "gemini-flash-lite-latest"];
 
-  it("leaves Live, computer use, image-output (Nano Banana too) and Deep Research models and -latest aliases out of the live list", async (t) => {
+  it("leaves Live, computer use, image-output (Nano Banana too) and Deep Research models and -latest aliases out of the live list", async () => {
     const generate = ["generateContent"];
     const fake = createFakeFetch([
       {
@@ -793,17 +793,14 @@ describe("Gemini chat-only filter", () => {
     const chat = testKit(["google"], fake.fetch, { keys: { google: "gemini-key" } });
     const models = byId((await chat.listModels())[0]);
     assert.deepEqual([...models.keys()], ["gemini-3.8-flash", "gemini-3.1-pro-preview-customtools", "gemma-4-31b-it"]);
-    // pi-ai's Gemini adapter sends turns with the global fetch.
-    const sent = t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 500 }));
     for (const model of ["nano-banana-pro-preview", "gemini-nano-banana-2.1", "gemini-3-pro-image-preview"]) {
       const turnResult = await outcome(chat, turn({ provider: "google", model }));
       assert.equal(turnResult.type === "failed" && turnResult.error.code, "UNKNOWN_MODEL", model);
     }
-    assert.equal(sent.mock.callCount(), 0, "no turn was sent");
-    assert.equal(fake.calls.length, 1, "only the list was read");
+    assert.equal(fake.calls.length, 1, "no turn was sent: only the list was read");
   });
 
-  it("filters the installed catalogue the same way when models.list fails (a region block, for example)", async (t) => {
+  it("filters the installed catalogue the same way when models.list fails (a region block, for example)", async () => {
     const fake = createFakeFetch([
       {
         method: "GET",
@@ -819,13 +816,11 @@ describe("Gemini chat-only filter", () => {
     const listedIds = entry.models.map((model) => model.id);
     assert.ok(listedIds.includes("gemini-3.8-flash"));
     for (const id of [...NOT_CHAT, ...ALIASES]) assert.ok(!listedIds.includes(id), id);
-    const sent = t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 500 }));
     for (const model of ["gemini-3.1-flash-live-preview", "gemini-flash-latest", "gemini-3.1-flash-lite-image", "nano-banana-pro-preview"]) {
       const turnResult = await outcome(chat, turn({ provider: "google", model }));
       assert.equal(turnResult.type === "failed" && turnResult.error.code, "UNKNOWN_MODEL", `${model}: turns resolve against the filtered list`);
     }
-    assert.equal(sent.mock.callCount(), 0, "no turn was sent");
-    assert.equal(fake.calls.length, 1, "only the list was read; a failed read is not retried within a minute");
+    assert.equal(fake.calls.length, 1, "no turn was sent: only the list was read, and a failed read is not retried within a minute");
   });
 });
 

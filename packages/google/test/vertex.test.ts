@@ -4,27 +4,15 @@ import { createModels, normalizeContext, type AuthContext, type Context, type Si
 import { GOOGLE_VERTEX_MODELS } from "@earendil-works/pi-ai/providers/google-vertex.models";
 import { createFakeFetch, type FakeFetch, type FakeRoute } from "@hk01/pi-ai-extra-internal/testing";
 import { createGoogleVertexProvider } from "../src/pi-ai/index.ts";
+import { geminiAnswer as answer } from "./helpers.ts";
 
 const EXPRESS_STREAM_URL = /^https:\/\/aiplatform\.googleapis\.com\/v1\/publishers\/google\/models\/gemini-3\.5-flash:streamGenerateContent\?alt=sse$/;
 const NO_AMBIENT_AUTH: AuthContext = { env: async () => undefined, fileExists: async () => false };
 const CONTEXT: Context = { systemPrompt: "Be brief.", messages: [{ role: "user", content: "Hello", timestamp: 1 }] };
 
-function sseResponse(chunks: readonly unknown[]): Response {
-  const body = chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("");
-  return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
-}
-
-const answer = () =>
-  sseResponse([
-    {
-      candidates: [{ content: { role: "model", parts: [{ text: "Hi." }] }, finishReason: "STOP" }],
-      usageMetadata: { promptTokenCount: 8, candidatesTokenCount: 2, totalTokenCount: 10 },
-    },
-  ]);
-
 /**
- * pi-ai's Vertex adapter rejects a custom fetch, so these tests replace the global fetch the
- * Google GenAI SDK calls, and restore it afterwards.
+ * The Vertex factory takes no fetch, so these tests replace the global fetch the Google GenAI SDK
+ * calls, and restore it afterwards.
  */
 describe("createGoogleVertexProvider: requests", () => {
   let realFetch: typeof globalThis.fetch;

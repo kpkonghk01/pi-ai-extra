@@ -20,8 +20,7 @@ export interface ChatKitOptions {
   providers: readonly ChatProvider[];
   /**
    * Custom fetch for tests or instrumentation. Every turn's requests use it instead of the
-   * provider's own, except Gemini's: pi-ai's Gemini and Vertex adapters reject a custom fetch. Model lists
-   * use each provider's own fetch (its factory's `fetch` option).
+   * provider's own. Model lists use each provider's own fetch (its factory's `fetch` option).
    */
   fetch?: typeof globalThis.fetch | undefined;
 }

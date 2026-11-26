@@ -81,7 +81,6 @@ export function createOpenAIResponsesObserver(): StreamObserver {
 
 export const OPENAI_RESPONSES_WIRE_API: WireApi = {
   api: "openai-responses",
-  acceptsFetch: true,
   suppressedHeaders: OPENAI_AMBIENT_HEADERS,
   schemaAsToolCall: () => false,
   placeDocument: placeByUrl,

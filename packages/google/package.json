@@ -1,6 +1,6 @@
 {
   "name": "@hk01/pi-ai-extra-google",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Gemini image helper (Nano Banana 2.1, Gemini 3 Pro Image) and pi-ai chat providers with the chat kit's traits: Gemini on Google AI Studio (with image models and a live model list) and on Google Agent Platform",
   "license": "UNLICENSED",
   "type": "module",
@@ -47,7 +47,7 @@
     "zod": "4.6.5"
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "1.5.2"
+    "@earendil-works/pi-ai": "1.6.0"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-ai": {
@@ -55,7 +55,7 @@
     }
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "1.5.2",
+    "@earendil-works/pi-ai": "1.6.0",
     "@hk01/pi-ai-extra-internal": "workspace:*"
   }
 }

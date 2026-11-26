@@ -32,8 +32,6 @@ export interface ChatModelDefinition {
   input?: ("text" | "image")[] | undefined;
   contextWindow?: number | undefined;
   maxTokens?: number | undefined;
-  /** pi-ai request compatibility for this route, laid over what is copied from pi-ai's catalogue. */
-  compat?: Model<ChatProtocol>["compat"] | undefined;
   /**
    * The model's published rate schedule, in USD per 1M tokens. Never copied from pi-ai's catalogue
    * (provider prices differ from list prices). The packages' default model lists set it from each
@@ -107,7 +105,6 @@ export function buildChatModel(provider: string, baseUrl: string | undefined, de
   const builtin = findBuiltinModel(definition);
   const defaults = DEFAULTS[definition.protocol];
   const thinkingLevelMap = definition.thinkingLevelMap ?? builtin?.thinkingLevelMap;
-  const compat = builtin?.compat || definition.compat ? { ...(builtin?.compat && resellerCompat(builtin.compat)), ...definition.compat } : undefined;
   const model: Model<ChatProtocol> = {
     id: definition.id,
     name: definition.name ?? builtin?.name ?? definition.id,
@@ -121,7 +118,7 @@ export function buildChatModel(provider: string, baseUrl: string | undefined, de
     maxTokens: definition.maxTokens ?? builtin?.maxTokens ?? defaults.maxTokens,
     ...(thinkingLevelMap ? { thinkingLevelMap } : {}),
     ...(builtin?.inputLimits ? { inputLimits: builtin.inputLimits } : {}),
-    ...(compat ? { compat: compat as NonNullable<Model<ChatProtocol>["compat"]> } : {}),
+    ...(builtin?.compat ? { compat: resellerCompat(builtin.compat) as NonNullable<Model<ChatProtocol>["compat"]> } : {}),
   };
   return model;
 }
@@ -158,7 +155,8 @@ function findBuiltinModel(definition: ChatModelDefinition): Model<ChatProtocol> 
  *
  * - OpenAI Responses: pi-ai's openai catalogue sets it on the GPT-6 models (since pi-ai 1.3), and
  *   then pins `reasoning.effort` to medium and sends the asked effort in `configuration_update`
- *   items. pi-ai's own `openai-codex` catalogue (ChatGPT-backed Codex, like KIE's) does not set it.
+ *   items. Since pi-ai 1.6 its `openai-codex` catalogue (ChatGPT-backed Codex) sets it too; KIE's and
+ *   ToAPIs' Responses routes are not known to take it.
  * - Anthropic Messages: on Claude 5.x pi-ai then sends effort markers (a mid-conversation system
  *   message and `thinking.block_binding`). Live on 2026-11-19, KIE claude-haiku-5-5 with a reasoning
  *   level answered HTTP 500 to that 2 of 2 times, and to plain adaptive thinking with

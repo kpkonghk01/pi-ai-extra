@@ -6,7 +6,7 @@
 
 ## Context
 
-The first consumer (`open-graph-single`) bundles its server as CommonJS with `--packages=external`, so it loads dependencies with `require()`. Later consumers, such as a usage-recording proxy, are ESM and use pi-ai directly. `@earendil-works/pi-ai` (0.87.1 at the time, 1.2.0 since 2026-10-16, 1.5.2 since 2026-11-19) is ESM-only: its package exports have only an `import` condition, so `require()` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+The first consumer (`open-graph-single`) bundles its server as CommonJS with `--packages=external`, so it loads dependencies with `require()`. Later consumers, such as a usage-recording proxy, are ESM and use pi-ai directly. `@earendil-works/pi-ai` (0.87.1 at the time, 1.2.0 since 2026-10-16, 1.5.2 since 2026-11-19, 1.6.0 since 2026-11-25) is ESM-only: its package exports have only an `import` condition, so `require()` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
 
 TypeScript 7 removed the JavaScript compiler API that tsup's declaration build (rollup-plugin-dts) depends on.
 
@@ -14,7 +14,7 @@ TypeScript 7 removed the JavaScript compiler API that tsup's declaration build (
 
 - Each package's main entry contains the image helper, model catalogue, task lookups and errors. It does not import pi-ai, and it ships as both CommonJS (`.cjs` / `.d.cts`) and ESM (`.mjs` / `.d.mts`).
 - The `/pi-ai` subpath contains the pi-ai factories and is exported for `import` only. Its CommonJS build is excluded from the package.
-- `@earendil-works/pi-ai` is an exact, optional peer dependency (currently `1.5.2`). Consumers of the subpath share their own pi-ai instance; helper-only consumers do not install it.
+- `@earendil-works/pi-ai` is an exact, optional peer dependency (currently `1.6.0`). Consumers of the subpath share their own pi-ai instance; helper-only consumers do not install it.
 - Type-checking uses TypeScript 7. tsdown builds JavaScript and declarations, using oxc isolated declarations, so every export carries an explicit type.
 
 Amended 2026-10-16 ([DATA-4566](https://hk01-digital.atlassian.net/browse/DATA-4566)): the exact pi-ai peer moved from `0.87.1` to `1.2.0`, and the Context and the peer-dependency point now name both versions. pi-ai 1.2 is still ESM-only, so the decision stands unchanged: the `/pi-ai` subpath stays ESM-only and the peer stays exact and optional.
@@ -24,6 +24,8 @@ Amended 2026-10-16 ([DATA-4567](https://hk01-digital.atlassian.net/browse/DATA-4
 Amended 2026-10-21 ([DATA-4583](https://hk01-digital.atlassian.net/browse/DATA-4583)): `@hk01/pi-ai-extra-openrouter` ([ADR 0009](0009-chat-kit-contract-aligned-with-pi-ai.md)) is a second exception, to the first and third points. It has no main entry, only the ESM-only `/pi-ai` subpath, and pi-ai is a required exact peer (`1.2.0`). The package is only a pi-ai provider, since pi-ai already serves OpenRouter's images, so a main entry would have nothing to hold. Keeping the `/pi-ai` path gives every provider package the same import path. The chat kit's exception stands, and its provider-package peers become optional. The other provider packages keep the decision unchanged.
 
 Amended 2026-11-19, for pi-ai 1.5.2: the exact pi-ai peer moved from `1.2.0` to `1.5.2` in every package that has one (chat kit 0.5.0, google 0.9.0, kie 0.9.0, toapis 0.8.0, openrouter 0.2.0). The chat kit's optional provider-package peers moved to those releases. pi-ai 1.5.2 is still ESM-only, so the decision stands.
+
+Amended 2026-11-25, for pi-ai 1.6.0: the exact pi-ai peer moved from `1.5.2` to `1.6.0` in every package that has one (chat kit 0.6.0, google 0.10.0, kie 0.10.0, toapis 0.9.0, openrouter 0.3.0), and the chat kit's optional provider-package peers moved to those releases. pi-ai 1.6.0 is still ESM-only, so the decision stands.
 
 ## Consequences
 

@@ -58,8 +58,6 @@ export interface StreamObserver {
  */
 export interface WireApi {
   readonly api: Api;
-  /** Whether pi-ai's adapter for this API accepts a custom fetch (its Gemini and Vertex adapters reject one). */
-  readonly acceptsFetch: boolean;
   /**
    * Headers the request must not carry, as `null` values (pi-ai's way to suppress a header an SDK
    * would add). pi-ai's OpenAI adapters use the OpenAI SDK, which reads `OPENAI_ORG_ID` and
