@@ -27,6 +27,8 @@ Amended 2026-11-19, for pi-ai 1.5.2: the exact pi-ai peer moved from `1.2.0` to 
 
 Amended 2026-11-25, for pi-ai 1.6.0: the exact pi-ai peer moved from `1.5.2` to `1.6.0` in every package that has one (chat kit 0.6.0, google 0.10.0, kie 0.10.0, toapis 0.9.0, openrouter 0.3.0), and the chat kit's optional provider-package peers moved to those releases. pi-ai 1.6.0 is still ESM-only, so the decision stands.
 
+Note (2026-11-26): as with each earlier pi-ai move, the 2026-11-25 change also updated the Context's version list and the Decision's "currently" peer in place.
+
 ## Consequences
 
 CommonJS servers adopt the helpers without changing their build. Using the pi-ai factories requires ESM (or a dynamic `import()`), just as pi-ai does.

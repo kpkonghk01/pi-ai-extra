@@ -55,3 +55,5 @@ The article-scan turn as a consumer sends it (a 1,600-character Chinese system p
 Gemini follows a schema's shape but not every constraint, and the reduced schema has no `minItems` or `maxItems` to follow, so a consumer validates the answer.
 
 A key without chat permission for an id gets 403 "沒有執行此請求的權限". The live list leaves such ids out.
+
+Changed in place on 2026-11-25, before release (toapis 0.9.0, chat-kit 0.6.0): the Decision's instructions bullet now says pi-ai 1.6 sends `system` itself, where it first said the definitions set `compat.supportsDeveloperRole: false`, and the chat kit version is 0.6.0, not the unreleased 0.5.1.
